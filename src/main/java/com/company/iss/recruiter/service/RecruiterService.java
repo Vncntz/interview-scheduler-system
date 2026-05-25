@@ -3,6 +3,7 @@ package com.company.iss.recruiter.service;
 import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.auth.repository.UserRepository;
+import com.company.iss.branch.entity.Branch;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,10 @@ public class RecruiterService {
                 Role.RECRUITER,
                 keyword
         );
+    }
+
+    public List<User> findByBranch(Branch branch) {
+        return userRepository.findByBranchAndRole(branch, Role.RECRUITER);
     }
 
     public User save(User user, String temporaryPassword) {

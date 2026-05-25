@@ -1,0 +1,16 @@
+vaadin-login-overlay-wrapper {
+    background-image:
+            linear-gradient(
+                    rgba(10, 20, 40, 0.55),
+                    rgba(10, 20, 40, 0.55)
+            ),
+            url("/META-INF/resources/images/login-bg.png");
+
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+vaadin-login-overlay::part(overlay) {
+    backdrop-filter: blur(10px);
+}

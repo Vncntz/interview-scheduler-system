@@ -6,8 +6,6 @@ import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.applayout.DrawerToggle;
 import com.vaadin.flow.component.avatar.Avatar;
 import com.vaadin.flow.component.contextmenu.MenuItem;
-import com.vaadin.flow.component.html.Div;
-import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.menubar.MenuBar;
@@ -29,13 +27,17 @@ public class MainLayout extends AppLayout {
     }
 
     @Autowired
-    public void setSecurityService(SecurityService securityService) {
+    public void setSecurityService(
+            SecurityService securityService
+    ) {
         this.securityService = securityService;
+
         initializeLayout();
     }
 
     private void initializeLayout() {
-        User currentUser = securityService.getCurrentUser();
+        User currentUser =
+                securityService.getCurrentUser();
 
         createNavbar(currentUser);
         createDrawer(currentUser);
@@ -46,65 +48,135 @@ public class MainLayout extends AppLayout {
     private void createNavbar(User user) {
         DrawerToggle toggle = new DrawerToggle();
 
-        Span pageTitle = new Span("Interview Scheduler System");
-        pageTitle.getStyle().set("font-size", "1rem").set("font-weight", "600");
+        Span pageTitle =
+                new Span("Interview Scheduler System");
+
+        pageTitle.getStyle()
+                .set("font-size", "1rem")
+                .set("font-weight", "600");
 
         MenuBar profileMenu = new MenuBar();
-        MenuItem userMenu = profileMenu.addItem(user.getFullName());
 
-        userMenu.getSubMenu().addItem("My Profile");
-        userMenu.getSubMenu().addItem("Change Password");
-        userMenu.getSubMenu().addItem("Logout", e -> securityService.logout());
+        MenuItem userMenu =
+                profileMenu.addItem(
+                        user.getFullName()
+                );
 
-        HorizontalLayout navbar = new HorizontalLayout(toggle, pageTitle, profileMenu);
+        userMenu.getSubMenu()
+                .addItem("My Profile");
+
+        userMenu.getSubMenu()
+                .addItem("Change Password");
+
+        userMenu.getSubMenu()
+                .addItem(
+                        "Logout",
+                        e -> securityService.logout()
+                );
+
+        HorizontalLayout navbar =
+                new HorizontalLayout(
+                        toggle,
+                        pageTitle,
+                        profileMenu
+                );
 
         navbar.setWidthFull();
         navbar.expand(pageTitle);
-        navbar.setAlignItems(FlexComponent.Alignment.CENTER);
+        navbar.setAlignItems(
+                FlexComponent.Alignment.CENTER
+        );
         navbar.setPadding(true);
-        navbar.getStyle().set("border-bottom", "1px solid var(--lumo-contrast-10pct)");
+
+        navbar.getStyle().set(
+                "border-bottom",
+                "1px solid var(--lumo-contrast-10pct)"
+        );
 
         addToNavbar(navbar);
     }
 
     private void createDrawer(User user) {
-        VerticalLayout drawerContent = new VerticalLayout();
+        VerticalLayout drawerContent =
+                new VerticalLayout();
+
         drawerContent.setPadding(false);
         drawerContent.setSpacing(false);
         drawerContent.setSizeFull();
 
-        drawerContent.add(createUserCard(user), createSideNav());
+        drawerContent.add(
+                createUserCard(user),
+                createSideNav()
+        );
 
-        Scroller scroller = new Scroller(drawerContent);
+        Scroller scroller =
+                new Scroller(drawerContent);
+
         scroller.setSizeFull();
 
         addToDrawer(scroller);
     }
 
+    private HorizontalLayout createUserCard(
+            User user
+    ) {
+        Avatar avatar =
+                new Avatar(user.getFullName());
 
-
-    private HorizontalLayout createUserCard(User user) {
-        Avatar avatar = new Avatar(user.getFullName());
         avatar.setThemeName("small");
 
-        VerticalLayout details = new VerticalLayout();
+        VerticalLayout details =
+                new VerticalLayout();
+
         details.setSpacing(false);
         details.setPadding(false);
 
-        Span name = new Span(user.getFullName());
-        name.getStyle().set("font-weight", "600");
+        Span name =
+                new Span(user.getFullName());
 
-        Span email = new Span(user.getEmail());
-        email.getStyle().set("font-size", "0.75rem").set("color", "var(--lumo-secondary-text-color)");
+        name.getStyle()
+                .set("font-weight", "600");
 
-        Span role = new Span("ROLE: " +user.getRole().name());
-        role.getStyle().set("font-size", "0.7rem").set("padding", "2px 8px").set("border-radius", "12px").set("background", "var(--lumo-contrast-10pct)");
+        Span email =
+                new Span(user.getEmail());
+
+        email.getStyle()
+                .set(
+                        "font-size",
+                        "0.75rem"
+                )
+                .set(
+                        "color",
+                        "var(--lumo-secondary-text-color)"
+                );
+
+        Span role =
+                new Span(
+                        "ROLE: "
+                                + user.getRole().name()
+                );
+
+        role.getStyle()
+                .set("font-size", "0.7rem")
+                .set("padding", "2px 8px")
+                .set("border-radius", "12px")
+                .set(
+                        "background",
+                        "var(--lumo-contrast-10pct)"
+                );
 
         details.add(name, email, role);
 
-        HorizontalLayout userCard = new HorizontalLayout(avatar, details);
+        HorizontalLayout userCard =
+                new HorizontalLayout(
+                        avatar,
+                        details
+                );
+
         userCard.setWidthFull();
-        userCard.setAlignItems(FlexComponent.Alignment.CENTER);
+        userCard.setAlignItems(
+                FlexComponent.Alignment.CENTER
+        );
         userCard.setPadding(true);
 
         return userCard;
@@ -113,7 +185,87 @@ public class MainLayout extends AppLayout {
     private SideNav createSideNav() {
         SideNav nav = new SideNav();
 
-        nav.addItem(new SideNavItem("Dashboard", "/", VaadinIcon.DASHBOARD.create()), new SideNavItem("Recruiters", "/recruiters", VaadinIcon.USERS.create()), new SideNavItem("Branches", "/branches", VaadinIcon.OFFICE.create()), new SideNavItem("Applicants", "/applicants", VaadinIcon.USER_CARD.create()), new SideNavItem("Scheduling", "/scheduling", VaadinIcon.CALENDAR.create()), new SideNavItem("Bookings", "/bookings", VaadinIcon.CLIPBOARD_CHECK.create()), new SideNavItem("Audit Logs", "/audit", VaadinIcon.FILE_TEXT.create()), new SideNavItem("Settings", "/settings", VaadinIcon.COG.create()));
+        nav.addItem(
+                new SideNavItem(
+                        "Dashboard",
+                        "/",
+                        VaadinIcon.DASHBOARD.create()
+                ),
+
+                new SideNavItem(
+                        "Branches",
+                        "/branches",
+                        VaadinIcon.OFFICE.create()
+                ),
+
+                new SideNavItem(
+                        "Recruiters",
+                        "/recruiters",
+                        VaadinIcon.USERS.create()
+                ),
+
+                new SideNavItem(
+                        "Clients",
+                        "/clients",
+                        VaadinIcon.BUILDING.create()
+                ),
+
+                new SideNavItem(
+                        "Position Openings",
+                        "/positions",
+                        VaadinIcon.BRIEFCASE.create()
+                ),
+
+                new SideNavItem(
+                        "Applicants",
+                        "/applicants",
+                        VaadinIcon.USER_CARD.create()
+                ),
+
+                new SideNavItem(
+                        "Scheduling",
+                        "/scheduling",
+                        VaadinIcon.CALENDAR.create()
+                ),
+
+                new SideNavItem(
+                        "Bookings",
+                        "/bookings",
+                        VaadinIcon.CLIPBOARD_CHECK.create()
+                ),
+
+                new SideNavItem(
+                        "Evaluations",
+                        "/evaluations",
+                        VaadinIcon.CLIPBOARD_TEXT.create()
+                ),
+
+                new SideNavItem(
+                        "Notification Settings",
+                        "/notification-settings",
+                        VaadinIcon.ENVELOPE.create()
+                ),
+
+                new SideNavItem(
+                        "Notification Templates",
+                        "/notification-templates",
+                        VaadinIcon.FILE_CODE.create()
+                ),
+
+                new SideNavItem(
+                        "Audit Logs",
+                        "/audit",
+                        VaadinIcon.FILE_TEXT.create()
+                ),
+
+                new SideNavItem(
+                        "Settings",
+                        "/settings",
+                        VaadinIcon.COG.create()
+                )
+        );
+
+
 
         nav.setWidthFull();
 

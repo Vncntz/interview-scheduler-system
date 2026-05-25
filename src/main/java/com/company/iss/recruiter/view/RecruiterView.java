@@ -41,7 +41,6 @@ public class RecruiterView extends VerticalLayout {
     private HorizontalLayout actionLayout;
     private Button addButton;
     private Button editButton;
-    private Button deleteButton;
 
     public RecruiterView() {
         setSizeFull();
@@ -66,16 +65,35 @@ public class RecruiterView extends VerticalLayout {
         recruiterGrid.setHeightFull();
         recruiterGrid.setWidth("100%");
         recruiterGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS, GridVariant.LUMO_COMPACT);
-
         recruiterGrid.addColumn(o -> o.getFullName()).setHeader("Full Name").setWidth("250px").setResizable(true).setFlexGrow(1);
-
         recruiterGrid.addColumn(o -> o.getEmail()).setHeader("Email").setWidth("250px").setResizable(true);
-
         recruiterGrid.addColumn(o -> o.getBranch() != null ? o.getBranch().getBranchName() : "").setHeader("Branch").setWidth("220px").setResizable(true);
-
+        recruiterGrid.addColumn(o -> o.getLastLoginAt() != null ? o.getLastLoginAt().toString() : "Never").setHeader("Last Login").setWidth("150px").setResizable(true);
         recruiterGrid.addColumn(o -> o.isActive() ? "Active" : "Inactive").setHeader("Status").setWidth("130px").setResizable(true);
+        recruiterGrid.addComponentColumn(user -> {
+            Button toggle = new Button(user.isActive() ? "Deactivate" : "Activate");
 
-        recruiterGrid.addColumn(o -> o.getLastLoginAt() != null ? o.getLastLoginAt().toString() : "Never").setHeader("Last Login").setWidth("220px").setResizable(true);
+            if (user.isActive()) {
+                toggle.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_SMALL);
+            } else {
+                toggle.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SMALL);
+            }
+
+            toggle.addClickListener(e -> {
+                if (user.isActive()) {
+                    recruiterService.deactivate(user);
+                } else {
+                    recruiterService.activate(user);
+                }
+                init();
+            });
+
+            HorizontalLayout wrap = new HorizontalLayout(toggle);
+            wrap.setWidthFull();
+            wrap.setJustifyContentMode(JustifyContentMode.CENTER);
+            wrap.setAlignItems(Alignment.CENTER);
+            return wrap;
+        }).setHeader("Actions").setWidth("180px").setResizable(true);
 
         actionLayout = new HorizontalLayout();
         actionLayout.setWidthFull();
@@ -93,14 +111,7 @@ public class RecruiterView extends VerticalLayout {
             onEdit();
         });
 
-        deleteButton = new Button("Delete");
-        deleteButton.addThemeVariants(ButtonVariant.LUMO_ERROR);
-        deleteButton.setIcon(VaadinIcon.TRASH.create());
-        deleteButton.addClickListener(e -> {
-            onDelete();
-        });
-
-        actionLayout.add(addButton, editButton, deleteButton);
+        actionLayout.add(addButton, editButton);
 
         add(filterLayout, recruiterGrid, actionLayout);
     }
@@ -119,27 +130,13 @@ public class RecruiterView extends VerticalLayout {
         }
     }
 
-    private void onDelete() {
-        User selected = recruiterGrid.asSingleSelect().getValue();
-
-        if (selected != null) {
-            recruiterService.deactivate(selected);
-
-            Notification.show("Recruiter deactivated successfully.", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
-
-            init();
-        } else {
-            Notification.show("Please select a recruiter from the table first.", 3000, Notification.Position.MIDDLE).addThemeVariants(NotificationVariant.LUMO_WARNING);
-        }
-    }
-
     @PostConstruct
     private void init() {
         recruiterGrid.setItems(recruiterService.search(searchField.getValue()));
     }
 
     private void openDialog(User user) {
-        RecruiterFormDialog dialog = new RecruiterFormDialog(user,branchService, (savedUser, temporaryPassword) -> {
+        RecruiterFormDialog dialog = new RecruiterFormDialog(user, branchService, (savedUser, temporaryPassword) -> {
             try {
                 recruiterService.save(savedUser, temporaryPassword);
 

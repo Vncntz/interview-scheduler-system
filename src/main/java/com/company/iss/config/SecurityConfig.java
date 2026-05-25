@@ -5,6 +5,7 @@ import com.vaadin.flow.spring.security.VaadinSecurityConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -14,6 +15,12 @@ public class SecurityConfig {
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        // 1. Authorize public access to static asset patterns before Vaadin takes over
+        http.authorizeHttpRequests(auth -> auth
+                .requestMatchers("/images/**", "/VAADIN/**").permitAll()
+        );
+
+        // 2. Load default Vaadin configuration settings
         http.with(
                 VaadinSecurityConfigurer.vaadin(),
                 config -> config.loginView(LoginView.class)

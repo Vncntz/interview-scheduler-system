@@ -14,46 +14,37 @@ public class LoginView extends LoginOverlay implements BeforeEnterObserver {
     public LoginView() {
         LoginI18n i18n = LoginI18n.createDefault();
 
-        // Header
         LoginI18n.Header header = new LoginI18n.Header();
+
         header.setTitle("ISS");
         header.setDescription("Interview Scheduler System");
+
         i18n.setHeader(header);
 
-        // Form
         LoginI18n.Form form = i18n.getForm();
+
         form.setTitle("Sign In");
         form.setUsername("Email");
         form.setPassword("Password");
         form.setSubmit("Sign In");
-        form.setForgotPassword("Forgot password?");
-        i18n.setForm(form);
+        form.setForgotPassword("");
 
-        // Error Message
-        LoginI18n.ErrorMessage errorMessage = i18n.getErrorMessage();
-        errorMessage.setTitle("Invalid email or password");
-        errorMessage.setMessage(
-                "Please check your credentials and try again."
-        );
-        i18n.setErrorMessage(errorMessage);
+        LoginI18n.ErrorMessage error = i18n.getErrorMessage();
 
-        // Footer info
-        i18n.setAdditionalInformation(
-                "Contact your administrator if you need help accessing your account."
-        );
+        error.setTitle("Login Failed");
+        error.setMessage("Invalid email or password.");
+
+        i18n.setAdditionalInformation("Contact your administrator for access.");
 
         setI18n(i18n);
-
         setAction("login");
         setOpened(true);
     }
 
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
-        if (event.getLocation()
-                .getQueryParameters()
-                .getParameters()
-                .containsKey("error")) {
+        if (event.getLocation().getQueryParameters().getParameters().containsKey("error")) {
+
             setError(true);
         }
     }

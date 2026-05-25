@@ -1,4 +1,6 @@
+// @ts-ignore
 import { routes } from "Frontend/generated/routes.js";
+// @ts-ignore
 import { registerGlobalClickHandler } from "Frontend/generated/flow/Flow.js";
 
 (window as any).Vaadin ??= {};

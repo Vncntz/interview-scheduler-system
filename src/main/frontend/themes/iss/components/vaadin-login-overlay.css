@@ -1,0 +1,26 @@
+:host {
+    --lumo-base-color: transparent;
+}
+
+[part="backdrop"] {
+    background-image:
+            linear-gradient(
+                    rgba(10, 20, 40, 0.55),
+                    rgba(10, 20, 40, 0.55)
+            ),
+            url("/images/login-bg.png");
+
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+[part="overlay"] {
+    backdrop-filter: blur(10px);
+}
+
+[part="card"] {
+    border-radius: 18px;
+    box-shadow:
+            0 12px 40px rgba(0, 0, 0, 0.35);
+}
