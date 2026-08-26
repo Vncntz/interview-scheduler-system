@@ -1,142 +1,172 @@
 package com.company.iss.evaluation.service;
 
+import com.company.iss.applicant.entity.Applicant;
 import com.company.iss.applicant.entity.ApplicantStatus;
-import com.company.iss.applicant.service.ApplicantService;
+import com.company.iss.auth.entity.Role;
+import com.company.iss.auth.entity.User;
+import com.company.iss.auth.service.SecurityService;
 import com.company.iss.booking.entity.Booking;
 import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.repository.BookingRepository;
+import com.company.iss.evaluation.dto.CreateEvaluationCommand;
 import com.company.iss.evaluation.entity.InterviewEvaluation;
 import com.company.iss.evaluation.entity.InterviewResult;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
 import com.company.iss.position.entity.PositionOpening;
-import com.company.iss.position.service.PositionOpeningService;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.company.iss.position.repository.PositionOpeningRepository;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
+import java.util.Objects;
 
 @Service
 public class InterviewEvaluationService {
 
-    @Autowired
-    private InterviewEvaluationRepository interviewEvaluationRepository;
+    private final InterviewEvaluationRepository evaluationRepository;
+    private final PositionOpeningRepository positionOpeningRepository;
+    private final BookingRepository bookingRepository;
+    private final SecurityService securityService;
 
-    @Autowired
-    private PositionOpeningService positionOpeningService;
+    public InterviewEvaluationService(
+            InterviewEvaluationRepository evaluationRepository,
+            PositionOpeningRepository positionOpeningRepository,
+            BookingRepository bookingRepository,
+            SecurityService securityService
+    ) {
+        this.evaluationRepository = evaluationRepository;
+        this.positionOpeningRepository = positionOpeningRepository;
+        this.bookingRepository = bookingRepository;
+        this.securityService = securityService;
+    }
 
-    @Autowired
-    private BookingRepository bookingRepository;
+    @Transactional
+    public InterviewEvaluation create(CreateEvaluationCommand command) {
+        validateCommand(command);
+        User actor = securityService.requireOperationsUser();
+        Booking booking = bookingRepository.findByIdForUpdate(command.bookingId())
+                .orElseThrow(() -> new IllegalArgumentException("Booking not found."));
+        authorize(actor, booking);
 
-    @Autowired
-    private ApplicantService applicantService;
+        if (booking.getStatus() != BookingStatus.ATTENDED) {
+            throw new IllegalStateException("Only attended bookings can be evaluated.");
+        }
+        if (evaluationRepository.existsByBookingId(booking.getId())) {
+            throw new IllegalStateException("Booking already has an evaluation.");
+        }
 
+        Applicant applicant = booking.getApplicant();
+        if (applicant == null) {
+            throw new IllegalStateException("Booking does not have an applicant.");
+        }
+
+        InterviewEvaluation evaluation = new InterviewEvaluation();
+        evaluation.setBooking(booking);
+        evaluation.setApplicant(applicant);
+        evaluation.setEvaluator(actor);
+        evaluation.setCommunicationScore(command.communicationScore());
+        evaluation.setTechnicalScore(command.technicalScore());
+        evaluation.setAttitudeScore(command.attitudeScore());
+        evaluation.setResult(command.result());
+        evaluation.setRemarks(command.remarks());
+        evaluation.setEvaluationDate(LocalDateTime.now());
+
+        applyResult(booking, applicant, command.result());
+        updatePositionCounters(applicant, command.result());
+        bookingRepository.save(booking);
+        return evaluationRepository.save(evaluation);
+    }
+
+    /** Compatibility entry point for existing UI callers; identity is always derived from the current user. */
     public InterviewEvaluation save(InterviewEvaluation evaluation) {
-        validate(evaluation);
-
-        updateStatuses(evaluation);
-
-        updatePositionCounters(evaluation);
-
-        bookingRepository.save(evaluation.getBooking());
-
-        return interviewEvaluationRepository.save(evaluation);
+        if (evaluation == null || evaluation.getBooking() == null) {
+            throw new IllegalArgumentException("Booking is required.");
+        }
+        return create(new CreateEvaluationCommand(
+                evaluation.getBooking().getId(),
+                evaluation.getCommunicationScore(),
+                evaluation.getTechnicalScore(),
+                evaluation.getAttitudeScore(),
+                evaluation.getResult(),
+                evaluation.getRemarks()
+        ));
     }
 
-    public Optional<InterviewEvaluation> findByBooking(Booking booking) {
-        return interviewEvaluationRepository.findByBooking(booking);
-    }
-
+    @Transactional(readOnly = true)
     public List<InterviewEvaluation> findAll() {
-        return interviewEvaluationRepository.findAll();
+        User actor = securityService.requireOperationsUser();
+        if (actor.getRole() == Role.ADMIN) {
+            return evaluationRepository.findAll();
+        }
+        return evaluationRepository.findByBookingScheduleBranchIdOrderByEvaluationDateDesc(
+                actor.getBranch().getId()
+        );
     }
 
-    private void validate(InterviewEvaluation evaluation) {
-        if (evaluation.getBooking() == null) {
-            throw new RuntimeException("Booking is required.");
+    private void validateCommand(CreateEvaluationCommand command) {
+        if (command == null || command.bookingId() == null) {
+            throw new IllegalArgumentException("Booking is required.");
         }
-
-        if (evaluation.getApplicant() == null) {
-            throw new RuntimeException("Applicant is required.");
-        }
-
-        if (evaluation.getEvaluator() == null) {
-            throw new RuntimeException("Evaluator is required.");
-        }
-
-        if (evaluation.getBooking().getStatus() != BookingStatus.ATTENDED) {
-            throw new RuntimeException("Only attended bookings can be evaluated.");
-        }
-
-        Optional<InterviewEvaluation> existing = interviewEvaluationRepository.findByBooking(evaluation.getBooking());
-
-        if (existing.isPresent() && evaluation.getId() == null) {
-            throw new RuntimeException("Booking already has an evaluation.");
-        }
-
-        validateScore(evaluation.getCommunicationScore());
-
-        validateScore(evaluation.getTechnicalScore());
-
-        validateScore(evaluation.getAttitudeScore());
-
-        if (evaluation.getResult() == null) {
-            throw new RuntimeException("Interview result is required.");
+        validateScore(command.communicationScore());
+        validateScore(command.technicalScore());
+        validateScore(command.attitudeScore());
+        if (command.result() == null) {
+            throw new IllegalArgumentException("Interview result is required.");
         }
     }
 
     private void validateScore(Integer score) {
         if (score == null || score < 1 || score > 10) {
-            throw new RuntimeException("Scores must be between 1 and 10.");
+            throw new IllegalArgumentException("Scores must be between 1 and 10.");
         }
     }
 
-    private void updateStatuses(InterviewEvaluation evaluation) {
-        InterviewResult result = evaluation.getResult();
+    private void authorize(User actor, Booking booking) {
+        if (actor.getRole() == Role.ADMIN) {
+            return;
+        }
+        if (booking.getSchedule() == null || booking.getSchedule().getBranch() == null
+                || !Objects.equals(actor.getBranch().getId(), booking.getSchedule().getBranch().getId())) {
+            throw new AccessDeniedException("You may only evaluate interviews within your branch.");
+        }
+    }
 
+    private void applyResult(Booking booking, Applicant applicant, InterviewResult result) {
         switch (result) {
-
             case PASS -> {
-                applicantService.updateStatus(evaluation.getApplicant(), ApplicantStatus.PASSED);
-
-                evaluation.getBooking().setStatus(BookingStatus.PASSED);
+                applicant.setStatus(ApplicantStatus.PASSED);
+                booking.setStatus(BookingStatus.PASSED);
             }
-
             case FAIL -> {
-                applicantService.updateStatus(evaluation.getApplicant(), ApplicantStatus.FAILED);
-
-                evaluation.getBooking().setStatus(BookingStatus.FAILED);
+                applicant.setStatus(ApplicantStatus.FAILED);
+                booking.setStatus(BookingStatus.FAILED);
             }
-
             case FOR_FINAL_INTERVIEW -> {
-                applicantService.updateStatus(evaluation.getApplicant(), ApplicantStatus.FOR_FINAL_INTERVIEW);
-
-                evaluation.getBooking().setStatus(BookingStatus.FOR_FINAL_INTERVIEW);
+                applicant.setStatus(ApplicantStatus.FOR_FINAL_INTERVIEW);
+                booking.setStatus(BookingStatus.FOR_FINAL_INTERVIEW);
             }
-
             case FOR_CLIENT_INTERVIEW -> {
-                applicantService.updateStatus(evaluation.getApplicant(), ApplicantStatus.FOR_CLIENT_INTERVIEW);
-
-                evaluation.getBooking().setStatus(BookingStatus.FOR_CLIENT_INTERVIEW);
+                applicant.setStatus(ApplicantStatus.FOR_CLIENT_INTERVIEW);
+                booking.setStatus(BookingStatus.FOR_CLIENT_INTERVIEW);
             }
-
             case ON_HOLD -> {
-                applicantService.updateStatus(evaluation.getApplicant(), ApplicantStatus.ON_HOLD);
-
-                evaluation.getBooking().setStatus(BookingStatus.ON_HOLD);
+                applicant.setStatus(ApplicantStatus.ON_HOLD);
+                booking.setStatus(BookingStatus.ON_HOLD);
             }
         }
     }
 
-    private void updatePositionCounters(InterviewEvaluation evaluation) {
-        PositionOpening position = evaluation.getApplicant().getPositionOpening();
-
+    private void updatePositionCounters(Applicant applicant, InterviewResult result) {
+        PositionOpening position = applicant.getPositionOpening();
+        if (position == null) {
+            return;
+        }
         position.setInterviewedCount(position.getInterviewedCount() + 1);
-
-        if (evaluation.getResult() == InterviewResult.PASS) {
+        if (result == InterviewResult.PASS) {
             position.setPassedCount(position.getPassedCount() + 1);
         }
-
-        positionOpeningService.save(position);
+        positionOpeningRepository.save(position);
     }
 }

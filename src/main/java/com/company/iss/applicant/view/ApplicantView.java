@@ -5,6 +5,9 @@ import com.company.iss.applicant.entity.Applicant;
 import com.company.iss.applicant.service.ApplicantService;
 import com.company.iss.booking.dialog.BookingFormDialog;
 import com.company.iss.booking.service.BookingService;
+import com.company.iss.auth.service.SecurityService;
+import com.company.iss.auth.entity.Role;
+import com.company.iss.branch.service.BranchService;
 import com.company.iss.position.service.PositionOpeningService;
 import com.company.iss.schedule.service.ScheduleService;
 import com.company.iss.shared.view.MainLayout;
@@ -37,6 +40,10 @@ public class ApplicantView extends VerticalLayout {
     private ScheduleService scheduleService;
     @Autowired
     private PositionOpeningService positionOpeningService;
+    @Autowired
+    private SecurityService securityService;
+    @Autowired
+    private BranchService branchService;
 
     private Grid<Applicant> applicantGrid;
 
@@ -75,6 +82,7 @@ public class ApplicantView extends VerticalLayout {
         applicantGrid.addColumn(Applicant::getFullName).setHeader("Full Name").setWidth("220px").setResizable(true);
         applicantGrid.addColumn(Applicant::getEmail).setHeader("Email").setWidth("220px").setResizable(true);
         applicantGrid.addColumn(Applicant::getMobileNumber).setHeader("Mobile").setWidth("150px").setResizable(true);
+        applicantGrid.addColumn(o -> o.getBranch() == null ? "Unassigned" : o.getBranch().getBranchName()).setHeader("Branch").setWidth("160px").setResizable(true);
         applicantGrid.addColumn(o -> o.getPositionOpening().getTitle()).setHeader("Position").setWidth("180px").setResizable(true);
         applicantGrid.addColumn(o -> o.getPositionOpening().getClient().getCompanyName()).setHeader("Client").setWidth("220px").setResizable(true);
         applicantGrid.addColumn(o -> o.getPositionOpening().getWorkLocation()).setHeader("Work Location").setWidth("220px").setResizable(true);
@@ -92,9 +100,9 @@ public class ApplicantView extends VerticalLayout {
 
             toggle.addClickListener(e -> {
                 if (applicant.isActive()) {
-                    applicantService.deactivate(applicant);
+                    applicantService.deactivate(applicant.getId());
                 } else {
-                    applicantService.activate(applicant);
+                    applicantService.activate(applicant.getId());
                 }
 
                 init();
@@ -152,7 +160,13 @@ public class ApplicantView extends VerticalLayout {
     }
 
     private void openDialog(Applicant applicant) {
-        ApplicantFormDialog dialog = new ApplicantFormDialog(applicant, positionOpeningService, savedApplicant -> {
+        var actor = securityService.requireOperationsUser();
+        ApplicantFormDialog dialog = new ApplicantFormDialog(
+                applicant,
+                positionOpeningService,
+                actor,
+                actor.getRole() == Role.ADMIN ? branchService.findAll() : java.util.List.of(actor.getBranch()),
+                savedApplicant -> {
             try {
                 applicantService.save(savedApplicant);
 
@@ -163,7 +177,7 @@ public class ApplicantView extends VerticalLayout {
             } catch (Exception ex) {
                 Notification.show(ex.getMessage(), 5000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
             }
-        });
+                });
 
         dialog.open();
     }
@@ -178,7 +192,7 @@ public class ApplicantView extends VerticalLayout {
 
         BookingFormDialog dialog = new BookingFormDialog(applicant, scheduleService, (schedule, remarks) -> {
             try {
-                bookingService.createBooking(applicant, schedule, remarks);
+                bookingService.createBooking(applicant.getId(), schedule.getId(), remarks);
 
                 Notification.show("Interview booked successfully.", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
 

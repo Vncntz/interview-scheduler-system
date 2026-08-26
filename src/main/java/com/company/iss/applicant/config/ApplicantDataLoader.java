@@ -5,6 +5,8 @@ import com.company.iss.applicant.entity.ApplicantStatus;
 import com.company.iss.applicant.repository.ApplicantRepository;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.repository.PositionOpeningRepository;
+import com.company.iss.branch.entity.Branch;
+import com.company.iss.branch.repository.BranchRepository;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -21,6 +23,9 @@ public class ApplicantDataLoader {
     @Autowired
     private PositionOpeningRepository positionOpeningRepository;
 
+    @Autowired
+    private BranchRepository branchRepository;
+
     @PostConstruct
     public void init() {
 
@@ -29,12 +34,13 @@ public class ApplicantDataLoader {
         }
 
         List<PositionOpening> openings = positionOpeningRepository.findAll();
+        List<Branch> branches = branchRepository.findAll();
 
-        if (openings.isEmpty()) {
+        if (openings.isEmpty() || branches.isEmpty()) {
             return;
         }
 
-        Random random = new Random();
+        Random random = new Random(42);
 
         String[] firstNames = {
                 "Juan", "Maria", "Jose", "Ana", "Mark", "Paolo", "Carlo", "Rica", "Angela", "Bryan",
@@ -85,6 +91,7 @@ public class ApplicantDataLoader {
             );
 
             applicant.setPositionOpening(opening);
+            applicant.setBranch(branches.get((i - 1) % branches.size()));
 
             applicant.setSource(
                     sources[random.nextInt(sources.length)]

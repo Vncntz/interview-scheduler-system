@@ -168,7 +168,12 @@ public class BulkScheduleDialog extends Dialog {
         }
 
         try {
-            BulkScheduleResult result = scheduleService.generateBulkSchedules(branchField.getValue(), recruiterField.getValue(), startDateField.getValue(), endDateField.getValue(), daysField.getValue(), startTimeField.getValue(), endTimeField.getValue(), intervalField.getValue(), slotCapacityField.getValue(), interviewModeField.getValue(), notesField.getValue());
+            BulkScheduleResult result = scheduleService.generateBulkSchedules(
+                    branchField.getValue().getId(), recruiterField.getValue().getId(),
+                    startDateField.getValue(), endDateField.getValue(), daysField.getValue(),
+                    startTimeField.getValue(), endTimeField.getValue(), intervalField.getValue(),
+                    slotCapacityField.getValue(), interviewModeField.getValue(), notesField.getValue()
+            );
 
             Notification.show("Created: " + result.getCreatedCount() + " | Skipped: " + result.getSkippedCount(), 4000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
 

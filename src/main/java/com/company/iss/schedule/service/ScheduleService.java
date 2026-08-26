@@ -1,165 +1,164 @@
 package com.company.iss.schedule.service;
 
+import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
+import com.company.iss.auth.repository.UserRepository;
+import com.company.iss.auth.service.SecurityService;
 import com.company.iss.branch.entity.Branch;
+import com.company.iss.branch.repository.BranchRepository;
 import com.company.iss.schedule.dto.BulkScheduleResult;
 import com.company.iss.schedule.entity.InterviewMode;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.repository.ScheduleRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
 public class ScheduleService {
 
-    @Autowired
-    private ScheduleRepository scheduleRepository;
+    private final ScheduleRepository scheduleRepository;
+    private final BranchRepository branchRepository;
+    private final UserRepository userRepository;
+    private final SecurityService securityService;
 
+    public ScheduleService(
+            ScheduleRepository scheduleRepository,
+            BranchRepository branchRepository,
+            UserRepository userRepository,
+            SecurityService securityService
+    ) {
+        this.scheduleRepository = scheduleRepository;
+        this.branchRepository = branchRepository;
+        this.userRepository = userRepository;
+        this.securityService = securityService;
+    }
+
+    @Transactional(readOnly = true)
     public List<Schedule> search(String keyword) {
+        requireAdmin();
         if (keyword == null || keyword.isBlank()) {
             return scheduleRepository.findAll();
         }
-
         String search = keyword.toLowerCase();
-
-        return scheduleRepository.findAll().stream().filter(schedule -> schedule.getBranch().getBranchName().toLowerCase().contains(search) || schedule.getRecruiter().getFullName().toLowerCase().contains(search) || schedule.getInterviewMode().name().toLowerCase().contains(search) || schedule.getStatus().name().toLowerCase().contains(search)).toList();
+        return scheduleRepository.findAll().stream()
+                .filter(schedule -> schedule.getBranch().getBranchName().toLowerCase().contains(search)
+                        || schedule.getRecruiter().getFullName().toLowerCase().contains(search)
+                        || schedule.getInterviewMode().name().toLowerCase().contains(search)
+                        || schedule.getStatus().name().toLowerCase().contains(search))
+                .toList();
     }
 
-    public Schedule save(Schedule schedule) {
-        validate(schedule);
-
-        if (schedule.getId() == null) {
+    @Transactional
+    public Schedule save(Schedule input) {
+        requireAdmin();
+        if (input == null) {
+            throw new IllegalArgumentException("Schedule is required.");
+        }
+        Branch branch = requireBranch(input.getBranch());
+        User recruiter = requireRecruiter(input.getRecruiter());
+        Schedule schedule;
+        if (input.getId() == null) {
+            schedule = new Schedule();
             schedule.setStatus(ScheduleStatus.OPEN);
             schedule.setBookedCount(0);
             schedule.setActive(true);
+        } else {
+            schedule = requireScheduleForUpdate(input.getId());
+            preventBookedScheduleOwnershipChange(schedule, branch, recruiter);
         }
-
-        List<Schedule> existingSchedules = scheduleRepository.findByRecruiterAndScheduleDate(schedule.getRecruiter(), schedule.getScheduleDate());
-
-        for (Schedule existing : existingSchedules) {
-
-            if (schedule.getId() != null && existing.getId().equals(schedule.getId())) {
-                continue;
-            }
-
-            boolean overlaps = schedule.getStartTime().isBefore(existing.getEndTime()) && schedule.getEndTime().isAfter(existing.getStartTime());
-
-            if (overlaps) {
-                throw new RuntimeException("Recruiter already has an overlapping schedule.");
-            }
-        }
-
+        copyEditableFields(input, schedule, branch, recruiter);
+        validate(schedule);
+        validateNoOverlap(schedule);
         return scheduleRepository.save(schedule);
     }
 
-    public void activate(Schedule schedule) {
+    @Transactional
+    public void activate(Long scheduleId) {
+        requireAdmin();
+        Schedule schedule = requireScheduleForUpdate(scheduleId);
         schedule.setActive(true);
         scheduleRepository.save(schedule);
     }
 
-    public void deactivate(Schedule schedule) {
+    @Transactional
+    public void deactivate(Long scheduleId) {
+        requireAdmin();
+        Schedule schedule = requireScheduleForUpdate(scheduleId);
         schedule.setActive(false);
         scheduleRepository.save(schedule);
     }
 
-    public void close(Schedule schedule) {
+    @Transactional
+    public void close(Long scheduleId) {
+        requireAdmin();
+        Schedule schedule = requireScheduleForUpdate(scheduleId);
         schedule.setStatus(ScheduleStatus.CLOSED);
         scheduleRepository.save(schedule);
     }
 
-    public void reopen(Schedule schedule) {
-        schedule.setStatus(ScheduleStatus.OPEN);
+    @Transactional
+    public void reopen(Long scheduleId) {
+        requireAdmin();
+        Schedule schedule = requireScheduleForUpdate(scheduleId);
+        schedule.setStatus(schedule.getBookedCount() >= schedule.getSlotCapacity()
+                ? ScheduleStatus.FULL
+                : ScheduleStatus.OPEN);
         scheduleRepository.save(schedule);
     }
 
-    public void cancel(Schedule schedule) {
+    @Transactional
+    public void cancel(Long scheduleId) {
+        requireAdmin();
+        Schedule schedule = requireScheduleForUpdate(scheduleId);
         if (schedule.getBookedCount() > 0) {
-            throw new RuntimeException("Cannot cancel a booked schedule.");
+            throw new IllegalStateException("Cannot cancel a booked schedule.");
         }
-
         schedule.setStatus(ScheduleStatus.CANCELLED);
         scheduleRepository.save(schedule);
     }
 
-    public BulkScheduleResult generateBulkSchedules(Branch branch, User recruiter, LocalDate startDate, LocalDate endDate, Set<DayOfWeek> selectedDays, LocalTime workStart, LocalTime workEnd, Integer intervalMinutes, Integer slotCapacity, InterviewMode interviewMode, String notes) {
-
-        if (branch == null) {
-            throw new RuntimeException("Branch is required.");
-        }
-
-        if (recruiter == null) {
-            throw new RuntimeException("Recruiter is required.");
-        }
-
-        if (startDate == null || endDate == null) {
-            throw new RuntimeException("Date range is required.");
-        }
-
-        if (selectedDays == null || selectedDays.isEmpty()) {
-            throw new RuntimeException("Please select at least one day.");
-        }
-
-        if (workStart == null || workEnd == null) {
-            throw new RuntimeException("Working hours are required.");
-        }
-
-        if (intervalMinutes == null || intervalMinutes <= 0) {
-            throw new RuntimeException("Interval must be greater than zero.");
-        }
-
-        if (slotCapacity == null || slotCapacity <= 0) {
-            throw new RuntimeException("Slot capacity must be greater than zero.");
-        }
-
-        if (!workEnd.isAfter(workStart)) {
-            throw new RuntimeException("End time must be after start time.");
-        }
-
-        if (recruiter.getBranch() == null || !recruiter.getBranch().getId().equals(branch.getId())) {
-            throw new RuntimeException("Recruiter does not belong to selected branch.");
-        }
+    @Transactional
+    public BulkScheduleResult generateBulkSchedules(
+            Long branchId,
+            Long recruiterId,
+            LocalDate startDate,
+            LocalDate endDate,
+            Set<DayOfWeek> selectedDays,
+            LocalTime workStart,
+            LocalTime workEnd,
+            Integer intervalMinutes,
+            Integer slotCapacity,
+            InterviewMode interviewMode,
+            String notes
+    ) {
+        requireAdmin();
+        Branch branch = requireBranch(branchId);
+        User recruiter = requireRecruiter(recruiterId);
+        validateBulkInput(branch, recruiter, startDate, endDate, selectedDays, workStart, workEnd,
+                intervalMinutes, slotCapacity, interviewMode);
 
         BulkScheduleResult result = new BulkScheduleResult();
-
         LocalDate currentDate = startDate;
-
         while (!currentDate.isAfter(endDate)) {
-
             if (selectedDays.contains(currentDate.getDayOfWeek())) {
-
                 LocalTime slotStart = workStart;
-
                 while (slotStart.isBefore(workEnd)) {
-
                     LocalTime slotEnd = slotStart.plusMinutes(intervalMinutes);
-
                     if (slotEnd.isAfter(workEnd)) {
                         break;
                     }
-
-                    boolean overlapExists = false;
-
-                    List<Schedule> existingSchedules = scheduleRepository.findByRecruiterAndScheduleDate(recruiter, currentDate);
-
-                    for (Schedule existing : existingSchedules) {
-
-                        boolean overlaps = slotStart.isBefore(existing.getEndTime()) && slotEnd.isAfter(existing.getStartTime());
-
-                        if (overlaps) {
-                            overlapExists = true;
-                            break;
-                        }
-                    }
-
-                    if (!overlapExists) {
-
+                    if (hasOverlap(recruiter, currentDate, slotStart, slotEnd, null)) {
+                        result.setSkippedCount(result.getSkippedCount() + 1);
+                    } else {
                         Schedule schedule = new Schedule();
                         schedule.setBranch(branch);
                         schedule.setRecruiter(recruiter);
@@ -172,80 +171,190 @@ public class ScheduleService {
                         schedule.setInterviewMode(interviewMode);
                         schedule.setNotes(notes);
                         schedule.setActive(true);
-
                         scheduleRepository.save(schedule);
-
                         result.setCreatedCount(result.getCreatedCount() + 1);
-
-                    } else {
-
-                        result.setSkippedCount(result.getSkippedCount() + 1);
                     }
-
                     slotStart = slotEnd;
                 }
             }
-
             currentDate = currentDate.plusDays(1);
         }
-
         return result;
     }
 
-    private void validate(Schedule schedule) {
-
-        if (schedule.getBranch() == null) {
-            throw new RuntimeException("Branch is required.");
-        }
-
-        if (schedule.getRecruiter() == null) {
-            throw new RuntimeException("Recruiter is required.");
-        }
-
-        if (schedule.getScheduleDate() == null) {
-            throw new RuntimeException("Schedule date is required.");
-        }
-
-        if (schedule.getInterviewMode() == null) {
-            throw new RuntimeException("Interview mode is required.");
-        }
-
-        if (schedule.getStartTime() == null) {
-            throw new RuntimeException("Start time is required.");
-        }
-
-        if (schedule.getEndTime() == null) {
-            throw new RuntimeException("End time is required.");
-        }
-
-        if (schedule.getSlotCapacity() == null || schedule.getSlotCapacity() <= 0) {
-            throw new RuntimeException("Slot capacity must be greater than zero.");
-        }
-
-        if (!schedule.getEndTime().isAfter(schedule.getStartTime())) {
-            throw new RuntimeException("End time must be after start time.");
-        }
-
-        User recruiter = schedule.getRecruiter();
-
-        if (recruiter.getBranch() == null || !recruiter.getBranch().getId().equals(schedule.getBranch().getId())) {
-            throw new RuntimeException("Recruiter does not belong to selected branch.");
-        }
-
-        if (schedule.getBookedCount() > schedule.getSlotCapacity()) {
-            throw new RuntimeException("Booked count cannot exceed slot capacity.");
-        }
-    }
-
-    public void delete(Schedule schedule) {
+    @Transactional
+    public void delete(Long scheduleId) {
+        requireAdmin();
+        Schedule schedule = requireScheduleForUpdate(scheduleId);
         if (schedule.getBookedCount() > 0) {
-            throw new RuntimeException("Cannot delete a schedule with booked applicants.");
+            throw new IllegalStateException("Cannot delete a schedule with booked applicants.");
         }
-
         scheduleRepository.delete(schedule);
     }
 
-    public List<Schedule> findAvailable() {
-        return scheduleRepository.findByActiveTrueAndStatus(ScheduleStatus.OPEN);
+    @Transactional(readOnly = true)
+    public List<Schedule> findAvailableForCurrentUser() {
+        User actor = securityService.requireOperationsUser();
+        if (actor.getRole() == Role.ADMIN) {
+            return scheduleRepository.findByActiveTrueAndStatus(ScheduleStatus.OPEN);
+        }
+        return scheduleRepository.findByBranchIdAndActiveTrueAndStatusOrderByScheduleDateAscStartTimeAsc(
+                actor.getBranch().getId(), ScheduleStatus.OPEN);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Schedule> findAvailableForCurrentUser(Long branchId) {
+        User actor = securityService.requireOperationsUser();
+        if (branchId == null) {
+            return List.of();
+        }
+        if (actor.getRole() == Role.RECRUITER && !Objects.equals(actor.getBranch().getId(), branchId)) {
+            throw new AccessDeniedException("You may only view schedules within your branch.");
+        }
+        return scheduleRepository.findByBranchIdAndActiveTrueAndStatusOrderByScheduleDateAscStartTimeAsc(
+                branchId, ScheduleStatus.OPEN);
+    }
+
+    private User requireAdmin() {
+        User actor = securityService.requireOperationsUser();
+        if (actor.getRole() != Role.ADMIN) {
+            throw new AccessDeniedException("Only an active administrator may manage schedules.");
+        }
+        return actor;
+    }
+
+    private Schedule requireScheduleForUpdate(Long scheduleId) {
+        if (scheduleId == null) {
+            throw new IllegalArgumentException("Schedule is required.");
+        }
+        return scheduleRepository.findByIdForUpdate(scheduleId)
+                .orElseThrow(() -> new IllegalArgumentException("Schedule not found."));
+    }
+
+    private Branch requireBranch(Branch requestedBranch) {
+        return requireBranch(requestedBranch == null ? null : requestedBranch.getId());
+    }
+
+    private Branch requireBranch(Long branchId) {
+        if (branchId == null) {
+            throw new IllegalArgumentException("Branch is required.");
+        }
+        return branchRepository.findById(branchId)
+                .orElseThrow(() -> new IllegalArgumentException("Branch not found."));
+    }
+
+    private User requireRecruiter(User requestedRecruiter) {
+        return requireRecruiter(requestedRecruiter == null ? null : requestedRecruiter.getId());
+    }
+
+    private User requireRecruiter(Long recruiterId) {
+        if (recruiterId == null) {
+            throw new IllegalArgumentException("Recruiter is required.");
+        }
+        User recruiter = userRepository.findById(recruiterId)
+                .orElseThrow(() -> new IllegalArgumentException("Recruiter not found."));
+        if (recruiter.getRole() != Role.RECRUITER) {
+            throw new IllegalArgumentException("Selected user is not a recruiter.");
+        }
+        return recruiter;
+    }
+
+    private void copyEditableFields(Schedule input, Schedule schedule, Branch branch, User recruiter) {
+        schedule.setBranch(branch);
+        schedule.setRecruiter(recruiter);
+        schedule.setScheduleDate(input.getScheduleDate());
+        schedule.setStartTime(input.getStartTime());
+        schedule.setEndTime(input.getEndTime());
+        schedule.setSlotCapacity(input.getSlotCapacity());
+        schedule.setInterviewMode(input.getInterviewMode());
+        schedule.setNotes(input.getNotes());
+    }
+
+    private void preventBookedScheduleOwnershipChange(Schedule existing, Branch branch, User recruiter) {
+        if (existing.getBookedCount() == null || existing.getBookedCount() <= 0) {
+            return;
+        }
+        if (!Objects.equals(existing.getBranch().getId(), branch.getId())
+                || !Objects.equals(existing.getRecruiter().getId(), recruiter.getId())) {
+            throw new IllegalStateException("A booked schedule cannot be reassigned to another branch or recruiter.");
+        }
+    }
+
+    private void validate(Schedule schedule) {
+        if (schedule.getScheduleDate() == null) {
+            throw new IllegalArgumentException("Schedule date is required.");
+        }
+        if (schedule.getInterviewMode() == null) {
+            throw new IllegalArgumentException("Interview mode is required.");
+        }
+        if (schedule.getStartTime() == null) {
+            throw new IllegalArgumentException("Start time is required.");
+        }
+        if (schedule.getEndTime() == null) {
+            throw new IllegalArgumentException("End time is required.");
+        }
+        if (schedule.getSlotCapacity() == null || schedule.getSlotCapacity() <= 0) {
+            throw new IllegalArgumentException("Slot capacity must be greater than zero.");
+        }
+        if (!schedule.getEndTime().isAfter(schedule.getStartTime())) {
+            throw new IllegalArgumentException("End time must be after start time.");
+        }
+        if (schedule.getRecruiter().getBranch() == null
+                || !Objects.equals(schedule.getRecruiter().getBranch().getId(), schedule.getBranch().getId())) {
+            throw new IllegalArgumentException("Recruiter does not belong to selected branch.");
+        }
+        if (schedule.getBookedCount() == null || schedule.getBookedCount() > schedule.getSlotCapacity()) {
+            throw new IllegalArgumentException("Booked count cannot exceed slot capacity.");
+        }
+    }
+
+    private void validateNoOverlap(Schedule schedule) {
+        if (hasOverlap(schedule.getRecruiter(), schedule.getScheduleDate(), schedule.getStartTime(),
+                schedule.getEndTime(), schedule.getId())) {
+            throw new IllegalStateException("Recruiter already has an overlapping schedule.");
+        }
+    }
+
+    private boolean hasOverlap(User recruiter, LocalDate date, LocalTime startTime, LocalTime endTime,
+                               Long excludedScheduleId) {
+        return scheduleRepository.findByRecruiterAndScheduleDate(recruiter, date).stream()
+                .filter(existing -> !Objects.equals(existing.getId(), excludedScheduleId))
+                .anyMatch(existing -> startTime.isBefore(existing.getEndTime())
+                        && endTime.isAfter(existing.getStartTime()));
+    }
+
+    private void validateBulkInput(
+            Branch branch,
+            User recruiter,
+            LocalDate startDate,
+            LocalDate endDate,
+            Set<DayOfWeek> selectedDays,
+            LocalTime workStart,
+            LocalTime workEnd,
+            Integer intervalMinutes,
+            Integer slotCapacity,
+            InterviewMode interviewMode
+    ) {
+        if (startDate == null || endDate == null || endDate.isBefore(startDate)) {
+            throw new IllegalArgumentException("A valid date range is required.");
+        }
+        if (selectedDays == null || selectedDays.isEmpty()) {
+            throw new IllegalArgumentException("Please select at least one day.");
+        }
+        if (workStart == null || workEnd == null || !workEnd.isAfter(workStart)) {
+            throw new IllegalArgumentException("End time must be after start time.");
+        }
+        if (intervalMinutes == null || intervalMinutes <= 0) {
+            throw new IllegalArgumentException("Interval must be greater than zero.");
+        }
+        if (slotCapacity == null || slotCapacity <= 0) {
+            throw new IllegalArgumentException("Slot capacity must be greater than zero.");
+        }
+        if (interviewMode == null) {
+            throw new IllegalArgumentException("Interview mode is required.");
+        }
+        if (recruiter.getBranch() == null || !Objects.equals(recruiter.getBranch().getId(), branch.getId())) {
+            throw new IllegalArgumentException("Recruiter does not belong to selected branch.");
+        }
     }
 }

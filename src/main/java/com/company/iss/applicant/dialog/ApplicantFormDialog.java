@@ -1,6 +1,9 @@
 package com.company.iss.applicant.dialog;
 
 import com.company.iss.applicant.entity.Applicant;
+import com.company.iss.auth.entity.Role;
+import com.company.iss.auth.entity.User;
+import com.company.iss.branch.entity.Branch;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.service.PositionOpeningService;
 import com.vaadin.flow.component.button.Button;
@@ -28,6 +31,7 @@ public class ApplicantFormDialog extends Dialog {
     private EmailField emailField;
     private TextField mobileNumberField;
     private ComboBox<PositionOpening> positionOpeningField;
+    private ComboBox<Branch> branchField;
     private TextField sourceField;
     private TextArea remarksField;
 
@@ -35,7 +39,13 @@ public class ApplicantFormDialog extends Dialog {
         void onSave(Applicant applicant);
     }
 
-    public ApplicantFormDialog(Applicant applicant, PositionOpeningService positionOpeningService, SaveListener saveListener) {
+    public ApplicantFormDialog(
+            Applicant applicant,
+            PositionOpeningService positionOpeningService,
+            User actor,
+            java.util.List<Branch> branches,
+            SaveListener saveListener
+    ) {
         this.applicant = applicant;
         this.saveListener = saveListener;
 
@@ -45,7 +55,10 @@ public class ApplicantFormDialog extends Dialog {
         setCloseOnOutsideClick(false);
         setCloseOnEsc(false);
 
-        initFields(positionOpeningService);
+        initFields(positionOpeningService, actor, branches);
+        if (actor.getRole() == Role.RECRUITER) {
+            applicant.setBranch(actor.getBranch());
+        }
         bindFields();
 
         add(buildForm());
@@ -53,7 +66,7 @@ public class ApplicantFormDialog extends Dialog {
         getFooter().add(buildFooter());
     }
 
-    private void initFields(PositionOpeningService positionOpeningService) {
+    private void initFields(PositionOpeningService positionOpeningService, User actor, java.util.List<Branch> branches) {
 
         firstNameField = new TextField("First Name");
         firstNameField.setWidthFull();
@@ -74,6 +87,15 @@ public class ApplicantFormDialog extends Dialog {
         positionOpeningField.setItems(positionOpeningService.findActive());
         positionOpeningField.setItemLabelGenerator(o -> o.getTitle() + " | " + o.getClient().getCompanyName() + " | " + o.getWorkLocation());
         positionOpeningField.setWidthFull();
+
+        branchField = new ComboBox<>("Owning Branch");
+        branchField.setItems(branches);
+        branchField.setItemLabelGenerator(Branch::getBranchName);
+        branchField.setWidthFull();
+        if (actor.getRole() == Role.RECRUITER) {
+            branchField.setValue(actor.getBranch());
+            branchField.setReadOnly(true);
+        }
 
         sourceField = new TextField("Source");
         sourceField.setWidthFull();
@@ -96,6 +118,8 @@ public class ApplicantFormDialog extends Dialog {
 
         binder.forField(positionOpeningField).asRequired("Position opening is required").bind(Applicant::getPositionOpening, Applicant::setPositionOpening);
 
+        binder.forField(branchField).asRequired("Branch is required").bind(Applicant::getBranch, Applicant::setBranch);
+
         binder.forField(sourceField).bind(Applicant::getSource, Applicant::setSource);
 
         binder.forField(remarksField).bind(Applicant::getRemarks, Applicant::setRemarks);
@@ -106,7 +130,7 @@ public class ApplicantFormDialog extends Dialog {
     private FormLayout buildForm() {
         FormLayout form = new FormLayout();
 
-        form.add(firstNameField, middleNameField, lastNameField, emailField, mobileNumberField, positionOpeningField, sourceField, remarksField);
+        form.add(firstNameField, middleNameField, lastNameField, emailField, mobileNumberField, branchField, positionOpeningField, sourceField, remarksField);
 
         form.setColspan(remarksField, 2);
 

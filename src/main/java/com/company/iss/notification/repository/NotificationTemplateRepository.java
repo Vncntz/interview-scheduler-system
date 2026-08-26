@@ -12,6 +12,8 @@ public interface NotificationTemplateRepository extends JpaRepository<Notificati
 
     Optional<NotificationTemplate> findByEventAndChannelAndActiveTrue(NotificationEvent event, NotificationChannel channel);
 
+    boolean existsByEventAndChannel(NotificationEvent event, NotificationChannel channel);
+
     List<NotificationTemplate> findAllByOrderByEventAsc();
 
 }

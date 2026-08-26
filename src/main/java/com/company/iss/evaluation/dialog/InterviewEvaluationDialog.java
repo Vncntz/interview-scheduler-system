@@ -1,11 +1,9 @@
 package com.company.iss.evaluation.dialog;
 
-import com.company.iss.auth.entity.User;
 import com.company.iss.booking.entity.Booking;
-import com.company.iss.evaluation.entity.InterviewEvaluation;
+import com.company.iss.evaluation.dto.CreateEvaluationCommand;
 import com.company.iss.evaluation.entity.InterviewResult;
 import com.company.iss.evaluation.service.InterviewEvaluationService;
-import com.company.iss.auth.service.SecurityService;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -21,7 +19,6 @@ public class InterviewEvaluationDialog extends Dialog {
 
     private final Booking booking;
     private final InterviewEvaluationService interviewEvaluationService;
-    private final SecurityService securityService;
     private final Runnable onSave;
 
     private IntegerField communicationScoreField;
@@ -30,10 +27,9 @@ public class InterviewEvaluationDialog extends Dialog {
     private ComboBox<InterviewResult> resultField;
     private TextArea remarksField;
 
-    public InterviewEvaluationDialog(Booking booking, InterviewEvaluationService interviewEvaluationService, SecurityService securityService, Runnable onSave) {
+    public InterviewEvaluationDialog(Booking booking, InterviewEvaluationService interviewEvaluationService, Runnable onSave) {
         this.booking = booking;
         this.interviewEvaluationService = interviewEvaluationService;
-        this.securityService = securityService;
         this.onSave = onSave;
 
         setHeaderTitle("Interview Evaluation");
@@ -96,20 +92,14 @@ public class InterviewEvaluationDialog extends Dialog {
 
     private void save() {
         try {
-            User currentUser = securityService.getCurrentUser();
-
-            InterviewEvaluation evaluation = new InterviewEvaluation();
-
-            evaluation.setBooking(booking);
-            evaluation.setApplicant(booking.getApplicant());
-            evaluation.setEvaluator(currentUser);
-            evaluation.setCommunicationScore(communicationScoreField.getValue());
-            evaluation.setTechnicalScore(technicalScoreField.getValue());
-            evaluation.setAttitudeScore(attitudeScoreField.getValue());
-            evaluation.setResult(resultField.getValue());
-            evaluation.setRemarks(remarksField.getValue());
-
-            interviewEvaluationService.save(evaluation);
+            interviewEvaluationService.create(new CreateEvaluationCommand(
+                    booking.getId(),
+                    communicationScoreField.getValue(),
+                    technicalScoreField.getValue(),
+                    attitudeScoreField.getValue(),
+                    resultField.getValue(),
+                    remarksField.getValue()
+            ));
 
             Notification.show("Evaluation saved successfully.", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
 

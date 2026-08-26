@@ -7,17 +7,21 @@ import com.company.iss.notification.entity.NotificationTemplate;
 import com.company.iss.notification.repository.NotificationSettingsRepository;
 import com.company.iss.notification.repository.NotificationTemplateRepository;
 import jakarta.annotation.PostConstruct;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class NotificationDataGenerator {
 
-    @Autowired
-    private NotificationSettingsRepository notificationSettingsRepository;
+    private final NotificationSettingsRepository notificationSettingsRepository;
+    private final NotificationTemplateRepository notificationTemplateRepository;
 
-    @Autowired
-    private NotificationTemplateRepository notificationTemplateRepository;
+    public NotificationDataGenerator(
+            NotificationSettingsRepository notificationSettingsRepository,
+            NotificationTemplateRepository notificationTemplateRepository
+    ) {
+        this.notificationSettingsRepository = notificationSettingsRepository;
+        this.notificationTemplateRepository = notificationTemplateRepository;
+    }
 
     @PostConstruct
     public void init() {
@@ -42,11 +46,7 @@ public class NotificationDataGenerator {
     }
 
     private void seedTemplates() {
-        if (notificationTemplateRepository.count() > 0) {
-            return;
-        }
-
-        createTemplate(NotificationEvent.BOOKING_CREATED, "Interview Schedule Confirmation", """
+        createTemplateIfMissing(NotificationEvent.BOOKING_CREATED, "Interview Schedule Confirmation", """
                 Good day {{applicantName}},
                 
                 Your interview has been successfully scheduled.
@@ -63,7 +63,7 @@ public class NotificationDataGenerator {
                 Thank you.
                 """);
 
-        createTemplate(NotificationEvent.BOOKING_CONFIRMED, "Interview Booking Confirmed", """
+        createTemplateIfMissing(NotificationEvent.BOOKING_CONFIRMED, "Interview Booking Confirmed", """
                 Good day {{applicantName}},
                 
                 Your interview booking has been confirmed.
@@ -75,7 +75,7 @@ public class NotificationDataGenerator {
                 Thank you.
                 """);
 
-        createTemplate(NotificationEvent.BOOKING_CANCELLED, "Interview Booking Cancelled", """
+        createTemplateIfMissing(NotificationEvent.BOOKING_CANCELLED, "Interview Booking Cancelled", """
                 Good day {{applicantName}},
                 
                 Your interview booking has been cancelled.
@@ -86,9 +86,28 @@ public class NotificationDataGenerator {
                 
                 Thank you.
                 """);
+
+        createTemplateIfMissing(NotificationEvent.BOOKING_RESCHEDULED, "Interview Booking Rescheduled", """
+                Good day {{applicantName}},
+
+                Your interview booking has been rescheduled.
+
+                Booking Reference: {{bookingReference}}
+                Position: {{position}}
+                Interview Date: {{date}}
+                Interview Time: {{time}}
+                Recruiter: {{recruiter}}
+                Interview Mode: {{interviewMode}}
+
+                Thank you.
+                """);
     }
 
-    private void createTemplate(NotificationEvent event, String subject, String body) {
+    private void createTemplateIfMissing(NotificationEvent event, String subject, String body) {
+        if (notificationTemplateRepository.existsByEventAndChannel(event, NotificationChannel.EMAIL)) {
+            return;
+        }
+
         NotificationTemplate template = new NotificationTemplate();
 
         template.setEvent(event);

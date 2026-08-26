@@ -1,6 +1,7 @@
 package com.company.iss.shared.view;
 
 import com.company.iss.auth.entity.User;
+import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.service.SecurityService;
 import com.vaadin.flow.component.applayout.AppLayout;
 import com.vaadin.flow.component.applayout.DrawerToggle;
@@ -106,7 +107,7 @@ public class MainLayout extends AppLayout {
 
         drawerContent.add(
                 createUserCard(user),
-                createSideNav()
+                createSideNav(user)
         );
 
         Scroller scroller =
@@ -182,13 +183,20 @@ public class MainLayout extends AppLayout {
         return userCard;
     }
 
-    private SideNav createSideNav() {
+    private SideNav createSideNav(User user) {
         SideNav nav = new SideNav();
-
-        nav.addItem(
+        if (user.getRole() == Role.RECRUITER) {
+            nav.addItem(
+                    new SideNavItem("Workbench", "/workbench", VaadinIcon.DASHBOARD.create()),
+                    new SideNavItem("Applicants", "/applicants", VaadinIcon.USER_CARD.create()),
+                    new SideNavItem("Bookings", "/bookings", VaadinIcon.CLIPBOARD_CHECK.create()),
+                    new SideNavItem("Evaluations", "/evaluations", VaadinIcon.CLIPBOARD_TEXT.create())
+            );
+        } else if (user.getRole() == Role.ADMIN) {
+            nav.addItem(
                 new SideNavItem(
                         "Dashboard",
-                        "/",
+                        "/dashboard",
                         VaadinIcon.DASHBOARD.create()
                 ),
 
@@ -250,22 +258,9 @@ public class MainLayout extends AppLayout {
                         "Notification Templates",
                         "/notification-templates",
                         VaadinIcon.FILE_CODE.create()
-                ),
-
-                new SideNavItem(
-                        "Audit Logs",
-                        "/audit",
-                        VaadinIcon.FILE_TEXT.create()
-                ),
-
-                new SideNavItem(
-                        "Settings",
-                        "/settings",
-                        VaadinIcon.COG.create()
                 )
-        );
-
-
+            );
+        }
 
         nav.setWidthFull();
 

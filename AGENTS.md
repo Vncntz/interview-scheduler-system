@@ -236,3 +236,44 @@ Before considering a change complete, verify:
 - Tests cover success, validation failure, authorization failure, and relevant concurrency/rollback cases.
 - The Maven Wrapper test suite passes, or the exact verification blocker is reported.
 - The final diff contains no unrelated edits or generated build output.
+
+## Automated Development Workflow
+
+For non-trivial requests that modify application source code,
+application behavior, tests, persistence behavior, security behavior, or
+architecture, use the `iss-development-workflow` skill.
+
+The primary Codex agent acts as the development orchestrator. It must
+classify the request before selecting specialists.
+
+## Multi-Agent Request Routing
+
+Available specialists:
+
+- `feature-strategist` — recommends what should be built and prioritized
+- `architect` — designs selected features and architectural changes
+- `diagnostician` — investigates failures and determines root causes
+- `implementer` — owns source-code modifications
+- `reviewer` — independently validates changes
+
+Default routing:
+
+- Feature recommendation: `feature-strategist`
+- Selected new feature: `architect → implementer → reviewer`
+- Bug/error: `diagnostician → implementer → reviewer`
+- Bug requiring architecture: `diagnostician → architect → implementer → reviewer`
+- Architecture/refactor: `architect → implementer → reviewer`
+- Review only: `reviewer`
+- Read-only explanation: parent agent or an appropriate read-only specialist
+
+Do not automatically implement a strategist recommendation unless the
+user explicitly requested both recommendation and implementation. Do
+not make speculative fixes when the diagnostician reports insufficient
+evidence. The implementer should normally be the only specialist
+modifying production source code.
+
+Do not run dependent architecture, implementation, and review phases in
+parallel. The workflow permits at most two automatic repair cycles.
+
+Never automatically commit or push unless explicitly requested by the
+user. Preserve unrelated uncommitted user changes.

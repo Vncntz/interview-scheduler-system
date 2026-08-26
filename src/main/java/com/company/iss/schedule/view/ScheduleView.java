@@ -95,7 +95,7 @@ public class ScheduleView extends VerticalLayout {
                 closeButton.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_SMALL);
 
                 closeButton.addClickListener(e -> {
-                    scheduleService.close(schedule);
+                    scheduleService.close(schedule.getId());
                     init();
                 });
 
@@ -104,7 +104,7 @@ public class ScheduleView extends VerticalLayout {
 
                 cancelButton.addClickListener(e -> {
                     try {
-                        scheduleService.cancel(schedule);
+                        scheduleService.cancel(schedule.getId());
                         init();
                     } catch (Exception ex) {
                         Notification.show(ex.getMessage(), 5000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
@@ -119,7 +119,7 @@ public class ScheduleView extends VerticalLayout {
                 reopenButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SMALL);
 
                 reopenButton.addClickListener(e -> {
-                    scheduleService.reopen(schedule);
+                    scheduleService.reopen(schedule.getId());
                     init();
                 });
 
@@ -128,7 +128,7 @@ public class ScheduleView extends VerticalLayout {
 
                 cancelButton.addClickListener(e -> {
                     try {
-                        scheduleService.cancel(schedule);
+                        scheduleService.cancel(schedule.getId());
                         init();
                     } catch (Exception ex) {
                         Notification.show(ex.getMessage(), 5000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
@@ -194,7 +194,7 @@ public class ScheduleView extends VerticalLayout {
         }
 
         try {
-            scheduleService.delete(selected);
+            scheduleService.delete(selected.getId());
 
             Notification.show("Schedule deleted successfully.", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
 

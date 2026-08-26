@@ -47,7 +47,9 @@ public class BookingFormDialog extends Dialog {
 
         scheduleField = new ComboBox<>("Available Schedule");
 
-        List<Schedule> schedules = scheduleService.findAvailable();
+        List<Schedule> schedules = scheduleService.findAvailableForCurrentUser(
+                applicant.getBranch() == null ? null : applicant.getBranch().getId()
+        );
 
         scheduleField.setItems(schedules);
 

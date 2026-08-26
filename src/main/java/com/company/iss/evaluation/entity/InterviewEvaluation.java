@@ -11,12 +11,16 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "interview_evaluations")
+@Table(
+        name = "interview_evaluations",
+        uniqueConstraints = @UniqueConstraint(name = "uk_interview_evaluation_booking", columnNames = "booking_id")
+)
 @Getter
 @Setter
 public class InterviewEvaluation extends BaseEntity {
 
-    @ManyToOne
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "booking_id", nullable = false)
     private Booking booking;
 
     @ManyToOne

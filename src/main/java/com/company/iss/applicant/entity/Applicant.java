@@ -1,6 +1,7 @@
 package com.company.iss.applicant.entity;
 
 import com.company.iss.position.entity.PositionOpening;
+import com.company.iss.branch.entity.Branch;
 import com.company.iss.shared.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -11,6 +12,10 @@ import lombok.Setter;
 @Getter
 @Setter
 public class Applicant extends BaseEntity {
+
+    @ManyToOne
+    @JoinColumn(name = "branch_id")
+    private Branch branch;
 
     @Column(nullable = false, length = 100)
     private String firstName;
