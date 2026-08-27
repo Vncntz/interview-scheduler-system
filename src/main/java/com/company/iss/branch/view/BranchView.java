@@ -4,6 +4,7 @@ import com.company.iss.branch.dialog.BranchFormDialog;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.branch.service.BranchService;
 import com.company.iss.shared.view.MainLayout;
+import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.grid.Grid;
@@ -149,7 +150,7 @@ public class BranchView extends VerticalLayout {
                 init();
                 Notification.show("Branch saved successfully!", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
             } catch (Exception ex) {
-                Notification.show("Error saving record: " + ex.getMessage(), 5000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
+                UserSafeNotifier.showError(ex);
             }
         });
         dialog.open();

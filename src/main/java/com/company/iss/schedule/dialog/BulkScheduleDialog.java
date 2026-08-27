@@ -7,6 +7,7 @@ import com.company.iss.recruiter.service.RecruiterService;
 import com.company.iss.schedule.dto.BulkScheduleResult;
 import com.company.iss.schedule.entity.InterviewMode;
 import com.company.iss.schedule.service.ScheduleService;
+import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.CheckboxGroup;
@@ -182,7 +183,7 @@ public class BulkScheduleDialog extends Dialog {
             close();
 
         } catch (Exception ex) {
-            showError(ex.getMessage());
+            UserSafeNotifier.showError(ex);
         }
     }
 

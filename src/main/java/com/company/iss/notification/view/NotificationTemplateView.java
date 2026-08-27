@@ -4,6 +4,7 @@ import com.company.iss.notification.dialog.NotificationTemplateFormDialog;
 import com.company.iss.notification.entity.NotificationTemplate;
 import com.company.iss.notification.service.NotificationTemplateService;
 import com.company.iss.shared.view.MainLayout;
+import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.grid.Grid;
@@ -81,7 +82,7 @@ public class NotificationTemplateView extends VerticalLayout {
                 init();
 
             } catch (Exception ex) {
-                Notification.show(ex.getMessage(), 4000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
+                UserSafeNotifier.showError(ex);
             }
         });
 

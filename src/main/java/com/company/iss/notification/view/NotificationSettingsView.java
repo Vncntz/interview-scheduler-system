@@ -3,6 +3,7 @@ package com.company.iss.notification.view;
 import com.company.iss.notification.entity.NotificationSettings;
 import com.company.iss.notification.service.NotificationSettingsService;
 import com.company.iss.shared.view.MainLayout;
+import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
@@ -207,7 +208,7 @@ public class NotificationSettingsView extends VerticalLayout {
             Notification.show("Settings saved successfully.", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
 
         } catch (Exception ex) {
-            Notification.show(ex.getMessage(), 4000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
+            UserSafeNotifier.showError(ex);
         }
     }
 

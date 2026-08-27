@@ -7,6 +7,10 @@ target/
 .env
 logs/
 *.log
+/src/main/frontend/generated/css.generated.js
+/src/main/frontend/generated/vite-devmode.ts
+/vite.generated.ts
+/src/main/bundles/
 
 ### STS ###
 .apt_generated

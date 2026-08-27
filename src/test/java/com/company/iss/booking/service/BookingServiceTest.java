@@ -23,6 +23,7 @@ import com.company.iss.schedule.entity.InterviewMode;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.repository.ScheduleRepository;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -249,7 +250,10 @@ class BookingServiceTest {
         when(applicantService.findForBookingUpdate(300L, actor)).thenReturn(applicant);
         when(scheduleRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(schedule));
 
-        assertThrows(IllegalArgumentException.class, () -> bookingService.createBooking(300L, 2L, "Remarks"));
+        assertThrows(
+                BusinessRuleViolationException.class,
+                () -> bookingService.createBooking(300L, 2L, "Remarks")
+        );
 
         assertEquals(0, schedule.getBookedCount());
         verify(scheduleRepository, never()).save(any());

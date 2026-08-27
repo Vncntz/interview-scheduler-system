@@ -12,6 +12,7 @@ import com.company.iss.branch.entity.Branch;
 import com.company.iss.branch.repository.BranchRepository;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.repository.PositionOpeningRepository;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,7 +46,7 @@ public class ApplicantService {
     @Transactional
     public Applicant save(Applicant input) {
         if (input == null) {
-            throw new IllegalArgumentException("Applicant is required.");
+            throw new BusinessRuleViolationException("Applicant is required.");
         }
         validateRequiredFields(input);
 
@@ -139,11 +140,11 @@ public class ApplicantService {
 
     private Applicant findForUpdate(Long applicantId, User actor) {
         if (applicantId == null) {
-            throw new IllegalArgumentException("Applicant is required.");
+            throw new BusinessRuleViolationException("Applicant is required.");
         }
         if (actor.getRole() == Role.ADMIN) {
             return applicantRepository.findByIdForUpdate(applicantId)
-                    .orElseThrow(() -> new IllegalArgumentException("Applicant not found."));
+                    .orElseThrow(() -> new BusinessRuleViolationException("Applicant not found."));
         }
         return applicantRepository.findByIdAndBranchIdForUpdate(applicantId, actor.getBranch().getId())
                 .orElseThrow(() -> new AccessDeniedException("You may only manage applicants within your branch."));
@@ -151,21 +152,21 @@ public class ApplicantService {
 
     private PositionOpening requirePosition(Applicant input) {
         if (input.getPositionOpening() == null || input.getPositionOpening().getId() == null) {
-            throw new IllegalArgumentException("Position opening is required.");
+            throw new BusinessRuleViolationException("Position opening is required.");
         }
         return positionOpeningRepository.findById(input.getPositionOpening().getId())
-                .orElseThrow(() -> new IllegalArgumentException("Position opening not found."));
+                .orElseThrow(() -> new BusinessRuleViolationException("Position opening not found."));
     }
 
     private void validateRequiredFields(Applicant input) {
         if (input.getFirstName() == null || input.getFirstName().isBlank()) {
-            throw new IllegalArgumentException("First name is required.");
+            throw new BusinessRuleViolationException("First name is required.");
         }
         if (input.getLastName() == null || input.getLastName().isBlank()) {
-            throw new IllegalArgumentException("Last name is required.");
+            throw new BusinessRuleViolationException("Last name is required.");
         }
         if (input.getMobileNumber() == null || input.getMobileNumber().isBlank()) {
-            throw new IllegalArgumentException("Mobile number is required.");
+            throw new BusinessRuleViolationException("Mobile number is required.");
         }
     }
 
@@ -174,19 +175,19 @@ public class ApplicantService {
             return actor.getBranch();
         }
         if (requestedBranch == null || requestedBranch.getId() == null) {
-            throw new IllegalArgumentException("Branch is required.");
+            throw new BusinessRuleViolationException("Branch is required.");
         }
         return branchRepository.findById(requestedBranch.getId())
-                .orElseThrow(() -> new IllegalArgumentException("Branch not found."));
+                .orElseThrow(() -> new BusinessRuleViolationException("Branch not found."));
     }
 
     private void validateEmailAvailable(String email, Long currentApplicantId) {
         if (email == null || email.isBlank()) {
-            throw new IllegalArgumentException("Email is required.");
+            throw new BusinessRuleViolationException("Email is required.");
         }
         applicantRepository.findByEmail(email).ifPresent(existing -> {
             if (!Objects.equals(existing.getId(), currentApplicantId)) {
-                throw new IllegalArgumentException("Applicant email already exists.");
+                throw new BusinessRuleViolationException("Applicant email already exists.");
             }
         });
     }
@@ -199,7 +200,7 @@ public class ApplicantService {
         }
         if (bookingRepository.existsByApplicantIdAndStatusIn(
                 existing.getId(), List.of(BookingStatus.BOOKED, BookingStatus.CONFIRMED))) {
-            throw new IllegalStateException(
+            throw new BusinessRuleViolationException(
                     "An applicant with an active booking cannot be reassigned to another branch."
             );
         }

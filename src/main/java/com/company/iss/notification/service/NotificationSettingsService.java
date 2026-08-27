@@ -2,6 +2,7 @@ package com.company.iss.notification.service;
 
 import com.company.iss.notification.entity.NotificationSettings;
 import com.company.iss.notification.repository.NotificationSettingsRepository;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -31,25 +32,25 @@ public class NotificationSettingsService {
 
     private void validate(NotificationSettings settings) {
         if (settings.getCompanyName() == null || settings.getCompanyName().isBlank()) {
-            throw new RuntimeException("Company name is required.");
+            throw new BusinessRuleViolationException("Company name is required.");
         }
 
         if (Boolean.TRUE.equals(settings.getEmailEnabled())) {
 
             if (settings.getSmtpHost() == null || settings.getSmtpHost().isBlank()) {
-                throw new RuntimeException("SMTP host is required.");
+                throw new BusinessRuleViolationException("SMTP host is required.");
             }
 
             if (settings.getSmtpPort() == null) {
-                throw new RuntimeException("SMTP port is required.");
+                throw new BusinessRuleViolationException("SMTP port is required.");
             }
 
             if (settings.getSmtpUsername() == null || settings.getSmtpUsername().isBlank()) {
-                throw new RuntimeException("SMTP username is required.");
+                throw new BusinessRuleViolationException("SMTP username is required.");
             }
 
             if (settings.getSmtpPassword() == null || settings.getSmtpPassword().isBlank()) {
-                throw new RuntimeException("SMTP password is required.");
+                throw new BusinessRuleViolationException("SMTP password is required.");
             }
         }
     }

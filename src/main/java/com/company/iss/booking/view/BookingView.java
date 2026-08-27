@@ -9,6 +9,7 @@ import com.company.iss.booking.service.BookingService;
 import com.company.iss.evaluation.dialog.InterviewEvaluationDialog;
 import com.company.iss.evaluation.service.InterviewEvaluationService;
 import com.company.iss.shared.view.MainLayout;
+import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.grid.Grid;
@@ -189,17 +190,17 @@ public class BookingView extends VerticalLayout {
                             init();
                             return true;
                         } catch (BookingRescheduleException | AccessDeniedException exception) {
-                            showNotification(exception.getMessage(), true);
+                            UserSafeNotifier.showError(exception);
                             return false;
                         } catch (RuntimeException exception) {
-                            showNotification("The interview could not be rescheduled. Please try again.", true);
+                            UserSafeNotifier.showError(exception);
                             return false;
                         }
                     }
             );
             dialog.open();
         } catch (BookingRescheduleException | AccessDeniedException exception) {
-            showNotification(exception.getMessage(), true);
+            UserSafeNotifier.showError(exception);
         }
     }
 
@@ -210,16 +211,10 @@ public class BookingView extends VerticalLayout {
             init();
         } catch (BookingCancellationException | AccessDeniedException
                  | IllegalArgumentException | IllegalStateException exception) {
-            showNotification(safeErrorMessage(exception), true);
+            UserSafeNotifier.showError(exception);
         } catch (RuntimeException exception) {
-            showNotification("The booking action could not be completed. Please try again.", true);
+            UserSafeNotifier.showError(exception);
         }
-    }
-
-    private String safeErrorMessage(RuntimeException exception) {
-        return exception.getMessage() == null || exception.getMessage().isBlank()
-                ? "The booking action could not be completed."
-                : exception.getMessage();
     }
 
     private void showNotification(String message, boolean error) {

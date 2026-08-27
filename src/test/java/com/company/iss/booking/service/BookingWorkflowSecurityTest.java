@@ -15,6 +15,7 @@ import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
 import com.company.iss.notification.service.NotificationService;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.repository.ScheduleRepository;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -89,7 +90,7 @@ class BookingWorkflowSecurityTest {
         when(securityService.getCurrentUser()).thenReturn(recruiter(1L));
         when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking(50L, 1L, BookingStatus.BOOKED)));
 
-        assertThrows(IllegalStateException.class, () -> service.markNoShow(50L));
+        assertThrows(BusinessRuleViolationException.class, () -> service.markNoShow(50L));
 
         verify(bookingRepository, never()).save(any());
     }

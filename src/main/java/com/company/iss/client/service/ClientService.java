@@ -2,6 +2,7 @@ package com.company.iss.client.service;
 
 import com.company.iss.client.entity.Client;
 import com.company.iss.client.repository.ClientRepository;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -35,7 +36,7 @@ public class ClientService {
         if (existingClient.isPresent()) {
 
             if (client.getId() == null || !existingClient.get().getId().equals(client.getId())) {
-                throw new RuntimeException("Client company already exists.");
+                throw new BusinessRuleViolationException("Client company already exists.");
             }
         }
 
@@ -55,11 +56,11 @@ public class ClientService {
     private void validate(Client client) {
 
         if (client.getCompanyName() == null || client.getCompanyName().isBlank()) {
-            throw new RuntimeException("Company name is required.");
+            throw new BusinessRuleViolationException("Company name is required.");
         }
 
         if (client.getAddress() == null || client.getAddress().isBlank()) {
-            throw new RuntimeException("Address is required.");
+            throw new BusinessRuleViolationException("Address is required.");
         }
     }
 }

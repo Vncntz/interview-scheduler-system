@@ -13,8 +13,8 @@ import lombok.Setter;
 @Setter
 public class Applicant extends BaseEntity {
 
-    @ManyToOne
-    @JoinColumn(name = "branch_id")
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
 
     @Column(nullable = false, length = 100)

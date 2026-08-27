@@ -4,6 +4,7 @@ import com.company.iss.notification.entity.NotificationChannel;
 import com.company.iss.notification.entity.NotificationEvent;
 import com.company.iss.notification.entity.NotificationTemplate;
 import com.company.iss.notification.repository.NotificationTemplateRepository;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -31,15 +32,15 @@ public class NotificationTemplateService {
 
     private void validate(NotificationTemplate template) {
         if (template.getEvent() == null) {
-            throw new RuntimeException("Notification event is required.");
+            throw new BusinessRuleViolationException("Notification event is required.");
         }
 
         if (template.getChannel() == null) {
-            throw new RuntimeException("Notification channel is required.");
+            throw new BusinessRuleViolationException("Notification channel is required.");
         }
 
         if (template.getBody() == null || template.getBody().isBlank()) {
-            throw new RuntimeException("Template body is required.");
+            throw new BusinessRuleViolationException("Template body is required.");
         }
     }
 }

@@ -9,6 +9,7 @@ import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.service.ScheduleService;
 import com.company.iss.shared.util.DateTimeUtil;
 import com.company.iss.shared.view.MainLayout;
+import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.grid.Grid;
@@ -107,7 +108,7 @@ public class ScheduleView extends VerticalLayout {
                         scheduleService.cancel(schedule.getId());
                         init();
                     } catch (Exception ex) {
-                        Notification.show(ex.getMessage(), 5000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
+                        UserSafeNotifier.showError(ex);
                     }
                 });
 
@@ -131,7 +132,7 @@ public class ScheduleView extends VerticalLayout {
                         scheduleService.cancel(schedule.getId());
                         init();
                     } catch (Exception ex) {
-                        Notification.show(ex.getMessage(), 5000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
+                        UserSafeNotifier.showError(ex);
                     }
                 });
 
@@ -201,7 +202,7 @@ public class ScheduleView extends VerticalLayout {
             init();
 
         } catch (Exception ex) {
-            Notification.show(ex.getMessage(), 5000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
+            UserSafeNotifier.showError(ex);
         }
     }
 
@@ -239,7 +240,7 @@ public class ScheduleView extends VerticalLayout {
                 init();
 
             } catch (Exception ex) {
-                Notification.show(ex.getMessage(), 5000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
+                UserSafeNotifier.showError(ex);
             }
         });
 

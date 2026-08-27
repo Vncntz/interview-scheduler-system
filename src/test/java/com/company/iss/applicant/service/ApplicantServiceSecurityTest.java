@@ -11,6 +11,7 @@ import com.company.iss.branch.entity.Branch;
 import com.company.iss.branch.repository.BranchRepository;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.repository.PositionOpeningRepository;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -90,9 +91,31 @@ class ApplicantServiceSecurityTest {
         when(bookingRepository.existsByApplicantIdAndStatusIn(
                 99L, List.of(BookingStatus.BOOKED, BookingStatus.CONFIRMED))).thenReturn(true);
 
-        assertThrows(IllegalStateException.class, () -> service.save(input));
+        assertThrows(BusinessRuleViolationException.class, () -> service.save(input));
 
         assertSame(existingBranch, existing.getBranch());
+        verify(applicantRepository, never()).save(org.mockito.ArgumentMatchers.any(Applicant.class));
+        verify(positionOpeningRepository, never()).save(org.mockito.ArgumentMatchers.any(PositionOpening.class));
+    }
+
+    @Test
+    void adminCannotCreateApplicantWithoutExplicitBranch() {
+        User admin = new User();
+        admin.setRole(Role.ADMIN);
+        admin.setActive(true);
+        PositionOpening position = new PositionOpening();
+        position.setId(30L);
+        Applicant input = validApplicant(null, null, position);
+
+        when(securityService.requireOperationsUser()).thenReturn(admin);
+        when(positionOpeningRepository.findById(30L)).thenReturn(Optional.of(position));
+
+        BusinessRuleViolationException error = assertThrows(
+                BusinessRuleViolationException.class,
+                () -> service.save(input)
+        );
+
+        assertTrue(error.getMessage().contains("Branch is required"));
         verify(applicantRepository, never()).save(org.mockito.ArgumentMatchers.any(Applicant.class));
         verify(positionOpeningRepository, never()).save(org.mockito.ArgumentMatchers.any(PositionOpening.class));
     }

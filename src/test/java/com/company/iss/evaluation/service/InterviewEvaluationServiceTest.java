@@ -16,6 +16,7 @@ import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.repository.PositionOpeningRepository;
 import com.company.iss.schedule.entity.Schedule;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -93,7 +94,7 @@ class InterviewEvaluationServiceTest {
         when(securityService.requireOperationsUser()).thenReturn(actor);
         when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
 
-        assertThrows(IllegalStateException.class, () -> service.create(command(20L)));
+        assertThrows(BusinessRuleViolationException.class, () -> service.create(command(20L)));
 
         verify(evaluationRepository, never()).save(any());
     }

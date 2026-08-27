@@ -4,6 +4,7 @@ import com.company.iss.client.entity.Client;
 import com.company.iss.client.service.ClientService;
 import com.company.iss.position.entity.EmploymentType;
 import com.company.iss.position.entity.PositionOpening;
+import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -134,8 +135,7 @@ public class PositionOpeningFormDialog extends Dialog {
             Notification.show("Please fix validation errors.", 4000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
 
         } catch (Exception e) {
-
-            Notification.show(e.getMessage(), 4000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
+            UserSafeNotifier.showError(e);
         }
     }
 }

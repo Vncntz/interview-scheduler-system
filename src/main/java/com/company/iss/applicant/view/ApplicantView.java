@@ -11,6 +11,7 @@ import com.company.iss.branch.service.BranchService;
 import com.company.iss.position.service.PositionOpeningService;
 import com.company.iss.schedule.service.ScheduleService;
 import com.company.iss.shared.view.MainLayout;
+import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.grid.Grid;
@@ -175,7 +176,7 @@ public class ApplicantView extends VerticalLayout {
                 init();
 
             } catch (Exception ex) {
-                Notification.show(ex.getMessage(), 5000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
+                UserSafeNotifier.showError(ex);
             }
                 });
 
@@ -199,7 +200,7 @@ public class ApplicantView extends VerticalLayout {
                 init();
 
             } catch (Exception ex) {
-                Notification.show(ex.getMessage(), 4000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
+                UserSafeNotifier.showError(ex);
             }
         });
 

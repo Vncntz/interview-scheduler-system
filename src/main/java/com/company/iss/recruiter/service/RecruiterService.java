@@ -4,6 +4,7 @@ import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.auth.repository.UserRepository;
 import com.company.iss.branch.entity.Branch;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -39,7 +40,7 @@ public class RecruiterService {
 
         if (user.getId() == null) {
             if (userRepository.existsByEmail(user.getEmail())) {
-                throw new RuntimeException("Email already exists.");
+                throw new BusinessRuleViolationException("Email already exists.");
             }
 
             user.setRole(Role.RECRUITER);
@@ -69,15 +70,15 @@ public class RecruiterService {
 
     private void validate(User user) {
         if (user.getFullName() == null || user.getFullName().isBlank()) {
-            throw new RuntimeException("Full name is required.");
+            throw new BusinessRuleViolationException("Full name is required.");
         }
 
         if (user.getEmail() == null || user.getEmail().isBlank()) {
-            throw new RuntimeException("Email is required.");
+            throw new BusinessRuleViolationException("Email is required.");
         }
 
         if (user.getBranch() == null) {
-            throw new RuntimeException("Branch is required.");
+            throw new BusinessRuleViolationException("Branch is required.");
         }
     }
 }

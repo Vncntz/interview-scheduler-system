@@ -12,6 +12,7 @@ import com.company.iss.evaluation.dto.CreateEvaluationCommand;
 import com.company.iss.evaluation.entity.InterviewEvaluation;
 import com.company.iss.evaluation.entity.InterviewResult;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.repository.PositionOpeningRepository;
 import org.springframework.security.access.AccessDeniedException;
@@ -47,19 +48,19 @@ public class InterviewEvaluationService {
         validateCommand(command);
         User actor = securityService.requireOperationsUser();
         Booking booking = bookingRepository.findByIdForUpdate(command.bookingId())
-                .orElseThrow(() -> new IllegalArgumentException("Booking not found."));
+                .orElseThrow(() -> new BusinessRuleViolationException("Booking not found."));
         authorize(actor, booking);
 
         if (booking.getStatus() != BookingStatus.ATTENDED) {
-            throw new IllegalStateException("Only attended bookings can be evaluated.");
+            throw new BusinessRuleViolationException("Only attended bookings can be evaluated.");
         }
         if (evaluationRepository.existsByBookingId(booking.getId())) {
-            throw new IllegalStateException("Booking already has an evaluation.");
+            throw new BusinessRuleViolationException("Booking already has an evaluation.");
         }
 
         Applicant applicant = booking.getApplicant();
         if (applicant == null) {
-            throw new IllegalStateException("Booking does not have an applicant.");
+            throw new BusinessRuleViolationException("Booking does not have an applicant.");
         }
 
         InterviewEvaluation evaluation = new InterviewEvaluation();
@@ -82,7 +83,7 @@ public class InterviewEvaluationService {
     /** Compatibility entry point for existing UI callers; identity is always derived from the current user. */
     public InterviewEvaluation save(InterviewEvaluation evaluation) {
         if (evaluation == null || evaluation.getBooking() == null) {
-            throw new IllegalArgumentException("Booking is required.");
+            throw new BusinessRuleViolationException("Booking is required.");
         }
         return create(new CreateEvaluationCommand(
                 evaluation.getBooking().getId(),
@@ -107,19 +108,19 @@ public class InterviewEvaluationService {
 
     private void validateCommand(CreateEvaluationCommand command) {
         if (command == null || command.bookingId() == null) {
-            throw new IllegalArgumentException("Booking is required.");
+            throw new BusinessRuleViolationException("Booking is required.");
         }
         validateScore(command.communicationScore());
         validateScore(command.technicalScore());
         validateScore(command.attitudeScore());
         if (command.result() == null) {
-            throw new IllegalArgumentException("Interview result is required.");
+            throw new BusinessRuleViolationException("Interview result is required.");
         }
     }
 
     private void validateScore(Integer score) {
         if (score == null || score < 1 || score > 10) {
-            throw new IllegalArgumentException("Scores must be between 1 and 10.");
+            throw new BusinessRuleViolationException("Scores must be between 1 and 10.");
         }
     }
 

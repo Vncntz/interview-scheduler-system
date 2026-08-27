@@ -18,7 +18,7 @@ class ApplicantRepositoryTest {
     @Autowired BranchRepository branchRepository;
 
     @Test
-    void persistsBranchOwnershipAndExcludesBranchlessApplicantsFromRecruiterQuery() {
+    void persistsBranchOwnershipAndScopesApplicantsToTheRequestedBranch() {
         Branch branch = new Branch();
         branch.setBranchCode("OWN");
         branch.setBranchName("Owned Branch");
@@ -27,10 +27,20 @@ class ApplicantRepositoryTest {
         branch.setProvince("Province");
         branch = branchRepository.saveAndFlush(branch);
 
+        Branch otherBranch = new Branch();
+        otherBranch.setBranchCode("OTHER");
+        otherBranch.setBranchName("Other Branch");
+        otherBranch.setAddress("Other address");
+        otherBranch.setCity("Other city");
+        otherBranch.setProvince("Other province");
+        otherBranch = branchRepository.saveAndFlush(otherBranch);
+
         Applicant owned = applicant("owned@example.test");
         owned.setBranch(branch);
         owned = applicantRepository.saveAndFlush(owned);
-        applicantRepository.saveAndFlush(applicant("legacy@example.test"));
+        Applicant outOfScope = applicant("other@example.test");
+        outOfScope.setBranch(otherBranch);
+        applicantRepository.saveAndFlush(outOfScope);
 
         var scoped = applicantRepository.findByBranchIdOrderByLastNameAscFirstNameAsc(branch.getId());
 

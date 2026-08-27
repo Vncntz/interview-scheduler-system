@@ -6,6 +6,7 @@ import com.company.iss.branch.service.BranchService;
 import com.company.iss.recruiter.service.RecruiterService;
 import com.company.iss.schedule.entity.InterviewMode;
 import com.company.iss.schedule.entity.Schedule;
+import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -169,7 +170,7 @@ public class ScheduleFormDialog extends Dialog {
             showError("Please fix validation errors.");
 
         } catch (Exception e) {
-            showError(e.getMessage());
+            UserSafeNotifier.showError(e);
         }
     }
 

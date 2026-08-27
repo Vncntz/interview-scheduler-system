@@ -11,6 +11,7 @@ import com.company.iss.schedule.entity.InterviewMode;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.repository.ScheduleRepository;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,7 +62,7 @@ public class ScheduleService {
     public Schedule save(Schedule input) {
         requireAdmin();
         if (input == null) {
-            throw new IllegalArgumentException("Schedule is required.");
+            throw new BusinessRuleViolationException("Schedule is required.");
         }
         Branch branch = requireBranch(input.getBranch());
         User recruiter = requireRecruiter(input.getRecruiter());
@@ -120,7 +121,7 @@ public class ScheduleService {
         requireAdmin();
         Schedule schedule = requireScheduleForUpdate(scheduleId);
         if (schedule.getBookedCount() > 0) {
-            throw new IllegalStateException("Cannot cancel a booked schedule.");
+            throw new BusinessRuleViolationException("Cannot cancel a booked schedule.");
         }
         schedule.setStatus(ScheduleStatus.CANCELLED);
         scheduleRepository.save(schedule);
@@ -187,7 +188,7 @@ public class ScheduleService {
         requireAdmin();
         Schedule schedule = requireScheduleForUpdate(scheduleId);
         if (schedule.getBookedCount() > 0) {
-            throw new IllegalStateException("Cannot delete a schedule with booked applicants.");
+            throw new BusinessRuleViolationException("Cannot delete a schedule with booked applicants.");
         }
         scheduleRepository.delete(schedule);
     }
@@ -225,10 +226,10 @@ public class ScheduleService {
 
     private Schedule requireScheduleForUpdate(Long scheduleId) {
         if (scheduleId == null) {
-            throw new IllegalArgumentException("Schedule is required.");
+            throw new BusinessRuleViolationException("Schedule is required.");
         }
         return scheduleRepository.findByIdForUpdate(scheduleId)
-                .orElseThrow(() -> new IllegalArgumentException("Schedule not found."));
+                .orElseThrow(() -> new BusinessRuleViolationException("Schedule not found."));
     }
 
     private Branch requireBranch(Branch requestedBranch) {
@@ -237,10 +238,10 @@ public class ScheduleService {
 
     private Branch requireBranch(Long branchId) {
         if (branchId == null) {
-            throw new IllegalArgumentException("Branch is required.");
+            throw new BusinessRuleViolationException("Branch is required.");
         }
         return branchRepository.findById(branchId)
-                .orElseThrow(() -> new IllegalArgumentException("Branch not found."));
+                .orElseThrow(() -> new BusinessRuleViolationException("Branch not found."));
     }
 
     private User requireRecruiter(User requestedRecruiter) {
@@ -249,12 +250,12 @@ public class ScheduleService {
 
     private User requireRecruiter(Long recruiterId) {
         if (recruiterId == null) {
-            throw new IllegalArgumentException("Recruiter is required.");
+            throw new BusinessRuleViolationException("Recruiter is required.");
         }
         User recruiter = userRepository.findById(recruiterId)
-                .orElseThrow(() -> new IllegalArgumentException("Recruiter not found."));
+                .orElseThrow(() -> new BusinessRuleViolationException("Recruiter not found."));
         if (recruiter.getRole() != Role.RECRUITER) {
-            throw new IllegalArgumentException("Selected user is not a recruiter.");
+            throw new BusinessRuleViolationException("Selected user is not a recruiter.");
         }
         return recruiter;
     }
@@ -276,42 +277,42 @@ public class ScheduleService {
         }
         if (!Objects.equals(existing.getBranch().getId(), branch.getId())
                 || !Objects.equals(existing.getRecruiter().getId(), recruiter.getId())) {
-            throw new IllegalStateException("A booked schedule cannot be reassigned to another branch or recruiter.");
+            throw new BusinessRuleViolationException("A booked schedule cannot be reassigned to another branch or recruiter.");
         }
     }
 
     private void validate(Schedule schedule) {
         if (schedule.getScheduleDate() == null) {
-            throw new IllegalArgumentException("Schedule date is required.");
+            throw new BusinessRuleViolationException("Schedule date is required.");
         }
         if (schedule.getInterviewMode() == null) {
-            throw new IllegalArgumentException("Interview mode is required.");
+            throw new BusinessRuleViolationException("Interview mode is required.");
         }
         if (schedule.getStartTime() == null) {
-            throw new IllegalArgumentException("Start time is required.");
+            throw new BusinessRuleViolationException("Start time is required.");
         }
         if (schedule.getEndTime() == null) {
-            throw new IllegalArgumentException("End time is required.");
+            throw new BusinessRuleViolationException("End time is required.");
         }
         if (schedule.getSlotCapacity() == null || schedule.getSlotCapacity() <= 0) {
-            throw new IllegalArgumentException("Slot capacity must be greater than zero.");
+            throw new BusinessRuleViolationException("Slot capacity must be greater than zero.");
         }
         if (!schedule.getEndTime().isAfter(schedule.getStartTime())) {
-            throw new IllegalArgumentException("End time must be after start time.");
+            throw new BusinessRuleViolationException("End time must be after start time.");
         }
         if (schedule.getRecruiter().getBranch() == null
                 || !Objects.equals(schedule.getRecruiter().getBranch().getId(), schedule.getBranch().getId())) {
-            throw new IllegalArgumentException("Recruiter does not belong to selected branch.");
+            throw new BusinessRuleViolationException("Recruiter does not belong to selected branch.");
         }
         if (schedule.getBookedCount() == null || schedule.getBookedCount() > schedule.getSlotCapacity()) {
-            throw new IllegalArgumentException("Booked count cannot exceed slot capacity.");
+            throw new BusinessRuleViolationException("Booked count cannot exceed slot capacity.");
         }
     }
 
     private void validateNoOverlap(Schedule schedule) {
         if (hasOverlap(schedule.getRecruiter(), schedule.getScheduleDate(), schedule.getStartTime(),
                 schedule.getEndTime(), schedule.getId())) {
-            throw new IllegalStateException("Recruiter already has an overlapping schedule.");
+            throw new BusinessRuleViolationException("Recruiter already has an overlapping schedule.");
         }
     }
 
@@ -336,25 +337,25 @@ public class ScheduleService {
             InterviewMode interviewMode
     ) {
         if (startDate == null || endDate == null || endDate.isBefore(startDate)) {
-            throw new IllegalArgumentException("A valid date range is required.");
+            throw new BusinessRuleViolationException("A valid date range is required.");
         }
         if (selectedDays == null || selectedDays.isEmpty()) {
-            throw new IllegalArgumentException("Please select at least one day.");
+            throw new BusinessRuleViolationException("Please select at least one day.");
         }
         if (workStart == null || workEnd == null || !workEnd.isAfter(workStart)) {
-            throw new IllegalArgumentException("End time must be after start time.");
+            throw new BusinessRuleViolationException("End time must be after start time.");
         }
         if (intervalMinutes == null || intervalMinutes <= 0) {
-            throw new IllegalArgumentException("Interval must be greater than zero.");
+            throw new BusinessRuleViolationException("Interval must be greater than zero.");
         }
         if (slotCapacity == null || slotCapacity <= 0) {
-            throw new IllegalArgumentException("Slot capacity must be greater than zero.");
+            throw new BusinessRuleViolationException("Slot capacity must be greater than zero.");
         }
         if (interviewMode == null) {
-            throw new IllegalArgumentException("Interview mode is required.");
+            throw new BusinessRuleViolationException("Interview mode is required.");
         }
         if (recruiter.getBranch() == null || !Objects.equals(recruiter.getBranch().getId(), branch.getId())) {
-            throw new IllegalArgumentException("Recruiter does not belong to selected branch.");
+            throw new BusinessRuleViolationException("Recruiter does not belong to selected branch.");
         }
     }
 }

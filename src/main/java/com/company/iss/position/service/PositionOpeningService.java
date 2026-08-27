@@ -3,6 +3,7 @@ package com.company.iss.position.service;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.entity.PositionStatus;
 import com.company.iss.position.repository.PositionOpeningRepository;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -94,27 +95,27 @@ public class PositionOpeningService {
     private void validate(PositionOpening positionOpening) {
 
         if (positionOpening.getTitle() == null || positionOpening.getTitle().isBlank()) {
-            throw new RuntimeException("Position title is required.");
+            throw new BusinessRuleViolationException("Position title is required.");
         }
 
         if (positionOpening.getClient() == null) {
-            throw new RuntimeException("Client is required.");
+            throw new BusinessRuleViolationException("Client is required.");
         }
 
         if (positionOpening.getWorkLocation() == null || positionOpening.getWorkLocation().isBlank()) {
-            throw new RuntimeException("Work location is required.");
+            throw new BusinessRuleViolationException("Work location is required.");
         }
 
         if (positionOpening.getEmploymentType() == null) {
-            throw new RuntimeException("Employment type is required.");
+            throw new BusinessRuleViolationException("Employment type is required.");
         }
 
         if (positionOpening.getRequiredHeadcount() == null || positionOpening.getRequiredHeadcount() <= 0) {
-            throw new RuntimeException("Required headcount must be greater than zero.");
+            throw new BusinessRuleViolationException("Required headcount must be greater than zero.");
         }
 
         if (positionOpening.getHiredCount() > positionOpening.getRequiredHeadcount()) {
-            throw new RuntimeException("Hired count cannot exceed required headcount.");
+            throw new BusinessRuleViolationException("Hired count cannot exceed required headcount.");
         }
     }
 }

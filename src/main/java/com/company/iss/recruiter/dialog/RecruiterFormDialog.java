@@ -3,6 +3,7 @@ package com.company.iss.recruiter.dialog;
 import com.company.iss.auth.entity.User;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.branch.service.BranchService;
+import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -14,6 +15,7 @@ import com.vaadin.flow.component.textfield.EmailField;
 import com.vaadin.flow.component.textfield.PasswordField;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.binder.Binder;
+import com.vaadin.flow.data.binder.ValidationException;
 import org.springframework.beans.factory.annotation.Autowired;
 
 public class RecruiterFormDialog extends Dialog {
@@ -72,8 +74,10 @@ public class RecruiterFormDialog extends Dialog {
             saveListener.onSave(user, temporaryPassword);
             close();
 
-        } catch (Exception e) {
+        } catch (ValidationException e) {
             Notification.show("Please fix the validation errors before saving.", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
+        } catch (Exception e) {
+            UserSafeNotifier.showError(e);
         }
     }
 }

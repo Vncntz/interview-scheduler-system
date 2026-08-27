@@ -2,6 +2,7 @@ package com.company.iss.branch.service;
 
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.branch.repository.BranchRepository;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -30,7 +31,7 @@ public class BranchService {
 
         if (branch.getId() == null &&
                 branchRepository.existsByBranchCode(branch.getBranchCode())) {
-            throw new RuntimeException("Branch code already exists.");
+            throw new BusinessRuleViolationException("Branch code already exists.");
         }
 
         return branchRepository.save(branch);
@@ -48,23 +49,23 @@ public class BranchService {
 
     private void validate(Branch branch) {
         if (branch.getBranchCode() == null || branch.getBranchCode().isBlank()) {
-            throw new RuntimeException("Branch code is required.");
+            throw new BusinessRuleViolationException("Branch code is required.");
         }
 
         if (branch.getBranchName() == null || branch.getBranchName().isBlank()) {
-            throw new RuntimeException("Branch name is required.");
+            throw new BusinessRuleViolationException("Branch name is required.");
         }
 
         if (branch.getAddress() == null || branch.getAddress().isBlank()) {
-            throw new RuntimeException("Address is required.");
+            throw new BusinessRuleViolationException("Address is required.");
         }
 
         if (branch.getCity() == null || branch.getCity().isBlank()) {
-            throw new RuntimeException("City is required.");
+            throw new BusinessRuleViolationException("City is required.");
         }
 
         if (branch.getProvince() == null || branch.getProvince().isBlank()) {
-            throw new RuntimeException("Province is required.");
+            throw new BusinessRuleViolationException("Province is required.");
         }
     }
 

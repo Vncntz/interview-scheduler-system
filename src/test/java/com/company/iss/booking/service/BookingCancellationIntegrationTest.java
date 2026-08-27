@@ -217,7 +217,7 @@ class BookingCancellationIntegrationTest {
         Branch branch = saveBranch(suffix);
         User recruiter = saveUser(suffix.toLowerCase() + "-recruiter@example.test", Role.RECRUITER, branch);
         Schedule schedule = saveSchedule(branch, recruiter, bookedCount, capacity, status);
-        Applicant applicant = saveApplicant("BK-" + suffix);
+        Applicant applicant = saveApplicant("BK-" + suffix, branch);
         Booking booking = saveBooking("BK-" + suffix, applicant, schedule);
         return new CancellationFixture(booking.getId(), schedule.getId(), applicant.getId());
     }
@@ -277,12 +277,13 @@ class BookingCancellationIntegrationTest {
         return scheduleRepository.saveAndFlush(schedule);
     }
 
-    private Applicant saveApplicant(String reference) {
+    private Applicant saveApplicant(String reference, Branch branch) {
         Applicant applicant = new Applicant();
         applicant.setFirstName(reference);
         applicant.setLastName("Applicant");
         applicant.setEmail(reference.toLowerCase() + "@example.test");
         applicant.setMobileNumber("09170000000");
+        applicant.setBranch(branch);
         applicant.setStatus(ApplicantStatus.SCHEDULED);
         applicant.setActive(true);
         return applicantRepository.saveAndFlush(applicant);

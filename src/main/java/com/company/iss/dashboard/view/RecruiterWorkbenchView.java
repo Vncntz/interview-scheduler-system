@@ -9,6 +9,7 @@ import com.company.iss.evaluation.dialog.InterviewEvaluationDialog;
 import com.company.iss.evaluation.service.InterviewEvaluationService;
 import com.company.iss.shared.util.DateTimeUtil;
 import com.company.iss.shared.view.MainLayout;
+import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -149,7 +150,7 @@ public class RecruiterWorkbenchView extends VerticalLayout {
                 Booking booking = bookingService.findScopedById(interview.bookingId());
                 new InterviewEvaluationDialog(booking, evaluationService, this::refresh).open();
             } catch (RuntimeException exception) {
-                showError(exception.getMessage());
+                UserSafeNotifier.showError(exception);
             }
         });
         button.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SMALL);
@@ -163,16 +164,7 @@ public class RecruiterWorkbenchView extends VerticalLayout {
             success.addThemeVariants(NotificationVariant.LUMO_SUCCESS);
             refresh();
         } catch (RuntimeException exception) {
-            showError(exception.getMessage());
+            UserSafeNotifier.showError(exception);
         }
-    }
-
-    private void showError(String message) {
-        Notification error = Notification.show(
-                message == null || message.isBlank() ? "The action could not be completed." : message,
-                4000,
-                Notification.Position.TOP_CENTER
-        );
-        error.addThemeVariants(NotificationVariant.LUMO_ERROR);
     }
 }

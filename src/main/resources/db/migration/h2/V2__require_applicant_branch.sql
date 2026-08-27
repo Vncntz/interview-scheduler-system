@@ -1,0 +1,2 @@
+ALTER TABLE applicants
+    ALTER COLUMN branch_id BIGINT NOT NULL;

@@ -6,6 +6,7 @@ import com.company.iss.auth.entity.User;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.service.PositionOpeningService;
+import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -164,8 +165,7 @@ public class ApplicantFormDialog extends Dialog {
             Notification.show("Please fix validation errors.", 4000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
 
         } catch (Exception e) {
-
-            Notification.show(e.getMessage(), 4000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
+            UserSafeNotifier.showError(e);
         }
     }
 }

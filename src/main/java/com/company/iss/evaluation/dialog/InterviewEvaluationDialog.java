@@ -4,6 +4,7 @@ import com.company.iss.booking.entity.Booking;
 import com.company.iss.evaluation.dto.CreateEvaluationCommand;
 import com.company.iss.evaluation.entity.InterviewResult;
 import com.company.iss.evaluation.service.InterviewEvaluationService;
+import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -108,7 +109,7 @@ public class InterviewEvaluationDialog extends Dialog {
             close();
 
         } catch (Exception ex) {
-            Notification.show(ex.getMessage(), 4000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_ERROR);
+            UserSafeNotifier.showError(ex);
         }
     }
 }
