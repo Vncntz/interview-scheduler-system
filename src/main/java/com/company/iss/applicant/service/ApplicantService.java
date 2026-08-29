@@ -2,6 +2,7 @@ package com.company.iss.applicant.service;
 
 import com.company.iss.applicant.entity.Applicant;
 import com.company.iss.applicant.entity.ApplicantStatus;
+import com.company.iss.applicant.dto.ApplicantGridFilter;
 import com.company.iss.applicant.repository.ApplicantRepository;
 import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
@@ -16,12 +17,15 @@ import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.PageRequest;
 
 import java.util.List;
 import java.util.Objects;
 
 @Service
 public class ApplicantService {
+
+    private static final int MAX_GRID_PAGE_SIZE = 100;
 
     private final ApplicantRepository applicantRepository;
     private final PositionOpeningRepository positionOpeningRepository;
@@ -96,26 +100,27 @@ public class ApplicantService {
     }
 
     @Transactional(readOnly = true)
-    public List<Applicant> search(String keyword) {
+    public List<Applicant> findGridPage(ApplicantGridFilter filter, int page, int pageSize) {
+        validateGridPage(page, pageSize);
         User actor = securityService.requireOperationsUser();
-        if (actor.getRole() == Role.ADMIN) {
-            if (keyword == null || keyword.isBlank()) {
-                return applicantRepository.findAll();
-            }
-            return applicantRepository
-                    .findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCaseOrEmailContainingIgnoreCase(
-                            keyword, keyword, keyword
-                    );
-        }
+        ApplicantGridFilter normalizedFilter = filter == null ? ApplicantGridFilter.empty() : filter;
+        return applicantRepository.findGridPage(
+                gridBranchId(actor),
+                normalizedFilter.keyword(),
+                normalizedFilter.status(),
+                PageRequest.of(page, pageSize)
+        );
+    }
 
-        Long branchId = actor.getBranch().getId();
-        if (keyword == null || keyword.isBlank()) {
-            return applicantRepository.findByBranchIdOrderByLastNameAscFirstNameAsc(branchId);
-        }
-        return applicantRepository
-                .findByBranchIdAndFirstNameContainingIgnoreCaseOrBranchIdAndLastNameContainingIgnoreCaseOrBranchIdAndEmailContainingIgnoreCase(
-                        branchId, keyword, branchId, keyword, branchId, keyword
-                );
+    @Transactional(readOnly = true)
+    public long countGrid(ApplicantGridFilter filter) {
+        User actor = securityService.requireOperationsUser();
+        ApplicantGridFilter normalizedFilter = filter == null ? ApplicantGridFilter.empty() : filter;
+        return applicantRepository.countGrid(
+                gridBranchId(actor),
+                normalizedFilter.keyword(),
+                normalizedFilter.status()
+        );
     }
 
     @Transactional
@@ -152,6 +157,19 @@ public class ApplicantService {
         }
         return applicantRepository.findByIdAndBranchIdForUpdate(applicantId, actor.getBranch().getId())
                 .orElseThrow(() -> new AccessDeniedException("You may only manage applicants within your branch."));
+    }
+
+    private Long gridBranchId(User actor) {
+        return actor.getRole() == Role.ADMIN ? null : actor.getBranch().getId();
+    }
+
+    private void validateGridPage(int page, int pageSize) {
+        if (page < 0) {
+            throw new IllegalArgumentException("Grid page must not be negative.");
+        }
+        if (pageSize < 1 || pageSize > MAX_GRID_PAGE_SIZE) {
+            throw new IllegalArgumentException("Grid page size must be between 1 and 100.");
+        }
     }
 
     private PositionOpening requirePosition(Applicant input) {

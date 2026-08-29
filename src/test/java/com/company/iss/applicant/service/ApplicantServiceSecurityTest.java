@@ -1,6 +1,8 @@
 package com.company.iss.applicant.service;
 
 import com.company.iss.applicant.entity.Applicant;
+import com.company.iss.applicant.dto.ApplicantGridFilter;
+import com.company.iss.applicant.entity.ApplicantStatus;
 import com.company.iss.applicant.repository.ApplicantRepository;
 import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.data.domain.PageRequest;
 
 import java.util.List;
 import java.util.Optional;
@@ -25,6 +28,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -57,12 +61,55 @@ class ApplicantServiceSecurityTest {
     void recruiterListUsesOnlyTheActorsBranchQuery() {
         User recruiter = recruiter(12L);
         when(securityService.requireOperationsUser()).thenReturn(recruiter);
-        when(applicantRepository.findByBranchIdOrderByLastNameAscFirstNameAsc(12L)).thenReturn(List.of());
+        when(applicantRepository.findGridPage(12L, null, null, PageRequest.of(0, 50))).thenReturn(List.of());
 
-        assertTrue(service.search(null).isEmpty());
+        assertTrue(service.findGridPage(null, 0, 50).isEmpty());
 
-        verify(applicantRepository).findByBranchIdOrderByLastNameAscFirstNameAsc(12L);
+        verify(applicantRepository).findGridPage(12L, null, null, PageRequest.of(0, 50));
         verify(applicantRepository, never()).findAll();
+    }
+
+    @Test
+    void adminGridPageUsesGlobalNormalizedFilterAndBoundedPageRequest() {
+        User admin = new User();
+        admin.setRole(Role.ADMIN);
+        admin.setActive(true);
+        when(securityService.requireOperationsUser()).thenReturn(admin);
+        when(applicantRepository.findGridPage(
+                null, "alex", ApplicantStatus.SCREENING, PageRequest.of(2, 25)
+        )).thenReturn(List.of());
+
+        service.findGridPage(new ApplicantGridFilter("  ALEX  ", ApplicantStatus.SCREENING), 2, 25);
+
+        verify(applicantRepository).findGridPage(
+                null, "alex", ApplicantStatus.SCREENING, PageRequest.of(2, 25)
+        );
+    }
+
+    @Test
+    void recruiterCountUsesTheActorsApplicantBranchScope() {
+        User recruiter = recruiter(12L);
+        when(securityService.requireOperationsUser()).thenReturn(recruiter);
+        when(applicantRepository.countGrid(12L, "candidate", ApplicantStatus.NEW)).thenReturn(7L);
+
+        long count = service.countGrid(new ApplicantGridFilter(" candidate ", ApplicantStatus.NEW));
+
+        assertEquals(7L, count);
+        verify(applicantRepository).countGrid(12L, "candidate", ApplicantStatus.NEW);
+    }
+
+    @Test
+    void rejectsInvalidGridBoundsBeforeRepositoryAccess() {
+        assertThrows(IllegalArgumentException.class, () -> service.findGridPage(null, -1, 50));
+        assertThrows(IllegalArgumentException.class, () -> service.findGridPage(null, 0, 0));
+        assertThrows(IllegalArgumentException.class, () -> service.findGridPage(null, 0, 101));
+
+        verify(applicantRepository, never()).findGridPage(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
     }
 
     @Test
