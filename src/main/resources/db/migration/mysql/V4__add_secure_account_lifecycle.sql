@@ -1,0 +1,58 @@
+ALTER TABLE notification_templates
+    MODIFY COLUMN event ENUM (
+        'BOOKING_CANCELLED',
+        'BOOKING_CONFIRMED',
+        'BOOKING_CREATED',
+        'BOOKING_RESCHEDULED',
+        'HIRED',
+        'INTERVIEW_RESULT',
+        'JOB_OFFERED',
+        'PASSWORD_RESET'
+    ) NOT NULL;
+
+CREATE TABLE password_reset_requests (
+    target_user_id BIGINT NOT NULL,
+    requesting_admin_id BIGINT NOT NULL,
+    expires_at DATETIME(6) NOT NULL,
+    consumed_at DATETIME(6),
+    invalidated_at DATETIME(6),
+    created_at DATETIME(6) NOT NULL,
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    updated_at DATETIME(6) NOT NULL,
+    version BIGINT,
+    public_request_id VARCHAR(32) NOT NULL,
+    token_hash VARCHAR(64) NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_password_reset_public_id UNIQUE (public_request_id),
+    CONSTRAINT uk_password_reset_token_hash UNIQUE (token_hash),
+    CONSTRAINT fk_password_reset_target FOREIGN KEY (target_user_id) REFERENCES users (id),
+    CONSTRAINT fk_password_reset_admin FOREIGN KEY (requesting_admin_id) REFERENCES users (id),
+    INDEX ix_password_reset_user_expiry (target_user_id, expires_at),
+    INDEX ix_password_reset_expiry (expires_at)
+) ENGINE=InnoDB;
+
+CREATE TABLE account_security_audits (
+    target_user_id BIGINT NOT NULL,
+    actor_user_id BIGINT,
+    occurred_at DATETIME(6) NOT NULL,
+    created_at DATETIME(6) NOT NULL,
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    updated_at DATETIME(6) NOT NULL,
+    version BIGINT,
+    event ENUM (
+        'LOGIN_SUCCEEDED',
+        'LOGIN_FAILED',
+        'ACCOUNT_LOCKED',
+        'ACCOUNT_UNLOCKED',
+        'PASSWORD_CHANGED',
+        'PASSWORD_RESET_REQUESTED',
+        'PASSWORD_RESET_COMPLETED',
+        'ACCOUNT_ACTIVATED',
+        'ACCOUNT_DEACTIVATED'
+    ) NOT NULL,
+    reason_code VARCHAR(80),
+    PRIMARY KEY (id),
+    CONSTRAINT fk_account_audit_target FOREIGN KEY (target_user_id) REFERENCES users (id),
+    CONSTRAINT fk_account_audit_actor FOREIGN KEY (actor_user_id) REFERENCES users (id),
+    INDEX ix_account_audit_target_occurred (target_user_id, occurred_at)
+) ENGINE=InnoDB;

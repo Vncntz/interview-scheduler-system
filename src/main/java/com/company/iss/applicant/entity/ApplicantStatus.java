@@ -7,6 +7,8 @@ public enum ApplicantStatus {
     SCHEDULED,
     INTERVIEWED,
     PASSED,
+    OFFERED,
+    OFFER_DECLINED,
     FAILED,
     WITHDRAWN,
     HIRED,

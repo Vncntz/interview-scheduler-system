@@ -64,10 +64,10 @@ public class MainLayout extends AppLayout {
                 );
 
         userMenu.getSubMenu()
-                .addItem("My Profile");
+                .addItem("My Profile", event -> getUI().ifPresent(ui -> ui.navigate("profile")));
 
         userMenu.getSubMenu()
-                .addItem("Change Password");
+                .addItem("Change Password", event -> getUI().ifPresent(ui -> ui.navigate("change-password")));
 
         userMenu.getSubMenu()
                 .addItem(
@@ -190,7 +190,8 @@ public class MainLayout extends AppLayout {
                     new SideNavItem("Workbench", "/workbench", VaadinIcon.DASHBOARD.create()),
                     new SideNavItem("Applicants", "/applicants", VaadinIcon.USER_CARD.create()),
                     new SideNavItem("Bookings", "/bookings", VaadinIcon.CLIPBOARD_CHECK.create()),
-                    new SideNavItem("Evaluations", "/evaluations", VaadinIcon.CLIPBOARD_TEXT.create())
+                    new SideNavItem("Evaluations", "/evaluations", VaadinIcon.CLIPBOARD_TEXT.create()),
+                    new SideNavItem("Hiring Decisions", "/hiring-decisions", VaadinIcon.TROPHY.create())
             );
         } else if (user.getRole() == Role.ADMIN) {
             nav.addItem(
@@ -246,6 +247,12 @@ public class MainLayout extends AppLayout {
                         "Evaluations",
                         "/evaluations",
                         VaadinIcon.CLIPBOARD_TEXT.create()
+                ),
+
+                new SideNavItem(
+                        "Hiring Decisions",
+                        "/hiring-decisions",
+                        VaadinIcon.TROPHY.create()
                 ),
 
                 new SideNavItem(

@@ -1,5 +1,6 @@
 package com.company.iss.notification.service;
 
+import com.company.iss.notification.config.NotificationRuntimeProperties;
 import com.company.iss.notification.entity.NotificationSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,9 +26,14 @@ public class EmailService {
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
 
     private final NotificationSettingsService notificationSettingsService;
+    private final NotificationRuntimeProperties runtimeProperties;
 
-    public EmailService(NotificationSettingsService notificationSettingsService) {
+    public EmailService(
+            NotificationSettingsService notificationSettingsService,
+            NotificationRuntimeProperties runtimeProperties
+    ) {
         this.notificationSettingsService = notificationSettingsService;
+        this.runtimeProperties = runtimeProperties;
     }
 
     @Async
@@ -56,7 +62,7 @@ public class EmailService {
             logKnownFailure(recipient, "SMTP_AUTHENTICATION_FAILED", "SMTP username is missing");
             return;
         }
-        if (settings.getSmtpPassword() == null || settings.getSmtpPassword().isBlank()) {
+        if (!runtimeProperties.getSmtp().isPasswordConfigured()) {
             logKnownFailure(recipient, "SMTP_AUTHENTICATION_FAILED", "SMTP password is missing");
             return;
         }
@@ -95,7 +101,7 @@ public class EmailService {
         mailSender.setHost(settings.getSmtpHost());
         mailSender.setPort(settings.getSmtpPort());
         mailSender.setUsername(settings.getSmtpUsername());
-        mailSender.setPassword(settings.getSmtpPassword());
+        mailSender.setPassword(runtimeProperties.getSmtp().getPassword());
 
         Properties props = mailSender.getJavaMailProperties();
         props.put("mail.smtp.auth", "true");

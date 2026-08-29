@@ -8,6 +8,7 @@ import com.company.iss.shared.view.MainLayout;
 import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.confirmdialog.ConfirmDialog;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.icon.VaadinIcon;
@@ -21,6 +22,8 @@ import com.vaadin.flow.router.Route;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.security.RolesAllowed;
 import org.springframework.beans.factory.annotation.Autowired;
+
+import java.time.LocalDateTime;
 
 @Route(value = "recruiters", layout = MainLayout.class)
 @PageTitle("Recruiter Management")
@@ -82,19 +85,37 @@ public class RecruiterView extends VerticalLayout {
 
             toggle.addClickListener(e -> {
                 if (user.isActive()) {
-                    recruiterService.deactivate(user);
+                    confirmDeactivate(user);
                 } else {
-                    recruiterService.activate(user);
+                    try {
+                        recruiterService.activate(user.getId());
+                        init();
+                    } catch (RuntimeException exception) {
+                        UserSafeNotifier.showError(exception);
+                    }
                 }
-                init();
             });
 
-            HorizontalLayout wrap = new HorizontalLayout(toggle);
+            Button reset = new Button("Send reset", e -> confirmReset(user));
+            reset.addThemeVariants(ButtonVariant.LUMO_SMALL);
+            Button unlock = new Button("Unlock", e -> {
+                try {
+                    recruiterService.unlock(user.getId());
+                    init();
+                } catch (RuntimeException exception) {
+                    UserSafeNotifier.showError(exception);
+                }
+            });
+            unlock.addThemeVariants(ButtonVariant.LUMO_SMALL);
+            unlock.setVisible(user.getLockoutUntil() != null
+                    && user.getLockoutUntil().isAfter(LocalDateTime.now()));
+
+            HorizontalLayout wrap = new HorizontalLayout(toggle, reset, unlock);
             wrap.setWidthFull();
             wrap.setJustifyContentMode(JustifyContentMode.CENTER);
             wrap.setAlignItems(Alignment.CENTER);
             return wrap;
-        }).setHeader("Actions").setWidth("180px").setResizable(true);
+        }).setHeader("Actions").setWidth("330px").setResizable(true);
 
         actionLayout = new HorizontalLayout();
         actionLayout.setWidthFull();
@@ -150,6 +171,45 @@ public class RecruiterView extends VerticalLayout {
             }
         });
 
+        dialog.open();
+    }
+
+    private void confirmReset(User user) {
+        ConfirmDialog dialog = new ConfirmDialog();
+        dialog.setHeader("Send password reset?");
+        dialog.setText("A single-use password reset link will be emailed to this recruiter.");
+        dialog.setCancelable(true);
+        dialog.setConfirmText("Send reset link");
+        dialog.addConfirmListener(event -> {
+            try {
+                recruiterService.requestPasswordReset(user.getId());
+                Notification.show(
+                        "If delivery is configured, the recruiter will receive a password reset link.",
+                        4000,
+                        Notification.Position.TOP_CENTER
+                ).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+            } catch (RuntimeException exception) {
+                UserSafeNotifier.showError(exception);
+            }
+        });
+        dialog.open();
+    }
+
+    private void confirmDeactivate(User user) {
+        ConfirmDialog dialog = new ConfirmDialog();
+        dialog.setHeader("Deactivate recruiter?");
+        dialog.setText("The recruiter will lose access and all known sessions will be expired.");
+        dialog.setCancelable(true);
+        dialog.setConfirmText("Deactivate");
+        dialog.setConfirmButtonTheme("error primary");
+        dialog.addConfirmListener(event -> {
+            try {
+                recruiterService.deactivate(user.getId());
+                init();
+            } catch (RuntimeException exception) {
+                UserSafeNotifier.showError(exception);
+            }
+        });
         dialog.open();
     }
 }

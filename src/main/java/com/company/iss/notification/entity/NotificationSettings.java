@@ -31,17 +31,11 @@ public class NotificationSettings extends BaseEntity {
     @Column
     private String smtpUsername;
 
-    @Column(length = 1000)
-    private String smtpPassword;
-
     @Column
     private String smtpFromName;
 
     @Column
     private String smsProvider;
-
-    @Column(length = 2000)
-    private String smsApiKey;
 
     @Column
     private String smsSenderName;

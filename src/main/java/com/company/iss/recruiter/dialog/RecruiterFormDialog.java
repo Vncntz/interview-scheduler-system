@@ -37,6 +37,7 @@ public class RecruiterFormDialog extends Dialog {
         TextField fullName = new TextField("Full Name");
         EmailField email = new EmailField("Email Address");
         PasswordField temporaryPassword = new PasswordField("Temporary Password");
+        temporaryPassword.setHelperText("Use 15–64 characters within the 72-byte BCrypt limit.");
 
         ComboBox<Branch> branch = new ComboBox<>("Assigned Branch");
         branch.setItems(branchService.findAll());
@@ -44,6 +45,8 @@ public class RecruiterFormDialog extends Dialog {
 
         if (user.getId() != null) {
             temporaryPassword.setVisible(false);
+        } else {
+            temporaryPassword.setRequiredIndicatorVisible(true);
         }
 
         binder.forField(fullName).asRequired("Full name is required").bind(User::getFullName, User::setFullName);

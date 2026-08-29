@@ -28,19 +28,22 @@ public class ApplicantService {
     private final BranchRepository branchRepository;
     private final BookingRepository bookingRepository;
     private final SecurityService securityService;
+    private final ApplicantAssignmentGuard applicantAssignmentGuard;
 
     public ApplicantService(
             ApplicantRepository applicantRepository,
             PositionOpeningRepository positionOpeningRepository,
             BranchRepository branchRepository,
             BookingRepository bookingRepository,
-            SecurityService securityService
+            SecurityService securityService,
+            ApplicantAssignmentGuard applicantAssignmentGuard
     ) {
         this.applicantRepository = applicantRepository;
         this.positionOpeningRepository = positionOpeningRepository;
         this.branchRepository = branchRepository;
         this.bookingRepository = bookingRepository;
         this.securityService = securityService;
+        this.applicantAssignmentGuard = applicantAssignmentGuard;
     }
 
     @Transactional
@@ -68,6 +71,7 @@ public class ApplicantService {
         Applicant existing = findForUpdate(input.getId(), actor);
         validateEmailAvailable(input.getEmail(), existing.getId());
         validateBranchReassignment(existing, branch);
+        applicantAssignmentGuard.validateReassignment(existing, branch, position);
 
         PositionOpening oldPosition = existing.getPositionOpening();
         if (oldPosition == null || !Objects.equals(oldPosition.getId(), position.getId())) {

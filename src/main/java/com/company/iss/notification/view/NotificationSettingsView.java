@@ -9,26 +9,24 @@ import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.html.H3;
+import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.IntegerField;
-import com.vaadin.flow.component.textfield.PasswordField;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.security.RolesAllowed;
-import org.springframework.beans.factory.annotation.Autowired;
 
 @Route(value = "notification-settings", layout = MainLayout.class)
 @PageTitle("Notification Settings")
 @RolesAllowed("ADMIN")
 public class NotificationSettingsView extends VerticalLayout {
 
-    @Autowired
-    private NotificationSettingsService notificationSettingsService;
+    private final NotificationSettingsService notificationSettingsService;
 
     private NotificationSettings settings;
 
@@ -39,14 +37,14 @@ public class NotificationSettingsView extends VerticalLayout {
     private TextField smtpHostField;
     private IntegerField smtpPortField;
     private TextField smtpUsernameField;
-    private PasswordField smtpPasswordField;
     private TextField smtpFromNameField;
 
     private TextField smsProviderField;
-    private PasswordField smsApiKeyField;
     private TextField smsSenderNameField;
+    private Span smtpPasswordStatus;
 
-    public NotificationSettingsView() {
+    public NotificationSettingsView(NotificationSettingsService notificationSettingsService) {
+        this.notificationSettingsService = notificationSettingsService;
         setSizeFull();
 
         initFields();
@@ -67,7 +65,7 @@ public class NotificationSettingsView extends VerticalLayout {
     private FormLayout createEmailForm() {
         FormLayout form = new FormLayout();
 
-        form.add(emailEnabledField, smtpHostField, smtpPortField, smtpUsernameField, smtpPasswordField, smtpFromNameField);
+        form.add(emailEnabledField, smtpHostField, smtpPortField, smtpUsernameField, smtpFromNameField, smtpPasswordStatus);
 
         form.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1), new FormLayout.ResponsiveStep("700px", 2));
 
@@ -77,7 +75,7 @@ public class NotificationSettingsView extends VerticalLayout {
     private FormLayout createSmsForm() {
         FormLayout form = new FormLayout();
 
-        form.add(smsEnabledField, smsProviderField, smsApiKeyField, smsSenderNameField);
+        form.add(smsEnabledField, smsProviderField, smsSenderNameField);
 
         form.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1), new FormLayout.ResponsiveStep("700px", 2));
 
@@ -104,6 +102,8 @@ public class NotificationSettingsView extends VerticalLayout {
         emailEnabledField = new Checkbox("Enable Email Notifications");
 
         smsEnabledField = new Checkbox("Enable SMS Notifications");
+        smsEnabledField.setEnabled(false);
+        smsEnabledField.setHelperText("SMS delivery is not supported.");
 
         smtpHostField = new TextField("SMTP Host");
         smtpHostField.setWidthFull();
@@ -114,24 +114,19 @@ public class NotificationSettingsView extends VerticalLayout {
         smtpUsernameField = new TextField("SMTP Username");
         smtpUsernameField.setWidthFull();
 
-        smtpPasswordField = new PasswordField("SMTP Password");
-        smtpPasswordField.setWidthFull();
-
         smtpFromNameField = new TextField("SMTP Sender Name");
         smtpFromNameField.setWidthFull();
 
+        smtpPasswordStatus = new Span();
+
         smsProviderField = new TextField("SMS Provider");
         smsProviderField.setWidthFull();
-
-        smsApiKeyField = new PasswordField("SMS API Key");
-        smsApiKeyField.setWidthFull();
 
         smsSenderNameField = new TextField("SMS Sender Name");
         smsSenderNameField.setWidthFull();
 
         emailEnabledField.addValueChangeListener(e -> toggleEmailFields(e.getValue()));
-
-        smsEnabledField.addValueChangeListener(e -> toggleSmsFields(e.getValue()));
+        disableSmsFields();
     }
 
     @PostConstruct
@@ -142,7 +137,7 @@ public class NotificationSettingsView extends VerticalLayout {
 
         emailEnabledField.setValue(settings.getEmailEnabled());
 
-        smsEnabledField.setValue(settings.getSmsEnabled());
+        smsEnabledField.setValue(false);
 
         smtpHostField.setValue(safe(settings.getSmtpHost()));
 
@@ -150,33 +145,32 @@ public class NotificationSettingsView extends VerticalLayout {
 
         smtpUsernameField.setValue(safe(settings.getSmtpUsername()));
 
-        smtpPasswordField.setValue(safe(settings.getSmtpPassword()));
-
         smtpFromNameField.setValue(safe(settings.getSmtpFromName()));
 
-        smsProviderField.setValue(safe(settings.getSmsProvider()));
+        smtpPasswordStatus.setText(notificationSettingsService.isSmtpPasswordConfigured()
+                ? "SMTP password: configured in the runtime environment"
+                : "SMTP password: not configured in the runtime environment");
 
-        smsApiKeyField.setValue(safe(settings.getSmsApiKey()));
+        smsProviderField.setValue(safe(settings.getSmsProvider()));
 
         smsSenderNameField.setValue(safe(settings.getSmsSenderName()));
 
         toggleEmailFields(settings.getEmailEnabled());
 
-        toggleSmsFields(settings.getSmsEnabled());
+        disableSmsFields();
     }
 
     private void toggleEmailFields(boolean enabled) {
         smtpHostField.setEnabled(enabled);
         smtpPortField.setEnabled(enabled);
         smtpUsernameField.setEnabled(enabled);
-        smtpPasswordField.setEnabled(enabled);
         smtpFromNameField.setEnabled(enabled);
     }
 
-    private void toggleSmsFields(boolean enabled) {
-        smsProviderField.setEnabled(enabled);
-        smsApiKeyField.setEnabled(enabled);
-        smsSenderNameField.setEnabled(enabled);
+    private void disableSmsFields() {
+        smsEnabledField.setEnabled(false);
+        smsProviderField.setEnabled(false);
+        smsSenderNameField.setEnabled(false);
     }
 
     private void save() {
@@ -185,7 +179,7 @@ public class NotificationSettingsView extends VerticalLayout {
 
             settings.setEmailEnabled(emailEnabledField.getValue());
 
-            settings.setSmsEnabled(smsEnabledField.getValue());
+            settings.setSmsEnabled(false);
 
             settings.setSmtpHost(smtpHostField.getValue());
 
@@ -193,13 +187,9 @@ public class NotificationSettingsView extends VerticalLayout {
 
             settings.setSmtpUsername(smtpUsernameField.getValue());
 
-            settings.setSmtpPassword(smtpPasswordField.getValue());
-
             settings.setSmtpFromName(smtpFromNameField.getValue());
 
             settings.setSmsProvider(smsProviderField.getValue());
-
-            settings.setSmsApiKey(smsApiKeyField.getValue());
 
             settings.setSmsSenderName(smsSenderNameField.getValue());
 

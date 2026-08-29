@@ -104,6 +104,7 @@ class BookingRescheduleIntegrationTest {
     void setUpActor() {
         admin = saveUser("reschedule-admin@example.test", Role.ADMIN, null);
         when(securityService.getCurrentUser()).thenReturn(admin);
+        when(securityService.requireOperationsUser(any(String.class))).thenReturn(admin);
     }
 
     @AfterEach

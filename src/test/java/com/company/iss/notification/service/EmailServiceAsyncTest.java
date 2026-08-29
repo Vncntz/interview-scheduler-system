@@ -3,8 +3,10 @@ package com.company.iss.notification.service;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.AppenderBase;
+import com.company.iss.auth.service.SecurityService;
 import com.company.iss.config.AsyncConfig;
 import com.company.iss.notification.entity.NotificationSettings;
+import com.company.iss.notification.config.NotificationRuntimeProperties;
 import com.company.iss.notification.repository.NotificationSettingsRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -82,7 +84,6 @@ class EmailServiceAsyncTest {
         settings.setSmtpHost("smtp.example.com");
         settings.setSmtpPort(587);
         settings.setSmtpUsername("mailer@example.com");
-        settings.setSmtpPassword(" ");
         when(notificationSettingsRepository.findByActiveTrue()).thenReturn(Optional.of(settings));
 
         emailService.send("admin@example.com", "Subject", "Body");
@@ -104,13 +105,30 @@ class EmailServiceAsyncTest {
         }
 
         @Bean
-        NotificationSettingsService notificationSettingsService() {
-            return new NotificationSettingsService();
+        NotificationRuntimeProperties notificationRuntimeProperties() {
+            return new NotificationRuntimeProperties();
         }
 
         @Bean
-        EmailService emailService(NotificationSettingsService notificationSettingsService) {
-            return new EmailService(notificationSettingsService);
+        NotificationSettingsService notificationSettingsService(
+                NotificationSettingsRepository repository,
+                NotificationRuntimeProperties properties,
+                SecurityService securityService
+        ) {
+            return new NotificationSettingsService(repository, properties, securityService);
+        }
+
+        @Bean
+        SecurityService securityService() {
+            return mock(SecurityService.class);
+        }
+
+        @Bean
+        EmailService emailService(
+                NotificationSettingsService notificationSettingsService,
+                NotificationRuntimeProperties properties
+        ) {
+            return new EmailService(notificationSettingsService, properties);
         }
     }
 

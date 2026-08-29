@@ -2,20 +2,36 @@ package com.company.iss.client.config;
 
 import com.company.iss.client.entity.Client;
 import com.company.iss.client.repository.ClientRepository;
-import jakarta.annotation.PostConstruct;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
-public class ClientDataLoader {
+@Profile("dev")
+@ConditionalOnProperty(prefix = "iss.demo-data", name = "enabled", havingValue = "true")
+@Order(10)
+public class ClientDataLoader implements CommandLineRunner {
 
-    @Autowired
-    private ClientRepository clientRepository;
+    private static final Logger log = LoggerFactory.getLogger(ClientDataLoader.class);
+    private static final int DEMO_CLIENT_COUNT = 50;
 
-    @PostConstruct
-    public void init() {
+    private final ClientRepository clientRepository;
+
+    public ClientDataLoader(ClientRepository clientRepository) {
+        this.clientRepository = clientRepository;
+    }
+
+    @Override
+    @Transactional
+    public void run(String... args) {
 
         if (clientRepository.count() > 0) {
+            log.info("[DEMO_DATA] Client seed skipped reason=CLIENT_DATA_PRESENT");
             return;
         }
 
@@ -78,6 +94,8 @@ public class ClientDataLoader {
         createClient("Tim Hortons Philippines", "Pasig City", "Bianca Reyes", "09641234567", "hr@timhortons.ph");
         createClient("Dunkin Philippines", "Bacoor, Cavite", "Andrew Torres", "09651234567", "careers@dunkin.ph");
         createClient("Krispy Kreme Philippines", "Alabang", "Elaine Cruz", "09661234567", "jobs@krispykreme.ph");
+
+        log.info("[DEMO_DATA] Client seed completed clientsCreated={}", DEMO_CLIENT_COUNT);
     }
 
     private void createClient(String companyName, String address, String contactPerson, String contactNumber, String email) {

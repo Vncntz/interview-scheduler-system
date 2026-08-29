@@ -1,25 +1,45 @@
 package com.company.iss.notification.service;
 
+import com.company.iss.auth.service.SecurityService;
+import com.company.iss.notification.config.NotificationRuntimeProperties;
 import com.company.iss.notification.entity.NotificationSettings;
 import com.company.iss.notification.repository.NotificationSettingsRepository;
 import com.company.iss.shared.exception.BusinessRuleViolationException;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class NotificationSettingsService {
 
-    @Autowired
-    private NotificationSettingsRepository notificationSettingsRepository;
+    private final NotificationSettingsRepository notificationSettingsRepository;
+    private final NotificationRuntimeProperties runtimeProperties;
+    private final SecurityService securityService;
 
+    public NotificationSettingsService(
+            NotificationSettingsRepository notificationSettingsRepository,
+            NotificationRuntimeProperties runtimeProperties,
+            SecurityService securityService
+    ) {
+        this.notificationSettingsRepository = notificationSettingsRepository;
+        this.runtimeProperties = runtimeProperties;
+        this.securityService = securityService;
+    }
+
+    @Transactional
     public NotificationSettings getSettings() {
         return notificationSettingsRepository.findByActiveTrue().orElseGet(this::createDefaultSettings);
     }
 
+    @Transactional
     public NotificationSettings save(NotificationSettings settings) {
+        securityService.requireAdmin();
         validate(settings);
 
         return notificationSettingsRepository.save(settings);
+    }
+
+    public boolean isSmtpPasswordConfigured() {
+        return runtimeProperties.getSmtp().isPasswordConfigured();
     }
 
     private NotificationSettings createDefaultSettings() {
@@ -49,9 +69,13 @@ public class NotificationSettingsService {
                 throw new BusinessRuleViolationException("SMTP username is required.");
             }
 
-            if (settings.getSmtpPassword() == null || settings.getSmtpPassword().isBlank()) {
-                throw new BusinessRuleViolationException("SMTP password is required.");
+            if (!runtimeProperties.getSmtp().isPasswordConfigured()) {
+                throw new BusinessRuleViolationException("SMTP password is not configured in the runtime environment.");
             }
+        }
+
+        if (Boolean.TRUE.equals(settings.getSmsEnabled())) {
+            throw new BusinessRuleViolationException("SMS notifications are not supported.");
         }
     }
 }

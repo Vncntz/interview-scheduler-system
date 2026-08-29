@@ -37,7 +37,7 @@ public class NotificationDataGenerator {
         NotificationSettings settings = new NotificationSettings();
 
         settings.setCompanyName("ISS Notifications");
-        settings.setEmailEnabled(true);
+        settings.setEmailEnabled(false);
         settings.setSmsEnabled(false);
         settings.setSmtpHost("smtp.gmail.com");
         settings.setSmtpPort(587);
@@ -100,6 +100,38 @@ public class NotificationDataGenerator {
                 Interview Mode: {{interviewMode}}
 
                 Thank you.
+                """);
+
+        createTemplateIfMissing(NotificationEvent.JOB_OFFERED, "Job Offer - {{position}}", """
+                Good day {{applicantName}},
+
+                We are pleased to offer you the {{position}} position for {{client}}.
+                Work Location: {{workLocation}}
+
+                Please contact your recruiter to discuss the next steps.
+
+                Thank you.
+                """);
+
+        createTemplateIfMissing(NotificationEvent.HIRED, "Welcome to your new role - {{position}}", """
+                Good day {{applicantName}},
+
+                Your acceptance for the {{position}} position with {{client}} has been recorded.
+                Work Location: {{workLocation}}
+
+                Congratulations and welcome aboard.
+                """);
+
+        createTemplateIfMissing(NotificationEvent.PASSWORD_RESET, "Reset your Interview Scheduler password", """
+                Good day {{userName}},
+
+                An administrator requested a password reset for your account.
+
+                Reset your password using this link:
+                {{resetLink}}
+
+                This link expires in {{expiresInMinutes}} minutes and can be used only once.
+                If you did not expect this message, contact your administrator.
                 """);
     }
 

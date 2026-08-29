@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.company.iss.notification.entity.NotificationSettings;
+import com.company.iss.notification.config.NotificationRuntimeProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,9 +34,12 @@ class EmailServiceTest {
     private Logger logger;
     private ListAppender<ILoggingEvent> appender;
     private boolean loggerAdditive;
+    private NotificationRuntimeProperties runtimeProperties;
 
     @BeforeEach
     void attachLogAppender() {
+        runtimeProperties = new NotificationRuntimeProperties();
+        runtimeProperties.getSmtp().setPassword("unit-test-password");
         logger = (Logger) LoggerFactory.getLogger(EmailService.class);
         loggerAdditive = logger.isAdditive();
         logger.setAdditive(false);
@@ -55,9 +59,9 @@ class EmailServiceTest {
     void missingPasswordIsLoggedConciseAndRecipientIsMasked() {
         NotificationSettingsService settingsService = mock(NotificationSettingsService.class);
         NotificationSettings settings = enabledSettings();
-        settings.setSmtpPassword(" ");
+        runtimeProperties.getSmtp().setPassword(" ");
         when(settingsService.getSettings()).thenReturn(settings);
-        EmailService emailService = spy(new EmailService(settingsService));
+        EmailService emailService = spy(new EmailService(settingsService, runtimeProperties));
 
         emailService.send("john.smith@example.com", "Subject", "Body");
 
@@ -80,7 +84,7 @@ class EmailServiceTest {
         doThrow(new MailAuthenticationException("Authentication failed"))
                 .when(mailSender)
                 .send(any(SimpleMailMessage.class));
-        EmailService emailService = spy(new EmailService(settingsService));
+        EmailService emailService = spy(new EmailService(settingsService, runtimeProperties));
         doReturn(mailSender).when(emailService).createMailSender(settings);
 
         emailService.send("admin@example.com", "Subject", "Body");
@@ -100,7 +104,7 @@ class EmailServiceTest {
         NotificationSettings settings = enabledSettings();
         when(settingsService.getSettings()).thenReturn(settings);
         JavaMailSender mailSender = mock(JavaMailSender.class);
-        EmailService emailService = spy(new EmailService(settingsService));
+        EmailService emailService = spy(new EmailService(settingsService, runtimeProperties));
         doReturn(mailSender).when(emailService).createMailSender(settings);
 
         emailService.send("admin@example.com", "Subject", "Body");
@@ -119,7 +123,7 @@ class EmailServiceTest {
         doThrow(new MailSendException("Connection failed", new ConnectException("Connection refused")))
                 .when(mailSender)
                 .send(any(SimpleMailMessage.class));
-        EmailService emailService = spy(new EmailService(settingsService));
+        EmailService emailService = spy(new EmailService(settingsService, runtimeProperties));
         doReturn(mailSender).when(emailService).createMailSender(settings);
 
         emailService.send("admin@example.com", "Subject", "Body");
@@ -141,7 +145,7 @@ class EmailServiceTest {
         doThrow(new IllegalStateException("Unexpected failure"))
                 .when(mailSender)
                 .send(any(SimpleMailMessage.class));
-        EmailService emailService = spy(new EmailService(settingsService));
+        EmailService emailService = spy(new EmailService(settingsService, runtimeProperties));
         doReturn(mailSender).when(emailService).createMailSender(settings);
 
         assertThrows(
@@ -156,7 +160,6 @@ class EmailServiceTest {
         settings.setSmtpHost("smtp.example.com");
         settings.setSmtpPort(587);
         settings.setSmtpUsername("mailer@example.com");
-        settings.setSmtpPassword("configured-secret");
         return settings;
     }
 }

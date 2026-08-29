@@ -79,6 +79,9 @@ class BookingServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient()
+                .when(securityService.requireOperationsUser(any(String.class)))
+                .thenAnswer(invocation -> securityService.getCurrentUser());
         bookingService = new BookingService(
                 notificationService,
                 bookingRepository,
@@ -698,9 +701,8 @@ class BookingServiceTest {
 
     @Test
     void inactiveActorCannotCancel() {
-        User actor = user(200L, Role.ADMIN, null);
-        actor.setActive(false);
-        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(securityService.requireOperationsUser("You are not authorized to cancel interviews."))
+                .thenThrow(new AccessDeniedException("An active authenticated user is required."));
 
         assertThrows(AccessDeniedException.class, () -> bookingService.cancel(10L));
 
@@ -710,8 +712,8 @@ class BookingServiceTest {
 
     @Test
     void applicantActorCannotCancel() {
-        User actor = user(200L, Role.APPLICANT, null);
-        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(securityService.requireOperationsUser("You are not authorized to cancel interviews."))
+                .thenThrow(new AccessDeniedException("You are not authorized to cancel interviews."));
 
         AccessDeniedException exception = assertThrows(
                 AccessDeniedException.class,

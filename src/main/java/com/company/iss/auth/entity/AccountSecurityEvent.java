@@ -1,0 +1,13 @@
+package com.company.iss.auth.entity;
+
+public enum AccountSecurityEvent {
+    LOGIN_SUCCEEDED,
+    LOGIN_FAILED,
+    ACCOUNT_LOCKED,
+    ACCOUNT_UNLOCKED,
+    PASSWORD_CHANGED,
+    PASSWORD_RESET_REQUESTED,
+    PASSWORD_RESET_COMPLETED,
+    ACCOUNT_ACTIVATED,
+    ACCOUNT_DEACTIVATED
+}

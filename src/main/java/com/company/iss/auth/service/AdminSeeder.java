@@ -17,6 +17,7 @@ public class AdminSeeder implements CommandLineRunner {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final Environment environment;
+    private final PasswordPolicy passwordPolicy;
 
     @Override
     public void run(String... args) {
@@ -30,6 +31,8 @@ public class AdminSeeder implements CommandLineRunner {
         if (userRepository.existsByEmail(email)) {
             return;
         }
+
+        passwordPolicy.validate(password, password);
 
         User admin = new User();
         admin.setEmail(email);

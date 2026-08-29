@@ -7,6 +7,8 @@ import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.BeforeEnterObserver;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.server.auth.AnonymousAllowed;
+import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.notification.NotificationVariant;
 
 @Route("login")
 @AnonymousAllowed
@@ -45,6 +47,14 @@ public class LoginView extends LoginOverlay implements BeforeEnterObserver {
 
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
+        if (event.getLocation().getQueryParameters().getParameters().containsKey("password-changed")) {
+            Notification notification = Notification.show(
+                    "Password changed successfully. Sign in with your new password.",
+                    4000,
+                    Notification.Position.TOP_CENTER
+            );
+            notification.addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+        }
         if (event.getLocation().getQueryParameters().getParameters().containsKey("error")) {
 
             setError(true);

@@ -373,6 +373,17 @@ public class BookingService {
             throw new BusinessRuleViolationException("Applicant is inactive.");
         }
 
+        if (List.of(
+                ApplicantStatus.OFFERED,
+                ApplicantStatus.HIRED,
+                ApplicantStatus.OFFER_DECLINED,
+                ApplicantStatus.WITHDRAWN
+        ).contains(applicant.getStatus())) {
+            throw new BusinessRuleViolationException(
+                    "Applicants with a final hiring decision cannot be booked for another interview."
+            );
+        }
+
         Optional<Booking> activeBooking = bookingRepository.findFirstByApplicantAndStatusIn(applicant, List.of(BookingStatus.BOOKED, BookingStatus.CONFIRMED, BookingStatus.RESCHEDULED));
 
         if (activeBooking.isPresent()) {
@@ -444,18 +455,7 @@ public class BookingService {
     }
 
     private User requireAuthorizedActor(String unauthorizedMessage) {
-        User actor = securityService.getCurrentUser();
-        if (actor == null || !actor.isActive()) {
-            throw new AccessDeniedException("An active authenticated user is required.");
-        }
-        if (actor.getRole() != Role.ADMIN && actor.getRole() != Role.RECRUITER) {
-            throw new AccessDeniedException(unauthorizedMessage);
-        }
-        if (actor.getRole() == Role.RECRUITER
-                && (actor.getBranch() == null || actor.getBranch().getId() == null)) {
-            throw new AccessDeniedException("Your recruiter account is not assigned to a branch.");
-        }
-        return actor;
+        return securityService.requireOperationsUser(unauthorizedMessage);
     }
 
     private void authorizeSchedule(User actor, Schedule schedule) {

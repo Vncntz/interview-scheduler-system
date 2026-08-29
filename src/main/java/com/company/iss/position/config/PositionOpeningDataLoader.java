@@ -6,36 +6,60 @@ import com.company.iss.position.entity.EmploymentType;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.entity.PositionStatus;
 import com.company.iss.position.repository.PositionOpeningRepository;
-import jakarta.annotation.PostConstruct;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
 
 @Component
-public class PositionOpeningDataLoader {
+@Profile("dev")
+@ConditionalOnProperty(prefix = "iss.demo-data", name = "enabled", havingValue = "true")
+@Order(20)
+public class PositionOpeningDataLoader implements CommandLineRunner {
 
-    @Autowired
-    private PositionOpeningRepository positionOpeningRepository;
+    private static final Logger log = LoggerFactory.getLogger(PositionOpeningDataLoader.class);
+    private static final long RANDOM_SEED = 20260829L;
+    private static final int DEMO_POSITION_COUNT = 50;
 
-    @Autowired
-    private ClientRepository clientRepository;
+    private final PositionOpeningRepository positionOpeningRepository;
+    private final ClientRepository clientRepository;
 
-    @PostConstruct
-    public void init() {
+    public PositionOpeningDataLoader(
+            PositionOpeningRepository positionOpeningRepository,
+            ClientRepository clientRepository
+    ) {
+        this.positionOpeningRepository = positionOpeningRepository;
+        this.clientRepository = clientRepository;
+    }
+
+    @Override
+    @Transactional
+    public void run(String... args) {
 
         if (positionOpeningRepository.count() > 0) {
+            log.info("[DEMO_DATA] Position seed skipped reason=POSITION_DATA_PRESENT");
             return;
         }
 
-        List<Client> clients = clientRepository.findAll();
+        List<Client> clients = clientRepository.findAll().stream()
+                .sorted(Comparator.comparing(Client::getCompanyName)
+                        .thenComparing(Client::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
 
         if (clients.isEmpty()) {
+            log.warn("[DEMO_DATA] Position seed skipped reason=NO_CLIENTS");
             return;
         }
 
-        Random random = new Random();
+        Random random = new Random(RANDOM_SEED);
 
         createOpening("Service Crew", pick(clients, random), "Tanza, Cavite", EmploymentType.FULL_TIME, 30);
         createOpening("Cashier", pick(clients, random), "Dasmarinas, Cavite", EmploymentType.FULL_TIME, 15);
@@ -96,6 +120,8 @@ public class PositionOpeningDataLoader {
         createOpening("Graphic Designer", pick(clients, random), "Pasig City", EmploymentType.FULL_TIME, 2);
         createOpening("Content Assistant", pick(clients, random), "Alabang", EmploymentType.FULL_TIME, 2);
         createOpening("Brand Associate", pick(clients, random), "Makati City", EmploymentType.FULL_TIME, 2);
+
+        log.info("[DEMO_DATA] Position seed completed positionsCreated={}", DEMO_POSITION_COUNT);
     }
 
     private Client pick(List<Client> clients, Random random) {

@@ -7,11 +7,32 @@ import org.junit.jupiter.api.Test;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class FlywayMigrationTest {
 
     private static final String LOCATIONS = "classpath:db/migration/h2";
+
+    @Test
+    void freshSchemaMigratesThroughV5WithoutPersistedNotificationSecrets() throws SQLException {
+        String url = databaseUrl("fresh_v5");
+
+        Flyway flyway = migrate(url, null);
+
+        assertEquals("5", flyway.info().current().getVersion().getVersion());
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+             var statement = connection.createStatement();
+             var result = statement.executeQuery("""
+                     SELECT COUNT(*)
+                     FROM INFORMATION_SCHEMA.COLUMNS
+                     WHERE TABLE_NAME = 'NOTIFICATION_SETTINGS'
+                       AND COLUMN_NAME IN ('SMTP_PASSWORD', 'SMS_API_KEY')
+                     """)) {
+            result.next();
+            assertEquals(0, result.getInt(1));
+        }
+    }
 
     @Test
     void freshMigrationRejectsApplicantWithoutBranch() throws SQLException {
@@ -37,7 +58,78 @@ class FlywayMigrationTest {
         assertThrows(FlywayException.class, () -> migrate(url, null));
     }
 
-    private void migrate(String url, String target) {
+    @Test
+    void v3SchemaUpgradesToSecureAccountLifecycle() throws SQLException {
+        String url = databaseUrl("v3_upgrade");
+        migrate(url, "3");
+        migrate(url, null);
+
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+             var statement = connection.createStatement();
+             var result = statement.executeQuery("""
+                     SELECT COUNT(*)
+                     FROM INFORMATION_SCHEMA.TABLES
+                     WHERE TABLE_NAME IN ('PASSWORD_RESET_REQUESTS', 'ACCOUNT_SECURITY_AUDITS')
+                     """)) {
+            result.next();
+            org.junit.jupiter.api.Assertions.assertEquals(2, result.getInt(1));
+        }
+    }
+
+    @Test
+    void v4UpgradeRemovesSecretsAndPreservesNonSecretNotificationMetadata() throws SQLException {
+        String url = databaseUrl("v4_notification_upgrade");
+        migrate(url, "4");
+
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+             var statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    INSERT INTO notification_settings (
+                        active, email_enabled, sms_enabled, smtp_port, created_at, updated_at,
+                        version, smtp_password, sms_api_key, company_name, sms_provider,
+                        sms_sender_name, smtp_from_name, smtp_host, smtp_username
+                    ) VALUES (
+                        TRUE, TRUE, TRUE, 587, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                        0, 'legacy-password', 'legacy-api-key', 'ISS Notifications', 'legacy-provider',
+                        'ISS SMS', 'ISS Mail', 'smtp.example.test', 'mailer@example.test'
+                    )
+                    """);
+        }
+
+        Flyway flyway = migrate(url, null);
+
+        assertEquals("5", flyway.info().current().getVersion().getVersion());
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+             var statement = connection.createStatement()) {
+            try (var result = statement.executeQuery("""
+                    SELECT email_enabled, sms_enabled, smtp_port, company_name, sms_provider,
+                           sms_sender_name, smtp_from_name, smtp_host, smtp_username
+                    FROM notification_settings
+                    """)) {
+                result.next();
+                assertEquals(true, result.getBoolean("email_enabled"));
+                assertEquals(false, result.getBoolean("sms_enabled"));
+                assertEquals(587, result.getInt("smtp_port"));
+                assertEquals("ISS Notifications", result.getString("company_name"));
+                assertEquals("legacy-provider", result.getString("sms_provider"));
+                assertEquals("ISS SMS", result.getString("sms_sender_name"));
+                assertEquals("ISS Mail", result.getString("smtp_from_name"));
+                assertEquals("smtp.example.test", result.getString("smtp_host"));
+                assertEquals("mailer@example.test", result.getString("smtp_username"));
+            }
+            try (var result = statement.executeQuery("""
+                    SELECT COUNT(*)
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = 'NOTIFICATION_SETTINGS'
+                      AND COLUMN_NAME IN ('SMTP_PASSWORD', 'SMS_API_KEY')
+                    """)) {
+                result.next();
+                assertEquals(0, result.getInt(1));
+            }
+        }
+    }
+
+    private Flyway migrate(String url, String target) {
         var configuration = Flyway.configure()
                 .dataSource(url, "sa", "")
                 .locations(LOCATIONS)
@@ -46,7 +138,9 @@ class FlywayMigrationTest {
         if (target != null) {
             configuration.target(target);
         }
-        configuration.load().migrate();
+        Flyway flyway = configuration.load();
+        flyway.migrate();
+        return flyway;
     }
 
     private String databaseUrl(String suffix) {

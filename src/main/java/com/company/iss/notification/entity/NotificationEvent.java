@@ -8,6 +8,7 @@ public enum NotificationEvent {
     BOOKING_RESCHEDULED,
     INTERVIEW_RESULT,
     JOB_OFFERED,
-    HIRED
+    HIRED,
+    PASSWORD_RESET
 
 }

@@ -37,13 +37,19 @@ class ApplicantServiceSecurityTest {
     @Mock BranchRepository branchRepository;
     @Mock BookingRepository bookingRepository;
     @Mock SecurityService securityService;
+    @Mock ApplicantAssignmentGuard applicantAssignmentGuard;
 
     private ApplicantService service;
 
     @BeforeEach
     void setUp() {
         service = new ApplicantService(
-                applicantRepository, positionOpeningRepository, branchRepository, bookingRepository, securityService
+                applicantRepository,
+                positionOpeningRepository,
+                branchRepository,
+                bookingRepository,
+                securityService,
+                applicantAssignmentGuard
         );
     }
 
