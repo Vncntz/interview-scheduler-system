@@ -10,6 +10,7 @@ import com.company.iss.booking.dto.BookingRescheduleCommand;
 import com.company.iss.booking.entity.Booking;
 import com.company.iss.booking.entity.BookingRescheduleHistory;
 import com.company.iss.booking.entity.BookingStatus;
+import com.company.iss.booking.dto.BookingGridFilter;
 import com.company.iss.booking.event.BookingCancelledEvent;
 import com.company.iss.booking.event.BookingConfirmedEvent;
 import com.company.iss.booking.event.BookingCreatedEvent;
@@ -29,6 +30,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -46,6 +48,7 @@ import java.util.stream.Collectors;
 public class BookingService {
 
     private static final Logger log = LoggerFactory.getLogger(BookingService.class);
+    private static final int MAX_GRID_PAGE_SIZE = 100;
 
     private final BookingRepository bookingRepository;
     private final BookingRescheduleHistoryRepository bookingRescheduleHistoryRepository;
@@ -73,18 +76,43 @@ public class BookingService {
         this.applicationEventPublisher = applicationEventPublisher;
     }
 
-    public List<Booking> search(String keyword) {
+    @Transactional(readOnly = true)
+    public List<Booking> findGridPage(BookingGridFilter filter, int page, int pageSize) {
+        validateGridPage(page, pageSize);
         User actor = requireAuthorizedActor("You are not authorized to view bookings.");
-        if (actor.getRole() == Role.ADMIN) {
-            return keyword == null || keyword.isBlank()
-                    ? bookingRepository.findAll()
-                    : bookingRepository.search(keyword);
+        BookingGridFilter normalizedFilter = filter == null ? BookingGridFilter.empty() : filter;
+        return bookingRepository.findGridPage(
+                gridBranchId(actor),
+                normalizedFilter.keyword(),
+                normalizedFilter.status(),
+                normalizedFilter.scheduleDate(),
+                PageRequest.of(page, pageSize)
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public long countGrid(BookingGridFilter filter) {
+        User actor = requireAuthorizedActor("You are not authorized to view bookings.");
+        BookingGridFilter normalizedFilter = filter == null ? BookingGridFilter.empty() : filter;
+        return bookingRepository.countGrid(
+                gridBranchId(actor),
+                normalizedFilter.keyword(),
+                normalizedFilter.status(),
+                normalizedFilter.scheduleDate()
+        );
+    }
+
+    private Long gridBranchId(User actor) {
+        return actor.getRole() == Role.ADMIN ? null : actor.getBranch().getId();
+    }
+
+    private void validateGridPage(int page, int pageSize) {
+        if (page < 0) {
+            throw new IllegalArgumentException("Grid page must not be negative.");
         }
-        return keyword == null || keyword.isBlank()
-                ? bookingRepository.findByScheduleBranchIdOrderByScheduleScheduleDateDescScheduleStartTimeDesc(
-                        actor.getBranch().getId()
-                )
-                : bookingRepository.searchByBranchId(actor.getBranch().getId(), keyword);
+        if (pageSize < 1 || pageSize > MAX_GRID_PAGE_SIZE) {
+            throw new IllegalArgumentException("Grid page size must be between 1 and 100.");
+        }
     }
 
     @Transactional
