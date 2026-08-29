@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 
 import jakarta.persistence.LockModeType;
 
@@ -15,20 +16,41 @@ import java.util.Optional;
 
 public interface ApplicantRepository extends JpaRepository<Applicant, Long> {
 
-    List<Applicant> findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCaseOrEmailContainingIgnoreCase(String firstName, String lastName, String email);
-
     Optional<Applicant> findByEmail(String email);
 
     Long countByStatus(ApplicantStatus status);
 
     @EntityGraph(attributePaths = {"branch", "positionOpening", "positionOpening.client"})
-    List<Applicant> findByBranchIdOrderByLastNameAscFirstNameAsc(Long branchId);
+    @Query("""
+            select a from Applicant a
+            where (:branchId is null or a.branch.id = :branchId)
+              and (:keyword is null
+                   or lower(a.firstName) like concat('%', :keyword, '%')
+                   or lower(a.lastName) like concat('%', :keyword, '%')
+                   or lower(a.email) like concat('%', :keyword, '%'))
+              and (:status is null or a.status = :status)
+            order by a.lastName asc, a.firstName asc, a.id asc
+            """)
+    List<Applicant> findGridPage(
+            @Param("branchId") Long branchId,
+            @Param("keyword") String keyword,
+            @Param("status") ApplicantStatus status,
+            Pageable pageable
+    );
 
-    @EntityGraph(attributePaths = {"branch", "positionOpening", "positionOpening.client"})
-    List<Applicant> findByBranchIdAndFirstNameContainingIgnoreCaseOrBranchIdAndLastNameContainingIgnoreCaseOrBranchIdAndEmailContainingIgnoreCase(
-            Long firstNameBranchId, String firstName,
-            Long lastNameBranchId, String lastName,
-            Long emailBranchId, String email
+    @Query("""
+            select count(a) from Applicant a
+            where (:branchId is null or a.branch.id = :branchId)
+              and (:keyword is null
+                   or lower(a.firstName) like concat('%', :keyword, '%')
+                   or lower(a.lastName) like concat('%', :keyword, '%')
+                   or lower(a.email) like concat('%', :keyword, '%'))
+              and (:status is null or a.status = :status)
+            """)
+    long countGrid(
+            @Param("branchId") Long branchId,
+            @Param("keyword") String keyword,
+            @Param("status") ApplicantStatus status
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
