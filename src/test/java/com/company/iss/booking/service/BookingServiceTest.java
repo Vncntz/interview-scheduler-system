@@ -11,6 +11,8 @@ import com.company.iss.booking.entity.Booking;
 import com.company.iss.booking.entity.BookingRescheduleHistory;
 import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.event.BookingCancelledEvent;
+import com.company.iss.booking.event.BookingConfirmedEvent;
+import com.company.iss.booking.event.BookingCreatedEvent;
 import com.company.iss.booking.event.BookingRescheduledEvent;
 import com.company.iss.booking.exception.BookingCancellationException;
 import com.company.iss.booking.exception.BookingRescheduleException;
@@ -18,7 +20,6 @@ import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.booking.repository.BookingRescheduleHistoryRepository;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
-import com.company.iss.notification.service.NotificationService;
 import com.company.iss.schedule.entity.InterviewMode;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
@@ -59,8 +60,6 @@ import static org.mockito.Mockito.when;
 class BookingServiceTest {
 
     @Mock
-    private NotificationService notificationService;
-    @Mock
     private BookingRepository bookingRepository;
     @Mock
     private BookingRescheduleHistoryRepository historyRepository;
@@ -83,7 +82,6 @@ class BookingServiceTest {
                 .when(securityService.requireOperationsUser(any(String.class)))
                 .thenAnswer(invocation -> securityService.getCurrentUser());
         bookingService = new BookingService(
-                notificationService,
                 bookingRepository,
                 historyRepository,
                 interviewEvaluationRepository,
@@ -92,6 +90,55 @@ class BookingServiceTest {
                 securityService,
                 eventPublisher
         );
+    }
+
+    @Test
+    void createBookingPublishesIdOnlyEventAfterSuccessfulSave() {
+        Branch branch = branch(100L);
+        User actor = user(200L, Role.ADMIN, null);
+        Applicant applicant = new Applicant();
+        applicant.setId(300L);
+        applicant.setBranch(branch);
+        applicant.setActive(true);
+        applicant.setStatus(ApplicantStatus.NEW);
+        Schedule schedule = schedule(
+                20L, branch, user(201L, Role.RECRUITER, branch),
+                0, 2, ScheduleStatus.OPEN
+        );
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(applicantService.findForBookingUpdate(300L, actor)).thenReturn(applicant);
+        when(scheduleRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(schedule));
+        when(bookingRepository.findFirstByApplicantAndStatusIn(eq(applicant), any())).thenReturn(Optional.empty());
+        when(bookingRepository.findByApplicantAndSchedule(applicant, schedule)).thenReturn(Optional.empty());
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(invocation -> {
+            Booking booking = invocation.getArgument(0);
+            booking.setId(42L);
+            return booking;
+        });
+
+        Booking created = bookingService.createBooking(300L, 20L, "Remarks");
+
+        assertEquals(42L, created.getId());
+        verify(eventPublisher).publishEvent(new BookingCreatedEvent(42L));
+    }
+
+    @Test
+    void confirmPublishesIdOnlyEventAfterSuccessfulSave() {
+        Branch branch = branch(100L);
+        User actor = user(200L, Role.ADMIN, null);
+        Booking booking = booking(
+                42L,
+                BookingStatus.BOOKED,
+                schedule(20L, branch, user(201L, Role.RECRUITER, branch), 1, 2, ScheduleStatus.OPEN)
+        );
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(bookingRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.save(booking)).thenReturn(booking);
+
+        bookingService.confirm(42L);
+
+        assertEquals(BookingStatus.CONFIRMED, booking.getStatus());
+        verify(eventPublisher).publishEvent(new BookingConfirmedEvent(42L));
     }
 
     @Test
@@ -262,7 +309,7 @@ class BookingServiceTest {
         verify(scheduleRepository, never()).save(any());
         verify(bookingRepository, never()).save(any(Booking.class));
         verify(applicantService, never()).updateStatus(any(), any());
-        verifyNoInteractions(notificationService);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -558,7 +605,6 @@ class BookingServiceTest {
         verify(scheduleRepository).save(lockedSchedule);
         verify(bookingRepository).save(booking);
         verify(eventPublisher).publishEvent(new BookingCancelledEvent(10L));
-        verifyNoInteractions(notificationService);
     }
 
     @Test
@@ -577,7 +623,6 @@ class BookingServiceTest {
         verify(scheduleRepository, never()).save(any());
         verify(bookingRepository, never()).save(any(Booking.class));
         verify(eventPublisher, never()).publishEvent(any());
-        verifyNoInteractions(notificationService);
     }
 
     @ParameterizedTest

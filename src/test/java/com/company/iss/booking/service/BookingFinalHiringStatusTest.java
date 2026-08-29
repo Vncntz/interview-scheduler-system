@@ -10,7 +10,6 @@ import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.booking.repository.BookingRescheduleHistoryRepository;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
-import com.company.iss.notification.service.NotificationService;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.repository.ScheduleRepository;
@@ -34,7 +33,6 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class BookingFinalHiringStatusTest {
 
-    @Mock NotificationService notificationService;
     @Mock BookingRepository bookingRepository;
     @Mock BookingRescheduleHistoryRepository historyRepository;
     @Mock InterviewEvaluationRepository evaluationRepository;
@@ -51,7 +49,6 @@ class BookingFinalHiringStatusTest {
                 .when(securityService.requireOperationsUser(any(String.class)))
                 .thenAnswer(invocation -> securityService.getCurrentUser());
         service = new BookingService(
-                notificationService,
                 bookingRepository,
                 historyRepository,
                 evaluationRepository,
