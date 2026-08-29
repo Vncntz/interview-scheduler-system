@@ -14,7 +14,10 @@ Preserve the current package-by-feature modular-monolith design. Prefer focused 
 - Spring Data JPA / Hibernate
 - Spring Security with Vaadin security integration
 - MySQL in normal runtime environments
+- Flyway for schema migrations, with separate MySQL and H2 dialect migrations
+- H2 in MySQL compatibility mode for automated tests only
 - Spring Mail for email delivery
+- Spring Boot Actuator and Thymeleaf as present dependencies; neither is a separate application entry point
 - Maven Wrapper (`mvnw` / `mvnw.cmd`)
 - Lombok for simple entity and DTO accessors
 - JUnit 5 and Spring Boot test support
@@ -32,6 +35,7 @@ The application is a modular monolith organized by business feature under `com.c
 - `client`
 - `dashboard`
 - `evaluation`
+- `hiring`
 - `notification`
 - `position`
 - `recruiter`
@@ -39,7 +43,7 @@ The application is a modular monolith organized by business feature under `com.c
 - `shared`
 - root-level `config`
 
-Each feature may contain `entity`, `repository`, `service`, `view`, `dialog`, `dto`, and `config` packages as needed. Add code to the owning feature rather than creating generic technical packages at the application root.
+Each feature may contain `entity`, `repository`, `service`, `view`, `dialog`, `dto`, `config`, `component`, `event`, and `exception` packages as needed. Add code to the owning feature rather than creating generic technical packages at the application root.
 
 Use the existing flow:
 
@@ -54,9 +58,12 @@ Rules:
 - Repositories contain persistence queries only; do not put business rules in repositories.
 - Entities contain persistence state and small domain-derived helpers, not UI logic or service lookups.
 - `shared` is only for code genuinely used across features. Do not move feature-specific behavior there for convenience.
+- `hiring` owns offers, hiring decisions, terminal hiring transitions, hiring audit records, and hiring notifications.
+- Preserve the existing applicant-to-hiring dependency direction: `ApplicantAssignmentGuard` belongs to `applicant`, and hiring supplies `HiringApplicantAssignmentGuard`. `ApplicantService` must not depend directly on hiring repositories.
 - Do not access repositories directly from views or dialogs.
 - Avoid circular service dependencies. For a workflow spanning features, place orchestration in the service that owns the initiating use case.
-- Keep synchronous database state changes separate from asynchronous notification delivery. A failed notification must not corrupt a successfully committed booking or evaluation.
+- Publish cross-feature events using stable identifiers rather than managed JPA entities.
+- Keep synchronous database state changes separate from asynchronous notification delivery. A failed notification must not corrupt a successfully committed booking, reschedule, cancellation, evaluation, offer, or hiring decision.
 
 ## Package and naming conventions
 
@@ -89,13 +96,22 @@ Rules:
 
 - Use component scanning from `InterviewSchedulerSystemApplication`; do not add redundant scan configuration.
 - Put cross-cutting Spring configuration in `com.company.iss.config`; feature-specific startup/configuration belongs in the feature's `config` package.
-- Use profile-specific configuration for development, testing, and production.
-- Do not commit real credentials or machine-specific datasource settings.
-- Maintain a sanitized example configuration or documented environment-variable contract whenever configuration keys change.
-- Demo seeders and data generators must be development-only and deterministic where tests or repeatability matter. Use profiles and explicit ordering when one loader depends on another.
+- `src/main/resources/application.properties` is tracked and defines the runtime MySQL/Flyway contract through environment placeholders.
+- `src/test/resources/application.properties` is tracked and owns the isolated H2/Flyway test configuration.
+- Runtime datasource values come from `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD`. Do not commit real credentials or machine-specific datasource settings.
+- Local `.env` is ignored and may contain real credentials. Never commit, print, quote, or copy its values into reports.
+- Spring Boot does not automatically parse this repository's `.env`. Source it explicitly only for a local runtime launch, and never source it for automated tests.
+- Do not add `SPRING_DATASOURCE_*` or `SPRING_FLYWAY_*` overrides to test commands; environment properties can supersede the tracked H2 test configuration.
+- `ADMIN_EMAIL` and `ADMIN_PASSWORD` make `AdminSeeder` opt-in. Never generate, log, report, or commit the bootstrap password.
+- Maintain a sanitized example configuration or documented environment-variable contract containing names and placeholders only whenever configuration keys change.
+- Idempotent, non-secret reference data such as default notification templates may be bootstrapped. Bulk clients, positions, and applicants are demo data and must be development-only and deterministic.
+- `ClientDataLoader`, `PositionOpeningDataLoader`, and `ApplicantDataLoader` are development-only, deterministic loaders that require both the `dev` profile and explicit demo-data enablement. Preserve both gates and their dependency order; never enable them for production data.
 - Use `@Transactional` on service methods that perform a business operation across multiple repository writes. Keep transaction boundaries in services, not views.
 - Avoid slow network I/O inside database transactions.
-- Use `@Async` only for work that is safe after the initiating transaction commits. Handle and log asynchronous failures without exposing secrets.
+- Commit domain state first and publish ID-only domain events inside the transaction.
+- Deliver notifications through `@TransactionalEventListener(phase = AFTER_COMMIT)`. Asynchronous listeners that reload data must use a separate read-only transaction.
+- Notification delivery is currently best-effort. Log failures safely without rolling back domain work, and do not claim durable delivery or retries; those guarantees require a separately designed outbox.
+- Never log raw integration credentials, tokens, session identifiers, or unnecessary applicant contact data while handling notification failures.
 - Prefer configuration properties over constructing infrastructure clients from database or string values throughout application code.
 - Do not expose Actuator endpoints publicly without an explicit security decision.
 
@@ -111,6 +127,7 @@ Rules:
 - Dialogs should not persist directly. Return validated input through a callback or invoke the owning service through the established view flow.
 - Refresh affected grids after successful mutations and preserve useful search/filter state when practical.
 - Display actionable user-safe error messages. Do not expose stack traces, SQL errors, or secret configuration in notifications.
+- Use the existing `UserSafeNotifier` at Vaadin boundaries for known user-safe errors instead of duplicating exception-to-notification handling.
 - Use typed renderers/item label generators and null-safe value providers for relationship columns.
 - For growing datasets, use lazy/paginated data providers rather than loading all rows with `findAll()`.
 - Keep reusable styling in the `iss` theme. Avoid duplicate stylesheet declarations and avoid editing generated frontend assets.
@@ -132,13 +149,29 @@ Rules:
 - Avoid N+1 grid queries. Use targeted fetch queries, entity graphs, projections, or paginated data providers where appropriate.
 - Do not depend on an open persistence context in Vaadin UI code. Load and update entities through services.
 
+### Audit and history records
+
+- Treat audit and history rows as append-only business records.
+- Do not add setters for audit-specific fields; use controlled constructors or factories, Hibernate `@Immutable`, and non-updatable columns where practical. Do not rely on `@Immutable` alone because `BaseEntity` currently exposes inherited setters.
+- Do not expose ordinary update or delete CRUD operations from audit repositories. Provide explicit append and query operations instead.
+- Never correct history by editing or deleting a row; append a compensating record when the business requires a correction.
+- Test both dirty-checking immutability and the repository's exposed API.
+- Use `HiringDecisionAudit` and its explicit appender as the current pattern.
+- `BookingRescheduleHistoryRepository` still extends `JpaRepository` and exposes mutation and deletion APIs despite its entity being `@Immutable`. Treat this as known technical debt; do not copy the pattern.
+
 ## Database rules
 
-- MySQL is the runtime database. Tests should use an isolated test database or a compatible container; do not point automated tests at a developer or production database.
-- Use Flyway or Liquibase for schema evolution once migrations are introduced. Do not combine competing migration tools.
-- Production must not rely on Hibernate creating or updating the schema implicitly. Prefer migration-managed schemas and validation.
-- Never commit datasource passwords, SMTP passwords, SMS API keys, or other secrets.
-- Configuration should use environment variables or an approved secret provider, with safe local examples.
+- Flyway is the only schema migration tool for this repository.
+- MySQL runtime migrations belong in `src/main/resources/db/migration/mysql`; tests use logically equivalent migrations from `src/main/resources/db/migration/h2` against isolated H2 in MySQL mode. Never point automated tests at a developer or production database.
+- Hibernate uses `spring.jpa.hibernate.ddl-auto=validate` in both environments. It must never create, update, or repair the schema.
+- Never edit an applied migration. Add the next version to both dialect directories and keep constraints, defaults, enum values, indexes, and nullability logically equivalent.
+- The current latest migration is V5, and `contextLoads()` asserts that version.
+- H2 MySQL mode is a fast compatibility check, not proof that MySQL-specific DDL is safe.
+- Keep `spring.flyway.clean-disabled=true`; never run Flyway clean against a developer, rehearsal, or real database.
+- `baseline-on-migrate` is a one-time controlled rollout option only. Follow `docs/database-migrations.md`; never enable it by default.
+- Schema changes require H2 migration tests and, for MySQL-specific DDL, an isolated MySQL rehearsal before touching the real schema.
+- Never migrate or start the application against a real database without explicit authorization plus the backup and rehearsal evidence required by `docs/database-migrations.md`.
+- Never commit datasource passwords, SMTP passwords, SMS API keys, or other secrets. Use environment variables or an approved secret provider with sanitized examples.
 - Schema changes must include migration, rollback/mitigation notes when relevant, and tests for affected constraints or queries.
 - Preserve existing data when changing nullability, enums, uniqueness, or relationships. Plan and document data backfills.
 - Store timestamps consistently and document timezone assumptions. The current application uses Java time types; do not mix legacy date APIs into new code.
@@ -152,12 +185,17 @@ Roles currently defined are `ADMIN`, `RECRUITER`, and `APPLICANT`.
 - Keep route authorization explicit.
 - Enforce authorization at both route and business/data-access boundaries.
 - `ADMIN` may manage organization-wide configuration and master data.
-- `RECRUITER` access must be scoped to the recruiter's permitted branch, schedules, bookings, applicants, and evaluations. Never return all records merely because the route allows recruiters.
+- Resolve the actor through `SecurityService.requireOperationsUser()` for operational use cases.
+- `ADMIN` operational reads and mutations may be organization-wide.
+- `RECRUITER` reads and mutations must be scoped using the applicant's authoritative non-null branch established by V2. Reject recruiters without a valid branch.
+- Apply recruiter scope in repository/service queries for lists, detail lookup, audit lookup, and mutation commands. Never load all records and filter only in the UI.
+- Cross-branch identifiers must not enable access or mutation. Every affected workflow requires tests for ADMIN success, same-branch recruiter success, and cross-branch recruiter denial.
+- Hiring scope follows the applicant's branch for eligibility, outstanding and completed decisions, actions, and audit history.
 - Do not grant `APPLICANT` access until an applicant-facing workflow and its ownership checks are explicitly implemented.
 - Encode user passwords with the configured `PasswordEncoder`; never store or compare plaintext passwords.
 - Do not add hard-coded default passwords. Development bootstrap credentials must come from configuration, be development-only, and require rotation.
 - Enforce `active`, `mustChangePassword`, lockout, and similar account fields if they remain in the model. Do not add security-state fields without implementing their behavior.
-- Validate current-user ownership on every mutation, not only when listing records.
+- Validate current-user ownership and branch scope on every mutation, not only when listing records.
 - Make navigation role-aware, but never treat hidden controls as a security boundary.
 - Store notification and integration credentials using an approved secret/encryption approach. Do not repopulate secret fields with plaintext values in the UI.
 - Keep CSRF and Vaadin's default security behavior enabled unless a documented integration requires a narrowly scoped exception.
@@ -178,6 +216,21 @@ Preserve these existing rules unless requirements explicitly change:
 - Evaluation scores are from 1 through 10.
 - Applicant, booking, schedule, evaluation, and position states must transition together atomically.
 
+The implemented hiring workflow additionally requires:
+
+- Only an active `PASSED` applicant whose booking is `PASSED` and whose matching evaluation result is `PASS` is offer-eligible.
+- The selected position must be active, `OPEN`, and have remaining headcount.
+- Database uniqueness enforces at most one hiring decision per applicant and per evaluation.
+- Hiring decisions transition only from `OFFERED` to `HIRED`, `DECLINED`, or `WITHDRAWN`.
+- Applicant status follows the decision as `OFFERED`, `HIRED`, `OFFER_DECLINED`, or `WITHDRAWN`.
+- Issuing an offer does not reserve or increment headcount.
+- Accepting an offer pessimistically locks the position, increments `hiredCount` exactly once, and marks the position `FILLED` when headcount is reached.
+- Exact repeated actions are idempotent; conflicting terminal actions are rejected.
+- Every successful hiring transition appends an immutable audit record.
+- `JOB_OFFERED` and `HIRED` notifications are delivered only after the transaction commits.
+- Applicants with a hiring decision cannot be reassigned to another branch or position.
+- Re-offers, reversals, applicant self-service, and offer-time headcount reservation are not currently supported. Adding any of them requires explicit business rules and architecture review.
+
 When adding a new status or action, define:
 
 1. Allowed source states.
@@ -192,7 +245,7 @@ Do not increment derived counters again when editing an existing evaluation or r
 
 ## Testing requirements
 
-The current test suite is minimal. Every behavior change should improve coverage rather than relying only on `contextLoads()`.
+The test suite includes service, repository, security, migration, asynchronous-notification, and route-security coverage. Every behavior change must preserve that coverage and add focused tests for its own rules rather than relying only on `contextLoads()`.
 
 - Use unit tests for pure validation, status-transition, counter, and template-rendering logic.
 - Use repository integration tests for custom queries, constraints, locking, and active/role/branch filters.
@@ -205,17 +258,27 @@ The current test suite is minimal. Every behavior change should improve coverage
 - Mock or replace email/SMS delivery in automated tests; tests must not send real notifications.
 - Tests must be deterministic and must not depend on random seed data, local credentials, or an existing developer database.
 - Bug fixes require a regression test that fails before the fix and passes afterward.
-- Run the Maven Wrapper test suite before handing off changes. On Windows use `mvnw.cmd test`; on Unix-like systems use `./mvnw test`.
-- If tests cannot run because Java, MySQL, credentials, or another prerequisite is unavailable, report that explicitly and do not claim successful verification.
+- Before handing off application changes, run the clean wrapper suite: `./mvnw clean test`.
+- On Windows, confirm the Maven process uses Java 25. Set `JAVA_HOME` and prepend its `bin` to `PATH` for that process only; do not change the POM or global Java installation to work around a local launcher problem.
+- Prefer the normal wrapper when it works. If the PowerShell or Windows wrapper bootstrap fails, invoke `./mvnw clean test` through the installed Git Bash environment.
+- Never source `.env` for tests. Verify that H2 and the H2 Flyway migration location were used without requiring `DB_URL`, `DB_USERNAME`, or `DB_PASSWORD`.
+- Report tests run, failures, errors, skipped, and the final Maven result. Treat H2/MySQL compatibility warnings separately from actual failures.
+- If tests cannot run because Java or another prerequisite is unavailable, report the exact blocker and do not claim successful verification.
 
 ## Git and change rules
 
 - Keep commits small and focused by feature or fix. Do not repeat the existing pattern of combining many independent modules into one large commit.
 - Use clear commit subjects consistent with the repository's style, such as `feat:`, `fix:`, `test:`, `refactor:`, `docs:`, and `chore:`.
-- Do not commit secrets, local `application.properties`, IDE settings, build output, logs, or generated transient files.
-- Do not manually commit changes under `target` or `src/main/frontend/generated` unless Vaadin explicitly requires a reviewed generated artifact and the project has decided to track it.
+- Track the sanitized production and H2 test `application.properties` files. Never track `.env`, credentials, local secret overrides, logs, `target` output, IDE settings, or machine-specific datasource values.
+- Record `git status --short --branch` before editing. Treat all pre-existing modifications and untracked files as user work; never restore, delete, format, stage, or commit them as part of an unrelated task.
+- Do not mix an unrelated documentation or maintenance change into an uncommitted feature.
+- Capture the pre-command status of Vaadin-generated paths because Maven and Vaadin commands can rewrite tracked output. After verification, compare generated changes with that snapshot and remove only newly generated build noise when those paths were previously clean.
+- Never blanket-restore a generated directory when it contained pre-existing changes. Do not manually edit generated files, and commit generated artifacts only when Vaadin requires them for an intentional reviewed change that the project has explicitly chosen to track.
+- Before handoff, inspect `vite.generated.ts`, `src/main/frontend/generated`, and `src/main/bundles` for accidental changes.
 - Do not amend, rebase, reset, force-push, or rewrite shared history unless explicitly requested.
-- Preserve unrelated user changes in a dirty worktree.
+- Commit and push authorization is action-specific and scope-specific. Approval to push an earlier commit does not authorize committing or pushing later work.
+- Before an authorized commit, inspect the staged scope and scan it for secrets. Before an authorized push, report the branch and intended commit. Never force-push without separate explicit authorization.
+- After a resumed request such as "continue," recheck repository status and do not assume that earlier mutation, commit, migration, startup, or push authorization still applies.
 - Keep schema migrations in the same change as the entity/repository code that requires them.
 - Keep tests in the same change as the behavior they verify.
 - Avoid unrelated dependency upgrades, formatting, or renames in feature commits.
@@ -271,6 +334,13 @@ user explicitly requested both recommendation and implementation. Do
 not make speculative fixes when the diagnostician reports insufficient
 evidence. The implementer should normally be the only specialist
 modifying production source code.
+
+If a named specialist or configured model is unavailable, do not
+silently skip a required phase. Use an available agent as a same-role
+fallback, give it the same task packet and read/write boundaries, and
+disclose the fallback in the consolidated report. Specialist
+unavailability does not authorize the orchestrator to collapse
+architecture, implementation, and review into one unreviewed phase.
 
 Do not run dependent architecture, implementation, and review phases in
 parallel. The workflow permits at most two automatic repair cycles.

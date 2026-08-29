@@ -130,18 +130,31 @@ certain, use `Diagnostician → Implementer → Reviewer`.
 Do not allow role drift. Production source changes should normally be
 owned only by `implementer`.
 
-## Step 0 — Safety
+## Specialist Fallback
 
-Before implementation:
+If a configured specialist or model is unavailable, use an available
+specialist-capable agent with an explicitly supported model. Give it the same
+role instructions, task packet, repository context, and read/write boundaries.
+Never skip a required phase or silently move that role to the orchestrator.
+Disclose the fallback in the final report. After any read-only fallback, verify
+that it made no repository changes.
 
-1. Inspect `git status --short`.
-2. Identify pre-existing uncommitted changes.
-3. Preserve unrelated user work.
-4. Never use destructive Git commands on unrelated changes.
-5. Do not automatically commit.
-6. Do not automatically push.
+## Step 0 — Preflight
 
-The user request is the authoritative product requirement.
+Before delegation or implementation, capture a compact preflight packet:
+
+1. Preserve the original request and record the currently authorized actions.
+2. Read all applicable `AGENTS.md` files.
+3. Run `git status --short --branch` and identify pre-existing tracked and
+   untracked changes, including task-owned untracked files.
+4. Record the state of tracked Vaadin-generated paths before commands that may
+   rewrite them.
+5. Record required validation and any database/runtime safety constraints.
+6. Preserve unrelated work; never use destructive Git commands on it.
+7. Do not expose `.env` or secrets, and do not automatically commit or push.
+
+Pass this packet to every specialist. The original user request remains the
+authoritative product requirement.
 
 ## Architecture Stage
 
@@ -178,6 +191,7 @@ Give the implementer:
 - feature-strategist, diagnostician, or architect handoffs that apply
 - relevant repository constraints
 - warning about any pre-existing working-tree changes
+- the preflight packet and exact currently authorized operations
 
 Require the implementer to inspect the real code before editing.
 
@@ -206,6 +220,7 @@ Give the reviewer:
 - implementer report, when implementation occurred
 - current git diff
 - test results
+- the preflight packet, generated-path baseline, and task-owned untracked files
 
 Require the reviewer to inspect the actual changed files and repository.
 Wait for the reviewer.
@@ -220,15 +235,18 @@ Proceed to Final Verification.
 
 Do not automatically implement OPTIONAL suggestions.
 
-Only implement a MINOR finding automatically when it is clearly
-necessary to satisfy the original requirement or acceptance criteria.
-Otherwise report it as a recommendation and proceed.
+Only implement a MINOR finding automatically when it is clearly necessary to
+satisfy the original requirement or acceptance criteria. Any finding that is
+implemented, including MINOR, requires another independent reviewer pass and
+counts as a repair cycle. Unimplemented MINOR and OPTIONAL findings may be
+reported without a repair cycle.
 
 ### CHANGES REQUIRED
 
 Inspect `ARCHITECT REVIEW REQUIRED`.
 
-If it is NO, send only BLOCKER and MAJOR findings back to `implementer`.
+If it is NO, send BLOCKER and MAJOR findings, plus any MINOR findings selected
+for implementation, back to `implementer`.
 Require the implementer to inspect each finding, fix valid findings,
 avoid unrelated changes, rerun relevant tests, and return an updated
 implementation report. Then spawn `reviewer` again.
@@ -263,16 +281,21 @@ speculative repairs indefinitely.
 
 Once the reviewer approves:
 
-1. Inspect `git status --short`.
-2. Inspect the final git diff.
-3. Confirm unrelated pre-existing changes were preserved.
-4. Confirm required tests were executed.
-5. Confirm tests passed.
-6. Verify acceptance criteria.
-7. Check for accidental debug code.
-8. Check for accidental secrets.
-9. Check for unrelated formatting or refactors.
-10. Do not commit or push unless explicitly requested.
+1. Inspect `git status --short --branch`, the tracked diff, and every task-owned
+   untracked file.
+2. Confirm unrelated pre-existing changes were preserved.
+3. Compare Vaadin-generated paths with the preflight baseline and remove only
+   newly generated build noise.
+4. Check for accidental secrets, debug code, formatting, and unrelated work.
+5. For application changes, verify process-scoped Java 25 `./mvnw clean test`
+   evidence and report tests run, failures, errors, skipped, and Maven result.
+6. Confirm tests used H2 and the H2 Flyway location without sourcing `.env`.
+7. For schema changes, confirm paired MySQL/H2 migrations and required isolated
+   MySQL rehearsal evidence without assuming H2 proves MySQL DDL safety.
+8. Verify acceptance criteria and the final reviewer verdict.
+9. Treat commit, push, application startup, database rehearsal, and real
+   migration as separately authorized actions. A later `continue` does not
+   renew or expand earlier authorization.
 
 ## Read-Only and Small-Change Exceptions
 

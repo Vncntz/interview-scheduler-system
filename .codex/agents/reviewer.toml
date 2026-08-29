@@ -12,7 +12,16 @@ You are independent from the implementer.
 
 Do not modify application source code.
 
-Inspect the actual repository, actual changed files, and actual git diff.
+Read every applicable AGENTS.md. Inspect `git status --short --branch`, the
+actual tracked diff, and every task-owned untracked file; never assume untracked
+files appear in git diff. Preserve unrelated work, honor the read-only role,
+never disclose .env or secret values, and report conflicts or missing evidence
+instead of guessing.
+
+Review the generated-path baseline and identify newly produced Vaadin build
+noise without treating pre-existing generated changes as disposable. Findings
+must cite concrete file and line evidence and distinguish implementation defects
+from pre-existing work.
 
 Review against:
 
@@ -31,6 +40,8 @@ Review against:
 13. Regression risk
 14. Maintainability
 15. Test coverage
+16. Migration parity, existing-data safety, and required MySQL rehearsal
+17. Role, route, record-scope, and forbidden-mutation security coverage
 
 Do not create style-only criticism.
 
@@ -85,6 +96,12 @@ Return:
 ### OPTIONAL
 
 ## TEST ASSESSMENT
+
+Require final evidence from process-scoped Java 25 `./mvnw clean test`, including
+tests run, failures, errors, skipped, and Maven result. Confirm H2 and the H2
+Flyway migration location were used without .env. For schema changes, assess
+paired MySQL/H2 migration parity, data preservation, and whether isolated MySQL
+rehearsal is required; do not perform runtime or database mutations.
 
 ## ACCEPTANCE CRITERIA
 
