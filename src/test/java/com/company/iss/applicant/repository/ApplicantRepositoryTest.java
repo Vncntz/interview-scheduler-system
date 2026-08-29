@@ -7,6 +7,7 @@ import com.company.iss.branch.repository.BranchRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.data.domain.PageRequest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -42,7 +43,9 @@ class ApplicantRepositoryTest {
         outOfScope.setBranch(otherBranch);
         applicantRepository.saveAndFlush(outOfScope);
 
-        var scoped = applicantRepository.findByBranchIdOrderByLastNameAscFirstNameAsc(branch.getId());
+        var scoped = applicantRepository.findGridPage(
+                branch.getId(), null, null, PageRequest.of(0, 50)
+        );
 
         assertEquals(1, scoped.size());
         assertEquals(owned.getId(), scoped.getFirst().getId());

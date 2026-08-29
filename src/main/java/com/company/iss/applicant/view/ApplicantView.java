@@ -1,7 +1,9 @@
 package com.company.iss.applicant.view;
 
 import com.company.iss.applicant.dialog.ApplicantFormDialog;
+import com.company.iss.applicant.dto.ApplicantGridFilter;
 import com.company.iss.applicant.entity.Applicant;
+import com.company.iss.applicant.entity.ApplicantStatus;
 import com.company.iss.applicant.service.ApplicantService;
 import com.company.iss.booking.dialog.BookingFormDialog;
 import com.company.iss.booking.service.BookingService;
@@ -14,6 +16,7 @@ import com.company.iss.shared.view.MainLayout;
 import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.icon.VaadinIcon;
@@ -22,34 +25,33 @@ import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.data.provider.CallbackDataProvider;
+import com.vaadin.flow.data.provider.DataProvider;
+import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
-import jakarta.annotation.PostConstruct;
 import jakarta.annotation.security.RolesAllowed;
-import org.springframework.beans.factory.annotation.Autowired;
 
 @Route(value = "applicants", layout = MainLayout.class)
 @PageTitle("Applicant Management")
 @RolesAllowed({"ADMIN", "RECRUITER"})
 public class ApplicantView extends VerticalLayout {
 
-    @Autowired
-    private ApplicantService applicantService;
-    @Autowired
-    private BookingService bookingService;
-    @Autowired
-    private ScheduleService scheduleService;
-    @Autowired
-    private PositionOpeningService positionOpeningService;
-    @Autowired
-    private SecurityService securityService;
-    @Autowired
-    private BranchService branchService;
+    private static final int GRID_PAGE_SIZE = 50;
+
+    private final ApplicantService applicantService;
+    private final BookingService bookingService;
+    private final ScheduleService scheduleService;
+    private final PositionOpeningService positionOpeningService;
+    private final SecurityService securityService;
+    private final BranchService branchService;
 
     private Grid<Applicant> applicantGrid;
+    private CallbackDataProvider<Applicant, Void> dataProvider;
 
     private HorizontalLayout filterLayout;
     private TextField searchField;
+    private ComboBox<ApplicantStatus> statusFilter;
     private Button searchButton;
 
     private HorizontalLayout actionLayout;
@@ -57,26 +59,50 @@ public class ApplicantView extends VerticalLayout {
     private Button editButton;
     private Button bookButton;
 
-    public ApplicantView() {
+    public ApplicantView(
+            ApplicantService applicantService,
+            BookingService bookingService,
+            ScheduleService scheduleService,
+            PositionOpeningService positionOpeningService,
+            SecurityService securityService,
+            BranchService branchService
+    ) {
+        this.applicantService = applicantService;
+        this.bookingService = bookingService;
+        this.scheduleService = scheduleService;
+        this.positionOpeningService = positionOpeningService;
+        this.securityService = securityService;
+        this.branchService = branchService;
+
         setSizeFull();
 
         filterLayout = new HorizontalLayout();
 
         searchField = new TextField();
         searchField.setPlaceholder("Search Applicant");
+        searchField.setClearButtonVisible(true);
+        searchField.setValueChangeMode(ValueChangeMode.LAZY);
+        searchField.addValueChangeListener(event -> refreshGrid());
+
+        statusFilter = new ComboBox<>();
+        statusFilter.setPlaceholder("Applicant Status");
+        statusFilter.setItems(ApplicantStatus.values());
+        statusFilter.setClearButtonVisible(true);
+        statusFilter.addValueChangeListener(event -> refreshGrid());
 
         searchButton = new Button("Search");
         searchButton.setIcon(VaadinIcon.SEARCH.create());
         searchButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-        searchButton.addClickListener(e -> onSearch(searchField.getValue()));
+        searchButton.addClickListener(e -> refreshGrid());
 
-        filterLayout.add(searchField, searchButton);
+        filterLayout.add(searchField, statusFilter, searchButton);
         filterLayout.setWidthFull();
         filterLayout.setJustifyContentMode(JustifyContentMode.END);
 
         applicantGrid = new Grid<>();
         applicantGrid.setHeightFull();
         applicantGrid.setWidth("100%");
+        applicantGrid.setPageSize(GRID_PAGE_SIZE);
 
         applicantGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS, GridVariant.LUMO_COMPACT);
 
@@ -84,10 +110,10 @@ public class ApplicantView extends VerticalLayout {
         applicantGrid.addColumn(Applicant::getEmail).setHeader("Email").setWidth("220px").setResizable(true);
         applicantGrid.addColumn(Applicant::getMobileNumber).setHeader("Mobile").setWidth("150px").setResizable(true);
         applicantGrid.addColumn(o -> o.getBranch() == null ? "Unassigned" : o.getBranch().getBranchName()).setHeader("Branch").setWidth("160px").setResizable(true);
-        applicantGrid.addColumn(o -> o.getPositionOpening().getTitle()).setHeader("Position").setWidth("180px").setResizable(true);
-        applicantGrid.addColumn(o -> o.getPositionOpening().getClient().getCompanyName()).setHeader("Client").setWidth("220px").setResizable(true);
-        applicantGrid.addColumn(o -> o.getPositionOpening().getWorkLocation()).setHeader("Work Location").setWidth("220px").setResizable(true);
-        applicantGrid.addColumn(o -> o.getStatus().name()).setHeader("Status").setWidth("140px").setResizable(true);
+        applicantGrid.addColumn(this::positionTitle).setHeader("Position").setWidth("180px").setResizable(true);
+        applicantGrid.addColumn(this::clientName).setHeader("Client").setWidth("220px").setResizable(true);
+        applicantGrid.addColumn(this::workLocation).setHeader("Work Location").setWidth("220px").setResizable(true);
+        applicantGrid.addColumn(o -> o.getStatus() == null ? "" : o.getStatus().name()).setHeader("Status").setWidth("140px").setResizable(true);
         applicantGrid.addColumn(o -> o.isActive() ? "Active" : "Inactive").setHeader("Record Status").setWidth("130px").setResizable(true);
         applicantGrid.addComponentColumn(applicant -> {
 
@@ -106,7 +132,7 @@ public class ApplicantView extends VerticalLayout {
                     applicantService.activate(applicant.getId());
                 }
 
-                init();
+                refreshGrid();
             });
 
             HorizontalLayout wrap = new HorizontalLayout(toggle);
@@ -137,16 +163,24 @@ public class ApplicantView extends VerticalLayout {
 
         actionLayout.add(addButton, editButton, bookButton);
 
+        dataProvider = DataProvider.fromCallbacks(
+                query -> applicantService.findGridPage(
+                        currentFilter(), query.getPage(), query.getPageSize()
+                ).stream(),
+                query -> toIntCount(applicantService.countGrid(currentFilter()))
+        );
+        applicantGrid.setDataProvider(dataProvider);
+
         add(filterLayout, applicantGrid, actionLayout);
     }
 
-    private void onSearch(String value) {
-        applicantGrid.setItems(applicantService.search(value));
+    private ApplicantGridFilter currentFilter() {
+        return new ApplicantGridFilter(searchField.getValue(), statusFilter.getValue());
     }
 
-    @PostConstruct
-    private void init() {
-        applicantGrid.setItems(applicantService.search(null));
+    private void refreshGrid() {
+        applicantGrid.deselectAll();
+        dataProvider.refreshAll();
     }
 
     private void onEdit() {
@@ -173,7 +207,7 @@ public class ApplicantView extends VerticalLayout {
 
                 Notification.show("Applicant saved successfully.", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
 
-                init();
+                refreshGrid();
 
             } catch (Exception ex) {
                 UserSafeNotifier.showError(ex);
@@ -197,7 +231,7 @@ public class ApplicantView extends VerticalLayout {
 
                 Notification.show("Interview booked successfully.", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
 
-                init();
+                refreshGrid();
 
             } catch (Exception ex) {
                 UserSafeNotifier.showError(ex);
@@ -217,5 +251,23 @@ public class ApplicantView extends VerticalLayout {
         }
 
         openBookingDialog(selected);
+    }
+
+    private int toIntCount(long count) {
+        return count > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) count;
+    }
+
+    private String positionTitle(Applicant applicant) {
+        return applicant.getPositionOpening() == null ? "" : applicant.getPositionOpening().getTitle();
+    }
+
+    private String clientName(Applicant applicant) {
+        return applicant.getPositionOpening() == null || applicant.getPositionOpening().getClient() == null
+                ? ""
+                : applicant.getPositionOpening().getClient().getCompanyName();
+    }
+
+    private String workLocation(Applicant applicant) {
+        return applicant.getPositionOpening() == null ? "" : applicant.getPositionOpening().getWorkLocation();
     }
 }

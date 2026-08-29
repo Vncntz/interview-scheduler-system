@@ -20,21 +20,6 @@ import java.util.Optional;
 
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
-    @Query("""
-                SELECT b
-                FROM Booking b
-                WHERE
-                    LOWER(CONCAT(
-                        b.applicant.firstName,
-                        ' ',
-                        COALESCE(b.applicant.middleName, ''),
-                        ' ',
-                        b.applicant.lastName
-                    )) LIKE LOWER(CONCAT('%', :keyword, '%'))
-                    OR LOWER(b.bookingReference) LIKE LOWER(CONCAT('%', :keyword, '%'))
-            """)
-    List<Booking> search(String keyword);
-
     List<Booking> findByApplicant(Applicant applicant);
 
     List<Booking> findBySchedule(Schedule schedule);
@@ -49,18 +34,71 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     Optional<Booking> findByApplicantAndSchedule(Applicant applicant, Schedule schedule);
 
-    @EntityGraph(attributePaths = {"applicant", "applicant.positionOpening", "schedule", "schedule.branch", "schedule.recruiter"})
-    List<Booking> findByScheduleBranchIdOrderByScheduleScheduleDateDescScheduleStartTimeDesc(Long branchId);
-
-    @EntityGraph(attributePaths = {"applicant", "applicant.positionOpening", "schedule", "schedule.branch", "schedule.recruiter"})
+    @EntityGraph(attributePaths = {
+            "applicant",
+            "applicant.branch",
+            "applicant.positionOpening",
+            "applicant.positionOpening.client",
+            "schedule",
+            "schedule.branch",
+            "schedule.recruiter",
+            "recruiter"
+    })
     @Query("""
             select b from Booking b
-            where b.schedule.branch.id = :branchId
-              and (lower(concat(b.applicant.firstName, ' ', b.applicant.lastName)) like lower(concat('%', :keyword, '%'))
-                   or lower(b.bookingReference) like lower(concat('%', :keyword, '%')))
-            order by b.schedule.scheduleDate desc, b.schedule.startTime desc
+            where (:branchId is null or b.applicant.branch.id = :branchId)
+              and (:keyword is null
+                   or lower(b.bookingReference) like concat('%', :keyword, '%')
+                   or lower(b.applicant.firstName) like concat('%', :keyword, '%')
+                   or lower(b.applicant.lastName) like concat('%', :keyword, '%')
+                   or lower(concat(
+                       concat(b.applicant.firstName, ' '),
+                       concat(
+                           case
+                               when b.applicant.middleName is null or trim(b.applicant.middleName) = '' then ''
+                               else concat(b.applicant.middleName, ' ')
+                           end,
+                           b.applicant.lastName
+                       )
+                   )) like concat('%', :keyword, '%'))
+              and (:status is null or b.status = :status)
+              and (:scheduleDate is null or b.schedule.scheduleDate = :scheduleDate)
+            order by b.schedule.scheduleDate desc, b.schedule.startTime desc, b.id desc
             """)
-    List<Booking> searchByBranchId(@Param("branchId") Long branchId, @Param("keyword") String keyword);
+    List<Booking> findGridPage(
+            @Param("branchId") Long branchId,
+            @Param("keyword") String keyword,
+            @Param("status") BookingStatus status,
+            @Param("scheduleDate") LocalDate scheduleDate,
+            Pageable pageable
+    );
+
+    @Query("""
+            select count(b) from Booking b
+            where (:branchId is null or b.applicant.branch.id = :branchId)
+              and (:keyword is null
+                   or lower(b.bookingReference) like concat('%', :keyword, '%')
+                   or lower(b.applicant.firstName) like concat('%', :keyword, '%')
+                   or lower(b.applicant.lastName) like concat('%', :keyword, '%')
+                   or lower(concat(
+                       concat(b.applicant.firstName, ' '),
+                       concat(
+                           case
+                               when b.applicant.middleName is null or trim(b.applicant.middleName) = '' then ''
+                               else concat(b.applicant.middleName, ' ')
+                           end,
+                           b.applicant.lastName
+                       )
+                   )) like concat('%', :keyword, '%'))
+              and (:status is null or b.status = :status)
+              and (:scheduleDate is null or b.schedule.scheduleDate = :scheduleDate)
+            """)
+    long countGrid(
+            @Param("branchId") Long branchId,
+            @Param("keyword") String keyword,
+            @Param("status") BookingStatus status,
+            @Param("scheduleDate") LocalDate scheduleDate
+    );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @EntityGraph(attributePaths = {"applicant", "schedule", "schedule.branch", "schedule.recruiter"})
