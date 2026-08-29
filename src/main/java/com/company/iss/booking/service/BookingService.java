@@ -11,14 +11,14 @@ import com.company.iss.booking.entity.Booking;
 import com.company.iss.booking.entity.BookingRescheduleHistory;
 import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.event.BookingCancelledEvent;
+import com.company.iss.booking.event.BookingConfirmedEvent;
+import com.company.iss.booking.event.BookingCreatedEvent;
 import com.company.iss.booking.event.BookingRescheduledEvent;
 import com.company.iss.booking.exception.BookingCancellationException;
 import com.company.iss.booking.exception.BookingRescheduleException;
 import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.booking.repository.BookingRescheduleHistoryRepository;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
-import com.company.iss.notification.entity.NotificationEvent;
-import com.company.iss.notification.service.NotificationService;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.repository.ScheduleRepository;
@@ -47,7 +47,6 @@ public class BookingService {
 
     private static final Logger log = LoggerFactory.getLogger(BookingService.class);
 
-    private final NotificationService notificationService;
     private final BookingRepository bookingRepository;
     private final BookingRescheduleHistoryRepository bookingRescheduleHistoryRepository;
     private final InterviewEvaluationRepository interviewEvaluationRepository;
@@ -57,7 +56,6 @@ public class BookingService {
     private final ApplicationEventPublisher applicationEventPublisher;
 
     public BookingService(
-            NotificationService notificationService,
             BookingRepository bookingRepository,
             BookingRescheduleHistoryRepository bookingRescheduleHistoryRepository,
             InterviewEvaluationRepository interviewEvaluationRepository,
@@ -66,7 +64,6 @@ public class BookingService {
             SecurityService securityService,
             ApplicationEventPublisher applicationEventPublisher
     ) {
-        this.notificationService = notificationService;
         this.bookingRepository = bookingRepository;
         this.bookingRescheduleHistoryRepository = bookingRescheduleHistoryRepository;
         this.interviewEvaluationRepository = interviewEvaluationRepository;
@@ -147,7 +144,7 @@ public class BookingService {
                 schedule.getId()
         );
 
-        notificationService.send(NotificationEvent.BOOKING_CREATED, saved);
+        applicationEventPublisher.publishEvent(new BookingCreatedEvent(saved.getId()));
 
         return saved;
     }
@@ -533,7 +530,7 @@ public class BookingService {
 
         log.info("[BOOKING] Booking confirmed bookingId={}", saved.getId());
 
-        notificationService.send(NotificationEvent.BOOKING_CONFIRMED, saved);
+        applicationEventPublisher.publishEvent(new BookingConfirmedEvent(saved.getId()));
     }
 
     private Booking requireScopedBookingForUpdate(Long bookingId, User actor) {

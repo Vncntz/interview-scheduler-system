@@ -13,7 +13,6 @@ import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.booking.repository.BookingRescheduleHistoryRepository;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
-import com.company.iss.notification.service.NotificationService;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.repository.ScheduleRepository;
 import com.company.iss.shared.exception.BusinessRuleViolationException;
@@ -46,7 +45,6 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class BookingWorkflowSecurityTest {
 
-    @Mock NotificationService notificationService;
     @Mock BookingRepository bookingRepository;
     @Mock BookingRescheduleHistoryRepository historyRepository;
     @Mock InterviewEvaluationRepository evaluationRepository;
@@ -64,7 +62,6 @@ class BookingWorkflowSecurityTest {
                 .when(securityService.requireOperationsUser(any(String.class)))
                 .thenAnswer(invocation -> securityService.getCurrentUser());
         service = new BookingService(
-                notificationService,
                 bookingRepository,
                 historyRepository,
                 evaluationRepository,
@@ -90,7 +87,7 @@ class BookingWorkflowSecurityTest {
         assertThrows(AccessDeniedException.class, () -> guarded.cancel(50L));
 
         verify(bookingRepository, never()).findByIdForUpdate(any());
-        verifyNoInteractions(scheduleRepository, historyRepository, applicantService, notificationService, eventPublisher);
+        verifyNoInteractions(scheduleRepository, historyRepository, applicantService, eventPublisher);
     }
 
     @Test
@@ -103,7 +100,7 @@ class BookingWorkflowSecurityTest {
         assertThrows(AccessDeniedException.class, () -> guarded.confirm(50L));
 
         verify(bookingRepository, never()).findByIdForUpdate(any());
-        verifyNoInteractions(scheduleRepository, historyRepository, applicantService, notificationService, eventPublisher);
+        verifyNoInteractions(scheduleRepository, historyRepository, applicantService, eventPublisher);
     }
 
     @Test
@@ -114,7 +111,7 @@ class BookingWorkflowSecurityTest {
         assertThrows(AccessDeniedException.class, () -> service.confirm(50L));
 
         verify(bookingRepository, never()).save(any());
-        verify(notificationService, never()).send(any(), any());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
@@ -160,7 +157,6 @@ class BookingWorkflowSecurityTest {
                 Clock.fixed(Instant.parse("2026-08-28T02:00:00Z"), ZoneOffset.UTC)
         );
         return new BookingService(
-                notificationService,
                 bookingRepository,
                 historyRepository,
                 evaluationRepository,
