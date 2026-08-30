@@ -6,6 +6,7 @@ import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.booking.entity.Booking;
 import com.company.iss.booking.entity.BookingStatus;
+import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.client.entity.Client;
 import com.company.iss.position.entity.EmploymentType;
@@ -116,6 +117,30 @@ class BookingGridRepositoryTest {
         assertEquals(0L, bookingRepository.countGrid(
                 branch.getId(), "alex candidate", BookingStatus.CONFIRMED, targetDate.plusDays(1)
         ));
+    }
+
+    @Test
+    void interviewStageSnapshotIsPersisted() {
+        Branch branch = persistBranch("STAGE", "Stage Branch");
+        User recruiter = persistRecruiter("stage@example.test", branch);
+        PositionOpening position = persistPosition();
+        Schedule schedule = persistSchedule(branch, recruiter, LocalDate.of(2026, 11, 10));
+        Applicant applicant = persistApplicant(
+                "Client", null, "Candidate", "client.stage@example.test", branch, position
+        );
+        Booking booking = Booking.forInterviewStage(InterviewStage.CLIENT);
+        booking.setBookingReference("BK-CLIENT-STAGE");
+        booking.setApplicant(applicant);
+        booking.setSchedule(schedule);
+        booking.setRecruiter(recruiter);
+        booking.setStatus(BookingStatus.CONFIRMED);
+        entityManager.persist(booking);
+        entityManager.flush();
+        entityManager.clear();
+
+        Booking reloaded = bookingRepository.findById(booking.getId()).orElseThrow();
+
+        assertEquals(InterviewStage.CLIENT, reloaded.getInterviewStage());
     }
 
     private Branch persistBranch(String code, String name) {

@@ -52,6 +52,7 @@ class NotificationDataGeneratorTest {
         assertEquals(NotificationEvent.BOOKING_RESCHEDULED, template.getEvent());
         assertEquals(NotificationChannel.EMAIL, template.getChannel());
         assertTrue(template.getBody().contains("{{bookingReference}}"));
+        assertTrue(template.getBody().contains("{{interviewStage}}"));
     }
 
     @Test

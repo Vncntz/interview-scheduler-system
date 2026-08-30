@@ -31,7 +31,7 @@ class InterviewSchedulerSystemApplicationTests {
 
 	@Test
 	void contextLoads() {
-		assertEquals("5", flyway.info().current().getVersion().getVersion());
+		assertEquals("6", flyway.info().current().getVersion().getVersion());
 		String nullable = jdbcTemplate.queryForObject(
 				"""
 				SELECT IS_NULLABLE

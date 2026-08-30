@@ -21,6 +21,7 @@ import com.company.iss.hiring.entity.HiringDecisionAudit;
 import com.company.iss.hiring.entity.HiringDecisionStatus;
 import com.company.iss.hiring.event.ApplicantHiredEvent;
 import com.company.iss.hiring.event.JobOfferIssuedEvent;
+import com.company.iss.hiring.exception.HiringDecisionException;
 import com.company.iss.hiring.repository.HiringDecisionAuditRepository;
 import com.company.iss.hiring.repository.HiringDecisionRepository;
 import com.company.iss.position.entity.PositionOpening;
@@ -30,6 +31,8 @@ import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -99,6 +102,38 @@ class HiringDecisionServiceTest {
         verify(decisionRepository).findByApplicantIdForUpdate(10L);
         verify(auditRepository).append(any(HiringDecisionAudit.class));
         verify(eventPublisher).publishEvent(new JobOfferIssuedEvent(30L));
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = ApplicantStatus.class,
+            names = {"FOR_FINAL_INTERVIEW", "FOR_CLIENT_INTERVIEW"}
+    )
+    void pendingInterviewStageCannotReceiveOffer(ApplicantStatus pendingStatus) {
+        User actor = admin();
+        Applicant applicant = eligibleApplicant(10L, 1L);
+        applicant.setStatus(pendingStatus);
+        PositionOpening position = applicant.getPositionOpening();
+        InterviewEvaluation evaluation = passedEvaluation(20L, applicant);
+        when(securityService.requireOperationsUser()).thenReturn(actor);
+        when(applicantRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(applicant));
+        when(decisionRepository.findByApplicantIdForUpdate(10L)).thenReturn(Optional.empty());
+        when(evaluationRepository.findDetailedById(20L)).thenReturn(Optional.of(evaluation));
+
+        HiringDecisionException exception = assertThrows(
+                HiringDecisionException.class,
+                () -> service.issueOffer(new IssueOfferCommand(10L, 20L, null))
+        );
+
+        assertEquals("Only active applicants with a passed result are eligible for an offer.", exception.getMessage());
+        assertEquals(pendingStatus, applicant.getStatus());
+        assertEquals(0, position.getHiredCount());
+        assertEquals(PositionStatus.OPEN, position.getStatus());
+        verify(decisionRepository, never()).saveAndFlush(any());
+        verify(decisionRepository, never()).save(any());
+        verify(applicantRepository, never()).save(any());
+        verify(positionRepository, never()).save(any());
+        verifyNoInteractions(auditRepository, eventPublisher);
     }
 
     @Test

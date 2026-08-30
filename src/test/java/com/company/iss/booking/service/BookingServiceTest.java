@@ -7,9 +7,11 @@ import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.auth.service.SecurityService;
 import com.company.iss.booking.dto.BookingRescheduleCommand;
+import com.company.iss.booking.dto.CreateBookingCommand;
 import com.company.iss.booking.entity.Booking;
 import com.company.iss.booking.entity.BookingRescheduleHistory;
 import com.company.iss.booking.entity.BookingStatus;
+import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.booking.event.BookingCancelledEvent;
 import com.company.iss.booking.event.BookingConfirmedEvent;
 import com.company.iss.booking.event.BookingCreatedEvent;
@@ -122,6 +124,106 @@ class BookingServiceTest {
         verify(eventPublisher).publishEvent(new BookingCreatedEvent(42L));
     }
 
+    @ParameterizedTest
+    @MethodSource("stageAwareBookingCases")
+    void createBookingPersistsTheStageRequiredByApplicantStatus(
+            ApplicantStatus applicantStatus,
+            InterviewStage interviewStage
+    ) {
+        Branch branch = branch(100L);
+        User actor = user(200L, Role.ADMIN, null);
+        Applicant applicant = new Applicant();
+        applicant.setId(300L);
+        applicant.setBranch(branch);
+        applicant.setActive(true);
+        applicant.setStatus(applicantStatus);
+        Schedule schedule = schedule(
+                20L, branch, user(201L, Role.RECRUITER, branch),
+                0, 2, ScheduleStatus.OPEN
+        );
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(applicantService.findForBookingUpdate(300L, actor)).thenReturn(applicant);
+        when(scheduleRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(schedule));
+        when(bookingRepository.findFirstByApplicantAndStatusIn(eq(applicant), any())).thenReturn(Optional.empty());
+        when(bookingRepository.findByApplicantAndSchedule(applicant, schedule)).thenReturn(Optional.empty());
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Booking created = bookingService.createBooking(
+                new CreateBookingCommand(300L, 20L, interviewStage, "Stage-aware")
+        );
+
+        assertEquals(interviewStage, created.getInterviewStage());
+        verify(applicantService).updateStatus(applicant, ApplicantStatus.SCHEDULED);
+    }
+
+    @Test
+    void createBookingRejectsStageThatDoesNotMatchApplicantProgression() {
+        Branch branch = branch(100L);
+        User actor = user(200L, Role.ADMIN, null);
+        Applicant applicant = new Applicant();
+        applicant.setId(300L);
+        applicant.setBranch(branch);
+        applicant.setActive(true);
+        applicant.setStatus(ApplicantStatus.FOR_FINAL_INTERVIEW);
+        Schedule schedule = schedule(20L, branch, user(201L, Role.RECRUITER, branch), 0, 2, ScheduleStatus.OPEN);
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(applicantService.findForBookingUpdate(300L, actor)).thenReturn(applicant);
+        when(scheduleRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(schedule));
+
+        assertThrows(
+                BusinessRuleViolationException.class,
+                () -> bookingService.createBooking(
+                        new CreateBookingCommand(300L, 20L, InterviewStage.CLIENT, "Invalid jump")
+                )
+        );
+
+        verify(bookingRepository, never()).save(any());
+        verify(scheduleRepository, never()).save(any());
+    }
+
+    @Test
+    void cancelledBookingReplacementMustReusePreviousStage() {
+        Branch branch = branch(100L);
+        User actor = user(200L, Role.ADMIN, null);
+        Applicant applicant = new Applicant();
+        applicant.setId(300L);
+        applicant.setBranch(branch);
+        applicant.setActive(true);
+        applicant.setStatus(ApplicantStatus.SCHEDULED);
+        Schedule previousSchedule = schedule(
+                10L, branch, user(201L, Role.RECRUITER, branch), 0, 2, ScheduleStatus.OPEN
+        );
+        Booking previous = booking(
+                40L, BookingStatus.CANCELLED, previousSchedule, InterviewStage.FINAL
+        );
+        previous.setApplicant(applicant);
+        Schedule destination = schedule(
+                20L, branch, user(202L, Role.RECRUITER, branch), 0, 2, ScheduleStatus.OPEN
+        );
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(applicantService.findForBookingUpdate(300L, actor)).thenReturn(applicant);
+        when(scheduleRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(destination));
+        when(bookingRepository.findFirstByApplicantOrderByBookedDateTimeDescIdDesc(applicant))
+                .thenReturn(Optional.of(previous));
+        when(bookingRepository.findFirstByApplicantAndStatusIn(eq(applicant), any())).thenReturn(Optional.empty());
+        when(bookingRepository.findByApplicantAndSchedule(applicant, destination)).thenReturn(Optional.empty());
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Booking replacement = bookingService.createBooking(
+                new CreateBookingCommand(300L, 20L, InterviewStage.FINAL, "Replacement")
+        );
+
+        assertEquals(InterviewStage.FINAL, replacement.getInterviewStage());
+        assertThrows(
+                BusinessRuleViolationException.class,
+                () -> new BookingStageEligibilityPolicy().validateRequestedStage(
+                        ApplicantStatus.SCHEDULED,
+                        previous,
+                        InterviewStage.INITIAL
+                )
+        );
+    }
+
     @Test
     void confirmPublishesIdOnlyEventAfterSuccessfulSave() {
         Branch branch = branch(100L);
@@ -186,6 +288,28 @@ class BookingServiceTest {
         verify(scheduleRepository).findAllByIdForUpdate(List.of(1L, 2L));
         verify(eventPublisher).publishEvent(new BookingRescheduledEvent(10L));
         verify(applicantService, never()).updateStatus(any(), any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(InterviewStage.class)
+    void reschedulePreservesInterviewStage(InterviewStage interviewStage) {
+        Branch branch = branch(100L);
+        User actor = user(200L, Role.ADMIN, null);
+        Schedule source = schedule(1L, branch, user(201L, Role.RECRUITER, branch), 1, 2, ScheduleStatus.OPEN);
+        Schedule destination = schedule(2L, branch, user(202L, Role.RECRUITER, branch), 0, 2, ScheduleStatus.OPEN);
+        Booking booking = booking(10L, BookingStatus.CONFIRMED, source, interviewStage);
+
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
+        when(scheduleRepository.findAllByIdForUpdate(List.of(1L, 2L))).thenReturn(List.of(source, destination));
+        when(bookingRepository.save(booking)).thenReturn(booking);
+        when(historyRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Booking rescheduled = bookingService.reschedule(
+                new BookingRescheduleCommand(10L, 2L, "Preserve interview stage")
+        );
+
+        assertEquals(interviewStage, rescheduled.getInterviewStage());
     }
 
     @Test
@@ -819,13 +943,17 @@ class BookingServiceTest {
     }
 
     private Booking booking(Long id, BookingStatus status, Schedule schedule) {
+        return booking(id, status, schedule, InterviewStage.INITIAL);
+    }
+
+    private Booking booking(Long id, BookingStatus status, Schedule schedule, InterviewStage interviewStage) {
         Applicant applicant = new Applicant();
         applicant.setId(300L);
         applicant.setActive(true);
         applicant.setStatus(ApplicantStatus.SCHEDULED);
         applicant.setBranch(schedule.getBranch());
 
-        Booking booking = new Booking();
+        Booking booking = Booking.forInterviewStage(interviewStage);
         booking.setId(id);
         booking.setBookingReference("BK-ORIGINAL");
         booking.setBookedDateTime(LocalDateTime.now().minusDays(2));
@@ -872,5 +1000,13 @@ class BookingServiceTest {
         user.setBranch(branch);
         user.setActive(true);
         return user;
+    }
+
+    private static Stream<Arguments> stageAwareBookingCases() {
+        return Stream.of(
+                Arguments.of(ApplicantStatus.NEW, InterviewStage.INITIAL),
+                Arguments.of(ApplicantStatus.FOR_FINAL_INTERVIEW, InterviewStage.FINAL),
+                Arguments.of(ApplicantStatus.FOR_CLIENT_INTERVIEW, InterviewStage.CLIENT)
+        );
     }
 }

@@ -12,6 +12,7 @@ import com.company.iss.booking.dto.BookingRescheduleCommand;
 import com.company.iss.booking.entity.Booking;
 import com.company.iss.booking.entity.BookingRescheduleHistory;
 import com.company.iss.booking.entity.BookingStatus;
+import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.booking.repository.BookingRescheduleHistoryRepository;
 import com.company.iss.branch.entity.Branch;
@@ -24,9 +25,12 @@ import com.company.iss.schedule.entity.InterviewMode;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.repository.ScheduleRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
@@ -92,6 +96,9 @@ class BookingRescheduleIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private EntityManager entityManager;
 
     @MockitoBean
     private NotificationService notificationService;
@@ -228,6 +235,33 @@ class BookingRescheduleIntegrationTest {
                 .send(eq(NotificationEvent.BOOKING_RESCHEDULED), any(Booking.class));
     }
 
+    @ParameterizedTest
+    @EnumSource(InterviewStage.class)
+    void reschedulingPersistsInterviewStageWithoutChangingApplicantStatus(InterviewStage interviewStage)
+            throws Exception {
+        RescheduleFixture fixture = createFixture("STAGE-" + interviewStage, interviewStage);
+        CountDownLatch notificationLatch = notificationLatch(1);
+
+        bookingService.reschedule(command(fixture));
+
+        assertTrue(notificationLatch.await(5, TimeUnit.SECONDS));
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            entityManager.clear();
+
+            Booking reloadedBooking = bookingRepository.findById(fixture.bookingId()).orElseThrow();
+            Applicant reloadedApplicant = applicantRepository.findById(fixture.applicantId()).orElseThrow();
+            List<BookingRescheduleHistory> history = historyRepository
+                    .findByBookingIdOrderByRescheduledAtAscIdAsc(fixture.bookingId());
+
+            assertEquals(interviewStage, reloadedBooking.getInterviewStage());
+            assertEquals(fixture.applicantStatus(), reloadedApplicant.getStatus());
+            assertEquals(fixture.destinationScheduleId(), reloadedBooking.getSchedule().getId());
+            assertEquals(1, history.size());
+            assertEquals(fixture.sourceScheduleId(), history.getFirst().getSourceSchedule().getId());
+            assertEquals(fixture.destinationScheduleId(), history.getFirst().getDestinationSchedule().getId());
+        });
+    }
+
     private boolean attemptReschedule(CountDownLatch startGate, Long bookingId, Long destinationId)
             throws InterruptedException {
         startGate.await(5, TimeUnit.SECONDS);
@@ -256,12 +290,22 @@ class BookingRescheduleIntegrationTest {
     }
 
     private RescheduleFixture createFixture(String suffix) {
+        return createFixture(suffix, InterviewStage.INITIAL);
+    }
+
+    private RescheduleFixture createFixture(String suffix, InterviewStage interviewStage) {
         Branch branch = saveBranch(suffix);
         User recruiter = saveUser(suffix.toLowerCase() + "-recruiter@example.test", Role.RECRUITER, branch);
         Schedule source = saveSchedule(branch, recruiter, 1, 1, ScheduleStatus.FULL);
         Schedule destination = saveSchedule(branch, recruiter, 0, 1, ScheduleStatus.OPEN);
-        Booking booking = saveBooking("BK-" + suffix, source);
-        return new RescheduleFixture(booking.getId(), source.getId(), destination.getId());
+        Booking booking = saveBooking("BK-" + suffix, source, interviewStage);
+        return new RescheduleFixture(
+                booking.getId(),
+                booking.getApplicant().getId(),
+                booking.getApplicant().getStatus(),
+                source.getId(),
+                destination.getId()
+        );
     }
 
     private BookingRescheduleCommand command(RescheduleFixture fixture) {
@@ -341,6 +385,10 @@ class BookingRescheduleIntegrationTest {
     }
 
     private Booking saveBooking(String reference, Schedule schedule) {
+        return saveBooking(reference, schedule, InterviewStage.INITIAL);
+    }
+
+    private Booking saveBooking(String reference, Schedule schedule, InterviewStage interviewStage) {
         Applicant applicant = new Applicant();
         applicant.setFirstName(reference);
         applicant.setLastName("Applicant");
@@ -351,7 +399,7 @@ class BookingRescheduleIntegrationTest {
         applicant.setActive(true);
         applicant = applicantRepository.saveAndFlush(applicant);
 
-        Booking booking = new Booking();
+        Booking booking = Booking.forInterviewStage(interviewStage);
         booking.setBookingReference(reference);
         booking.setApplicant(applicant);
         booking.setSchedule(schedule);
@@ -361,6 +409,12 @@ class BookingRescheduleIntegrationTest {
         return bookingRepository.saveAndFlush(booking);
     }
 
-    private record RescheduleFixture(Long bookingId, Long sourceScheduleId, Long destinationScheduleId) {
+    private record RescheduleFixture(
+            Long bookingId,
+            Long applicantId,
+            ApplicantStatus applicantStatus,
+            Long sourceScheduleId,
+            Long destinationScheduleId
+    ) {
     }
 }
