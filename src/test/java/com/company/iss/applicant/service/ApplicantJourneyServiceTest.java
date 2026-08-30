@@ -252,6 +252,45 @@ class ApplicantJourneyServiceTest {
                 || item.event().name().contains("NO_SHOW")));
     }
 
+    @Test
+    void bookedTimelineEventDoesNotClaimMutableCurrentScheduleWhileRescheduleRetainsSlotChange() {
+        Applicant applicant = applicant(ApplicantStatus.SCHEDULED);
+        LocalDateTime bookedAt = LocalDateTime.of(2026, 8, 20, 9, 0);
+        Booking booking = booking(50L, applicant, InterviewStage.FINAL, BookingStatus.RESCHEDULED, bookedAt);
+        Schedule source = schedule(150L, LocalDate.of(2026, 8, 25), LocalTime.of(10, 0));
+        Schedule destination = schedule(151L, LocalDate.of(2026, 8, 27), LocalTime.of(14, 0));
+        booking.setSchedule(destination);
+
+        BookingRescheduleHistory reschedule = mock(BookingRescheduleHistory.class);
+        when(reschedule.getId()).thenReturn(51L);
+        when(reschedule.getBooking()).thenReturn(booking);
+        when(reschedule.getSourceSchedule()).thenReturn(source);
+        when(reschedule.getDestinationSchedule()).thenReturn(destination);
+        when(reschedule.getRescheduledAt()).thenReturn(LocalDateTime.of(2026, 8, 22, 11, 0));
+        when(reschedule.getReason()).thenReturn("Interviewer unavailable");
+        whenAdmin(applicant);
+        when(bookingRepository.findByApplicantIdOrderByBookedDateTimeAscIdAsc(42L)).thenReturn(List.of(booking));
+        when(rescheduleRepository.findByBookingApplicantIdOrderByRescheduledAtAscIdAsc(42L))
+                .thenReturn(List.of(reschedule));
+
+        var timeline = service.load(42L).timeline();
+
+        var booked = timeline.stream()
+                .filter(item -> item.event() == RecruitmentTimelineEvent.INTERVIEW_BOOKED)
+                .findFirst().orElseThrow();
+        assertEquals(bookedAt, booked.occurredAt());
+        assertEquals("FINAL interview booked", booked.title());
+        assertEquals("Reference: BK-50", booked.description());
+        assertFalse(booked.description().contains("Aug 27, 2026 2:00 PM"));
+
+        var rescheduled = timeline.stream()
+                .filter(item -> item.event() == RecruitmentTimelineEvent.INTERVIEW_RESCHEDULED)
+                .findFirst().orElseThrow();
+        assertTrue(rescheduled.description().contains("Previous: Aug 25, 2026 10:00 AM"));
+        assertTrue(rescheduled.description().contains("New: Aug 27, 2026 2:00 PM"));
+        assertTrue(rescheduled.description().contains("Reason: Interviewer unavailable"));
+    }
+
     private void whenAdmin(Applicant applicant) {
         when(securityService.requireOperationsUser()).thenReturn(actor(Role.ADMIN, applicant.getBranch()));
         when(applicantRepository.findDetailedById(42L)).thenReturn(Optional.of(applicant));
@@ -315,6 +354,18 @@ class ApplicantJourneyServiceTest {
         schedule.setRecruiter(recruiter);
         booking.setSchedule(schedule);
         return booking;
+    }
+
+    private Schedule schedule(Long id, LocalDate date, LocalTime startTime) {
+        Schedule schedule = new Schedule();
+        schedule.setId(id);
+        schedule.setScheduleDate(date);
+        schedule.setStartTime(startTime);
+        schedule.setEndTime(startTime.plusHours(1));
+        schedule.setInterviewMode(InterviewMode.ONLINE);
+        schedule.setStatus(ScheduleStatus.OPEN);
+        schedule.setActive(true);
+        return schedule;
     }
 
     private InterviewEvaluation evaluation(

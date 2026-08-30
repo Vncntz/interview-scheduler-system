@@ -9,6 +9,7 @@ import com.company.iss.schedule.service.ScheduleService;
 import com.company.iss.shared.view.MainLayout;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.router.RouteParameters;
@@ -52,6 +53,11 @@ class ApplicantDetailViewTest {
                 "Applicant Summary", "Current Recruitment State", "Quick Actions", "Recruitment Timeline"
         )));
         assertTrue(view.hasClassName("applicant-profile"));
+        List<String> text = descendants(view).filter(Span.class::isInstance)
+                .map(Span.class::cast).map(Span::getText).toList();
+        assertTrue(text.contains("Current Interview"));
+        assertTrue(text.contains("No current interview"));
+        assertFalse(text.contains("Upcoming interview"));
         verify(service).load(42L);
         verify(event, never()).rerouteTo(any(Class.class));
     }

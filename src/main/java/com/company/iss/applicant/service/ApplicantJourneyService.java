@@ -310,9 +310,7 @@ public class ApplicantJourneyService {
     }
 
     private String bookingDescription(Booking booking) {
-        Schedule schedule = booking.getSchedule();
-        String slot = schedule == null ? "Schedule unavailable" : formatSlot(schedule);
-        return slot + " · Reference: " + safe(booking.getBookingReference());
+        return "Reference: " + safe(booking.getBookingReference());
     }
 
     private String rescheduleDescription(BookingRescheduleHistory history) {

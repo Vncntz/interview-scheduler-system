@@ -137,11 +137,11 @@ public class ApplicantDetailView extends VerticalLayout implements BeforeEnterOb
                 field("Next action", nextActionLabel(state.nextAction()))
         );
         if (state.currentInterview() == null) {
-            fields.add(field("Upcoming interview", "No upcoming interview"));
+            fields.add(field("Current Interview", "No current interview"));
         } else {
             ApplicantInterviewSummary appointment = state.currentInterview();
             fields.add(
-                    field("Upcoming interview", appointment.date() + " · "
+                    field("Current Interview", appointment.date() + " · "
                             + DateTimeUtil.formatTime(appointment.startTime()) + "–"
                             + DateTimeUtil.formatTime(appointment.endTime())),
                     field("Mode", name(appointment.interviewMode())),
