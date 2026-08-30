@@ -165,7 +165,7 @@ Rules:
 - MySQL runtime migrations belong in `src/main/resources/db/migration/mysql`; tests use logically equivalent migrations from `src/main/resources/db/migration/h2` against isolated H2 in MySQL mode. Never point automated tests at a developer or production database.
 - Hibernate uses `spring.jpa.hibernate.ddl-auto=validate` in both environments. It must never create, update, or repair the schema.
 - Never edit an applied migration. Add the next version to both dialect directories and keep constraints, defaults, enum values, indexes, and nullability logically equivalent.
-- The current latest migration is V5, and `contextLoads()` asserts that version.
+- The current latest migration is V6, and `contextLoads()` asserts that version.
 - H2 MySQL mode is a fast compatibility check, not proof that MySQL-specific DDL is safe.
 - Keep `spring.flyway.clean-disabled=true`; never run Flyway clean against a developer, rehearsal, or real database.
 - `baseline-on-migrate` is a one-time controlled rollout option only. Follow `docs/database-migrations.md`; never enable it by default.

@@ -54,7 +54,7 @@ return zero rows/counts before V2 is allowed to run.
 ## Fresh database rollout
 
 For an empty database, keep `FLYWAY_BASELINE_ON_MIGRATE` unset (its default is `false`). Start the
-application with normal datasource credentials. Flyway applies V1 through V5 in order, after which
+application with normal datasource credentials. Flyway applies V1 through V6 in order, after which
 Hibernate validates the resulting schema. The fresh schema has `applicants.branch_id NOT NULL`, the
 final hiring decision workflow tables, secure account lifecycle tables, and no persisted notification
 credential columns.
@@ -67,8 +67,8 @@ and has no Flyway history table.
 1. Complete backup, structural comparison, and applicant reconciliation.
 2. For one controlled deployment only, set `FLYWAY_BASELINE_ON_MIGRATE=true` and
    `FLYWAY_BASELINE_VERSION=1`.
-3. Start one application instance. Flyway records version 1 as the baseline and then runs V2 through V5.
-4. Verify `flyway_schema_history` contains the version 1 baseline and successful version 2, 3, 4, and 5 migrations.
+3. Start one application instance. Flyway records version 1 as the baseline and then runs V2 through V6.
+4. Verify `flyway_schema_history` contains the version 1 baseline and successful version 2 through 6 migrations.
 5. Stop the instance, remove the baseline override, and restart with
    `FLYWAY_BASELINE_ON_MIGRATE=false` (or the variable unset) before scaling out.
 
@@ -134,7 +134,7 @@ and optimistic-lock version. The SMTP password must be supplied to the applicati
 `SMTP_PASSWORD`; there is no runtime SMS sender or `SMS_API_KEY` replacement.
 
 Before applying V5, provision `SMTP_PASSWORD` in the approved external secret source for deployments
-that require email. Rehearse the complete V1-to-V5 path and a V4-to-V5 upgrade against an isolated
+that require email. Rehearse the complete V1-to-V6 path and a V4-to-V6 upgrade against an isolated
 MySQL database restored from representative data. Confirm that non-secret notification settings are
 preserved, SMS is disabled, both legacy columns are absent, Hibernate validation succeeds, and no
 real notification is delivered during rehearsal.
@@ -144,6 +144,24 @@ columns. The only supported rollback is to restore the matching pre-V5 database 
 the matching old binary together. Do not manually recreate the dropped columns, edit an applied
 migration, or use Flyway repair as a rollback mechanism. Backups taken before V5 may contain live or
 historic credentials; protect them as secrets and revoke those provider credentials after migration.
+
+## V6 explicit interview stage rollout
+
+V6 adds the required `bookings.interview_stage` enum with `INITIAL`, `FINAL`, and `CLIENT`. The
+migration intentionally adds the column as nullable, backfills every existing booking to `INITIAL`,
+then removes nullability without leaving a database default. Historical final/client intent cannot be
+reconstructed safely from mutable applicant status, so the conservative `INITIAL` backfill avoids
+inventing unsupported history.
+
+Before rollout, record the booking row count and verify no application instance can write during the
+column addition/backfill/nullability sequence. Rehearse V5-to-V6 against an isolated,
+production-sized MySQL restoration and confirm all rows have a stage, no default remains, Hibernate
+schema validation succeeds, and the application can read historical bookings. MySQL enum/column
+changes may take metadata locks or rebuild the table depending on server version and table size.
+
+V6 application binaries require the new non-null column. Rollback therefore requires restoring the
+matching pre-V6 backup and deploying the pre-V6 binary together; dropping the column while V6 code is
+running is not supported.
 
 ## Failure, rollback, and recovery
 

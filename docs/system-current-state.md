@@ -16,7 +16,7 @@ The system currently provides:
 
 - Organization-wide administration of branches, recruiters, clients, position openings, schedules, notification settings, and notification templates.
 - Recruiter work queues and branch-scoped applicant, booking, evaluation, and hiring operations.
-- Capacity-controlled interview scheduling and booking workflows.
+- Capacity-controlled, explicit initial/final/client interview scheduling and booking workflows.
 - Cancellation and rescheduling with history records.
 - Attendance, no-show, evaluation, offer, hire, decline, and withdrawal transitions.
 - Account lockout, mandatory password changes, administrator-initiated password resets, session invalidation, and security audit records.
@@ -24,7 +24,7 @@ The system currently provides:
 - Flyway-managed MySQL schema migrations and an isolated H2 test environment.
 - GitHub Actions continuous integration running the clean Maven test suite on Java 25.
 
-The application does not currently provide applicant self-service, a guided multi-stage final/client interview pipeline, scheduled interview reminders, SMS delivery, durable notification retries, or a remote REST API.
+The application does not currently provide applicant self-service, scheduled interview reminders, SMS delivery, durable notification retries, or a remote REST API.
 
 ## 2. Technology baseline
 
@@ -179,6 +179,19 @@ CANCELLED, RESCHEDULED, FOR_FINAL_INTERVIEW,
 FOR_CLIENT_INTERVIEW, ON_HOLD
 ```
 
+Every booking also stores an immutable `InterviewStage` snapshot:
+
+```text
+INITIAL, FINAL, CLIENT
+```
+
+Applicant lifecycle status and interview stage are separate concepts. Scheduling still changes the
+applicant to `SCHEDULED`, while the booking preserves whether the operational appointment is an
+initial, final, or client interview. New and screening applicants are eligible only for `INITIAL`;
+`FOR_FINAL_INTERVIEW` applicants only for `FINAL`; and `FOR_CLIENT_INTERVIEW` applicants only for
+`CLIENT`. Cancelled and no-show appointments may be replaced only at their previous stage. Ambiguous
+or terminal states, including `ON_HOLD`, `PASSED`, `FAILED`, and hiring states, cannot be booked.
+
 Implemented booking rules and actions:
 
 - Only active applicants and active, open, non-full schedules can be booked.
@@ -189,6 +202,11 @@ Implemented booking rules and actions:
 - Cancellation releases schedule capacity and updates related state in one transaction.
 - Rescheduling transfers capacity between locked schedules and appends a history record.
 - Created, confirmed, cancelled, and rescheduled notifications are published as ID-only events and delivered after commit.
+- Rescheduling preserves the booking's immutable interview stage.
+
+Schedules remain generic branch/recruiter capacity windows and do not own an interview stage. The
+booking dialog displays the one inferred eligible stage read-only, and the service revalidates that
+stage after locking the applicant and schedule.
 
 The booking grid uses database-backed keyword/status/date filtering and lazy 50-row pages. Keyword matching covers booking reference and applicant name. Results are ordered by schedule date, start time, and ID in descending order.
 
@@ -205,6 +223,15 @@ Evaluation results are:
 - `ON_HOLD`
 
 Creating an evaluation updates the evaluation record, booking status, applicant status, and position counters transactionally.
+
+Evaluation results are constrained by the booking stage:
+
+- `INITIAL` permits pass, fail, progression to final or client, and on-hold.
+- `FINAL` permits pass, fail, progression to client, and on-hold; another final progression is rejected.
+- `CLIENT` permits only pass, fail, and on-hold; further stage progression is rejected.
+
+A `PASS` at any valid stage produces the existing passed applicant/booking/evaluation triad required
+for hiring. Applicants awaiting final or client interviews are not hiring-eligible.
 
 ### Hiring
 
@@ -328,7 +355,7 @@ Migration locations:
 - Runtime MySQL: `classpath:db/migration/mysql`
 - Automated tests: `classpath:db/migration/h2`
 
-Flyway clean is disabled. The production application requires migration version 5, and automated tests assert the expected migrated schema.
+Flyway clean is disabled. The production application requires migration version 6, and automated tests assert the expected migrated schema.
 
 Audit/history state includes hiring decision audit, account security audit, and booking reschedule history. Their repositories expose explicit append/query APIs, and immutable history records cannot be updated or deleted through generic repository operations.
 
@@ -393,7 +420,7 @@ H2 in MySQL mode is a fast compatibility test; it is not proof that MySQL-specif
 
 - No applicant-facing portal or ownership-protected applicant workflow.
 - `APPLICANT` has no authorized landing route.
-- Final/client interview results have statuses but no guided follow-up queue or explicit multi-stage progression model.
+- Multi-stage progression is enforced, but there is not yet a dedicated follow-up queue for applicants awaiting final or client interviews.
 - No scheduled interview reminder automation.
 - No automated interview-result email policy or default template.
 - No offer reversal, re-offer, or applicant self-service acceptance.

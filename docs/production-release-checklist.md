@@ -9,7 +9,7 @@ not authorize application startup, database migration, credential changes, or no
 - Review the final diff for secrets, debug code, generated frontend noise, and unrelated changes.
 - Take a consistent MySQL backup and prove that it restores into an isolated database.
 - Keep the matching pre-release binary and backup together for recovery.
-- Review `docs/database-migrations.md`, including the V5 old-binary incompatibility warning.
+- Review `docs/database-migrations.md`, including the V5 and V6 old-binary incompatibility warnings.
 - Define the maintenance window, write freeze, deployment owner, rollback owner, and stop criteria.
 
 ## 2. Runtime configuration contract
@@ -36,10 +36,11 @@ data.
 
 - Use an exact, isolated target that cannot route to a developer or production schema.
 - Restore representative pre-release data and verify application/database version compatibility.
-- Rehearse both a fresh V1-to-V5 migration and, when upgrading an existing installation, V4-to-V5.
-- Confirm Flyway reports version 5 and every migration checksum validates.
+- Rehearse a fresh V1-to-V6 migration and, when upgrading an existing installation, V5-to-V6.
+- Confirm Flyway reports version 6 and every migration checksum validates.
 - Confirm `notification_settings.smtp_password` and `notification_settings.sms_api_key` are absent.
 - Confirm all `notification_settings.sms_enabled` values are false and non-secret settings remain.
+- Confirm every booking has `interview_stage`, the column is non-null, and no database default remains.
 - Confirm Hibernate schema validation succeeds with the release binary.
 - Run controlled smoke checks with real email/SMS delivery disabled or replaced by a safe test double.
 - Record duration, locks, disk use, errors, and recovery evidence without recording credentials or
@@ -52,9 +53,10 @@ H2 MySQL mode is useful automated coverage but is not evidence that the MySQL DD
 - Obtain explicit authorization for the exact production target and maintenance window.
 - Stop writes and all but one migration-owning application instance.
 - Reconfirm the restorable backup, matching rollback binary, and runtime secret presence.
-- Start the single approved instance and allow Flyway to migrate through V5.
-- Verify `flyway_schema_history` is successful at version 5 before scaling out.
+- Start the single approved instance and allow Flyway to migrate through V6.
+- Verify `flyway_schema_history` is successful at version 6 before scaling out.
 - Verify the two legacy notification secret columns are absent and SMS is disabled.
+- Verify historical bookings are readable with the conservative `INITIAL` stage backfill.
 - Verify Hibernate validation, application readiness, authentication, recruiter branch scope, booking,
   evaluation, hiring, password change, and password reset readiness.
 - Perform at most the specifically approved notification delivery check; do not send test messages to
@@ -64,7 +66,7 @@ H2 MySQL mode is useful automated coverage but is not evidence that the MySQL DD
 
 - If migration or schema state is uncertain, stop. Do not run Flyway clean or repair and do not
   manually recreate dropped columns.
-- A V5 rollback requires the matching pre-V5 backup and old binary together. Restoring only one side
+- A V5/V6 rollback requires the matching pre-migration backup and old binary together. Restoring only one side
   leaves the schema and entity mappings incompatible.
 - After a successful rollout, rotate or revoke legacy SMTP/SMS credentials that may have existed in
   the removed columns and apply secret-level retention controls to historic backups.
