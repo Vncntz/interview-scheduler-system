@@ -157,7 +157,7 @@ Rules:
 - Never correct history by editing or deleting a row; append a compensating record when the business requires a correction.
 - Test both dirty-checking immutability and the repository's exposed API.
 - Use `HiringDecisionAudit` and its explicit appender as the current pattern.
-- `BookingRescheduleHistoryRepository` still extends `JpaRepository` and exposes mutation and deletion APIs despite its entity being `@Immutable`. Treat this as known technical debt; do not copy the pattern.
+- `BookingRescheduleHistory` follows the explicit append/query repository pattern and must remain free of generic mutation and deletion APIs.
 
 ## Database rules
 

@@ -156,7 +156,7 @@ class BookingServiceTest {
         when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
         when(scheduleRepository.findAllByIdForUpdate(List.of(1L, 2L))).thenReturn(List.of(destination, source));
         when(bookingRepository.save(booking)).thenReturn(booking);
-        when(historyRepository.save(any(BookingRescheduleHistory.class)))
+        when(historyRepository.append(any(BookingRescheduleHistory.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         Booking result = bookingService.reschedule(new BookingRescheduleCommand(10L, 1L, "  Candidate requested a new time.  "));
@@ -175,7 +175,7 @@ class BookingServiceTest {
 
         ArgumentCaptor<BookingRescheduleHistory> historyCaptor =
                 ArgumentCaptor.forClass(BookingRescheduleHistory.class);
-        verify(historyRepository).save(historyCaptor.capture());
+        verify(historyRepository).append(historyCaptor.capture());
         BookingRescheduleHistory history = historyCaptor.getValue();
         assertSame(booking, history.getBooking());
         assertSame(source, history.getSourceSchedule());
@@ -200,7 +200,7 @@ class BookingServiceTest {
         when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
         when(scheduleRepository.findAllByIdForUpdate(List.of(1L, 2L))).thenReturn(List.of(source, destination));
         when(bookingRepository.save(booking)).thenReturn(booking);
-        when(historyRepository.save(any(BookingRescheduleHistory.class)))
+        when(historyRepository.append(any(BookingRescheduleHistory.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         Booking result = bookingService.reschedule(new BookingRescheduleCommand(10L, 2L, "New availability"));
@@ -342,7 +342,7 @@ class BookingServiceTest {
         assertEquals(0, destination.getBookedCount());
         verify(scheduleRepository, never()).saveAll(any());
         verify(bookingRepository, never()).save(any(Booking.class));
-        verify(historyRepository, never()).save(any());
+        verify(historyRepository, never()).append(any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -365,7 +365,7 @@ class BookingServiceTest {
         verify(scheduleRepository, never()).findAllByIdForUpdate(any());
         verify(scheduleRepository, never()).saveAll(any());
         verify(bookingRepository, never()).save(any(Booking.class));
-        verify(historyRepository, never()).save(any());
+        verify(historyRepository, never()).append(any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -408,7 +408,7 @@ class BookingServiceTest {
         assertEquals(expectedMessage, exception.getMessage());
         verify(scheduleRepository, never()).saveAll(any());
         verify(bookingRepository, never()).save(any(Booking.class));
-        verify(historyRepository, never()).save(any());
+        verify(historyRepository, never()).append(any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -512,7 +512,7 @@ class BookingServiceTest {
                 () -> bookingService.reschedule(new BookingRescheduleCommand(10L, 2L, "Reason"))
         );
 
-        verify(historyRepository, never()).save(any());
+        verify(historyRepository, never()).append(any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -534,7 +534,7 @@ class BookingServiceTest {
         );
 
         assertEquals("The destination schedule is not open.", exception.getMessage());
-        verify(historyRepository, never()).save(any());
+        verify(historyRepository, never()).append(any());
     }
 
     @Test
@@ -571,7 +571,7 @@ class BookingServiceTest {
         when(bookingRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(booking));
         when(scheduleRepository.findAllByIdForUpdate(List.of(1L, 2L))).thenReturn(List.of(source, destination));
         when(bookingRepository.save(booking)).thenReturn(booking);
-        when(historyRepository.save(any())).thenThrow(new IllegalStateException("Database failure"));
+        when(historyRepository.append(any())).thenThrow(new IllegalStateException("Database failure"));
 
         assertThrows(
                 IllegalStateException.class,

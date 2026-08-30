@@ -15,6 +15,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.Immutable;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 @Entity
 @Table(name = "booking_reschedule_history")
@@ -45,7 +46,7 @@ public class BookingRescheduleHistory extends BaseEntity {
     @Column(nullable = false, updatable = false, length = 1000)
     private String reason;
 
-    public BookingRescheduleHistory(
+    private BookingRescheduleHistory(
             Booking booking,
             Schedule sourceSchedule,
             Schedule destinationSchedule,
@@ -53,11 +54,29 @@ public class BookingRescheduleHistory extends BaseEntity {
             LocalDateTime rescheduledAt,
             String reason
     ) {
-        this.booking = booking;
-        this.sourceSchedule = sourceSchedule;
-        this.destinationSchedule = destinationSchedule;
-        this.actor = actor;
-        this.rescheduledAt = rescheduledAt;
-        this.reason = reason;
+        this.booking = Objects.requireNonNull(booking, "booking is required");
+        this.sourceSchedule = Objects.requireNonNull(sourceSchedule, "sourceSchedule is required");
+        this.destinationSchedule = Objects.requireNonNull(destinationSchedule, "destinationSchedule is required");
+        this.actor = Objects.requireNonNull(actor, "actor is required");
+        this.rescheduledAt = Objects.requireNonNull(rescheduledAt, "rescheduledAt is required");
+        this.reason = Objects.requireNonNull(reason, "reason is required");
+    }
+
+    public static BookingRescheduleHistory record(
+            Booking booking,
+            Schedule sourceSchedule,
+            Schedule destinationSchedule,
+            User actor,
+            LocalDateTime rescheduledAt,
+            String reason
+    ) {
+        return new BookingRescheduleHistory(
+                booking,
+                sourceSchedule,
+                destinationSchedule,
+                actor,
+                rescheduledAt,
+                reason
+        );
     }
 }

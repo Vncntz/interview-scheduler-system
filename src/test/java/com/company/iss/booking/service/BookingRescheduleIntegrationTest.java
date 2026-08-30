@@ -31,6 +31,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -89,6 +90,9 @@ class BookingRescheduleIntegrationTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @MockitoBean
     private NotificationService notificationService;
 
@@ -109,7 +113,7 @@ class BookingRescheduleIntegrationTest {
 
     @AfterEach
     void cleanDatabase() {
-        historyRepository.deleteAll();
+        jdbcTemplate.update("delete from booking_reschedule_history");
         bookingRepository.deleteAll();
         applicantRepository.deleteAll();
         scheduleRepository.deleteAll();
@@ -160,7 +164,7 @@ class BookingRescheduleIntegrationTest {
         assertEquals(1, persistedDestination.getBookedCount());
         assertEquals(ScheduleStatus.FULL, persistedDestination.getStatus());
         assertEquals(1, movedBookings);
-        assertEquals(1, historyRepository.count());
+        assertEquals(1, historyCount());
 
         Schedule persistedSourceOne = scheduleRepository.findById(sourceOne.getId()).orElseThrow();
         Schedule persistedSourceTwo = scheduleRepository.findById(sourceTwo.getId()).orElseThrow();
@@ -178,7 +182,7 @@ class BookingRescheduleIntegrationTest {
         RescheduleFixture fixture = createFixture("PERSISTENCE");
         doThrow(new DataIntegrityViolationException("forced history failure"))
                 .when(historyRepository)
-                .save(any(BookingRescheduleHistory.class));
+                .append(any(BookingRescheduleHistory.class));
 
         assertThrows(
                 DataIntegrityViolationException.class,
@@ -186,7 +190,7 @@ class BookingRescheduleIntegrationTest {
         );
 
         assertOriginalDatabaseState(fixture);
-        assertEquals(0, historyRepository.count());
+        assertEquals(0, historyCount());
         verify(notificationService, after(500).never())
                 .send(eq(NotificationEvent.BOOKING_RESCHEDULED), any(Booking.class));
     }
@@ -219,7 +223,7 @@ class BookingRescheduleIntegrationTest {
         });
 
         assertOriginalDatabaseState(fixture);
-        assertEquals(0, historyRepository.count());
+        assertEquals(0, historyCount());
         verify(notificationService, after(500).never())
                 .send(eq(NotificationEvent.BOOKING_RESCHEDULED), any(Booking.class));
     }
@@ -242,6 +246,13 @@ class BookingRescheduleIntegrationTest {
             return null;
         }).when(notificationService).send(eq(NotificationEvent.BOOKING_RESCHEDULED), any(Booking.class));
         return latch;
+    }
+
+    private long historyCount() {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from booking_reschedule_history",
+                Long.class
+        );
     }
 
     private RescheduleFixture createFixture(String suffix) {
@@ -283,7 +294,7 @@ class BookingRescheduleIntegrationTest {
         assertEquals(ScheduleStatus.OPEN, source.getStatus());
         assertEquals(1, destination.getBookedCount());
         assertEquals(ScheduleStatus.FULL, destination.getStatus());
-        assertEquals(1, historyRepository.count());
+        assertEquals(1, historyCount());
     }
 
     private Branch saveBranch(String code) {

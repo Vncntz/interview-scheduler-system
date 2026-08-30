@@ -307,7 +307,7 @@ public class BookingService {
 
         scheduleRepository.saveAll(List.of(sourceSchedule, destinationSchedule));
         Booking saved = bookingRepository.save(booking);
-        bookingRescheduleHistoryRepository.save(new BookingRescheduleHistory(
+        bookingRescheduleHistoryRepository.append(BookingRescheduleHistory.record(
                 saved,
                 sourceSchedule,
                 destinationSchedule,

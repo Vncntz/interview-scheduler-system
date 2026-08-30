@@ -2,7 +2,7 @@
 
 > Snapshot date: 2026-08-30
 >
-> Repository commit: `ec74d8d`
+> Repository reference: the commit containing this document
 >
 > Application version: `0.0.1-SNAPSHOT`
 
@@ -330,7 +330,7 @@ Migration locations:
 
 Flyway clean is disabled. The production application requires migration version 5, and automated tests assert the expected migrated schema.
 
-Audit/history state includes hiring decision audit, account security audit, and booking reschedule history. Hiring and account audit repositories expose explicit append/query APIs. `BookingRescheduleHistoryRepository` still extends `JpaRepository`, so generic mutation/deletion methods remain known technical debt even though the entity is immutable.
+Audit/history state includes hiring decision audit, account security audit, and booking reschedule history. Their repositories expose explicit append/query APIs, and immutable history records cannot be updated or deleted through generic repository operations.
 
 ## 10. Runtime configuration
 
@@ -364,7 +364,7 @@ Clients, positions, and applicants are demo data. Their loaders require both the
 
 ## 12. Testing and continuous integration
 
-At this snapshot, the clean Java 25 suite contains **241 tests** with:
+At this snapshot, the clean Java 25 suite contains **247 tests** with:
 
 - 0 failures
 - 0 errors
@@ -409,7 +409,6 @@ H2 in MySQL mode is a fast compatibility test; it is not proof that MySQL-specif
 
 ### Technical debt
 
-- `BookingRescheduleHistoryRepository` exposes generic mutation/deletion APIs for append-only history.
 - Some existing Spring components still use field or setter injection.
 - Evaluation and other remaining grids still use unpaged list loading.
 - Tracked Vaadin-generated frontend artifacts require careful synchronization during builds.
