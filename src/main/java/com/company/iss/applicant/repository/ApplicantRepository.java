@@ -18,6 +18,14 @@ public interface ApplicantRepository extends JpaRepository<Applicant, Long> {
 
     Optional<Applicant> findByEmail(String email);
 
+    @EntityGraph(attributePaths = {"branch", "positionOpening", "positionOpening.client"})
+    @Query("select a from Applicant a where a.id = :id")
+    Optional<Applicant> findDetailedById(@Param("id") Long id);
+
+    @EntityGraph(attributePaths = {"branch", "positionOpening", "positionOpening.client"})
+    @Query("select a from Applicant a where a.id = :id and a.branch.id = :branchId")
+    Optional<Applicant> findDetailedByIdAndBranchId(@Param("id") Long id, @Param("branchId") Long branchId);
+
     Long countByStatus(ApplicantStatus status);
 
     @EntityGraph(attributePaths = {"branch", "positionOpening", "positionOpening.client"})

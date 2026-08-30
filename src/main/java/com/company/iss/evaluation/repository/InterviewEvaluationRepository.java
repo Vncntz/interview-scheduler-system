@@ -16,6 +16,9 @@ public interface InterviewEvaluationRepository extends JpaRepository<InterviewEv
 
     List<InterviewEvaluation> findByApplicant(Applicant applicant);
 
+    @EntityGraph(attributePaths = {"booking", "booking.schedule", "evaluator"})
+    List<InterviewEvaluation> findByApplicantIdOrderByEvaluationDateAscIdAsc(Long applicantId);
+
     @EntityGraph(attributePaths = {"applicant", "applicant.positionOpening", "booking", "booking.schedule", "evaluator"})
     List<InterviewEvaluation> findByBookingScheduleBranchIdOrderByEvaluationDateDesc(Long branchId);
 

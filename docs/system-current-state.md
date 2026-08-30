@@ -1,6 +1,6 @@
 # Interview Scheduler System — Current State
 
-> Snapshot date: 2026-08-30
+> Snapshot date: 2026-08-31
 >
 > Repository reference: the commit containing this document
 >
@@ -16,6 +16,7 @@ The system currently provides:
 
 - Organization-wide administration of branches, recruiters, clients, position openings, schedules, notification settings, and notification templates.
 - Recruiter work queues and branch-scoped applicant, booking, evaluation, and hiring operations.
+- A consolidated applicant profile with derived current recruitment state, safe quick actions, and a chronological recruitment timeline.
 - Capacity-controlled, explicit initial/final/client interview scheduling and booking workflows.
 - Cancellation and rescheduling with history records.
 - Attendance, no-show, evaluation, offer, hire, decline, and withdrawal transitions.
@@ -65,7 +66,7 @@ Cross-feature workflows use services and ID-only domain events. Database mutatio
 
 | Module | Responsibility |
 |---|---|
-| `applicant` | Applicant records, branch/position assignment, applicant search and grid pagination |
+| `applicant` | Applicant records, branch/position assignment, applicant search/grid pagination, and the recruitment-journey read model |
 | `auth` | Users, roles, authentication, account lifecycle, password changes/resets, sessions, security audit |
 | `booking` | Interview bookings, capacity allocation, confirmation, attendance, no-show, cancellation, rescheduling |
 | `branch` | Branch master data |
@@ -109,6 +110,7 @@ The authenticated root route forwards administrators to `/dashboard` and recruit
 | `/notification-settings` | Notification configuration | `ADMIN` |
 | `/notification-templates` | Notification templates | `ADMIN` |
 | `/applicants` | Applicant management | `ADMIN`, `RECRUITER` |
+| `/applicants/:applicantId` | Applicant profile and recruitment timeline | `ADMIN`, `RECRUITER` |
 | `/bookings` | Booking management | `ADMIN`, `RECRUITER` |
 | `/evaluations` | Interview evaluations | `ADMIN`, `RECRUITER` |
 | `/hiring-decisions` | Offers and final hiring decisions | `ADMIN`, `RECRUITER` |
@@ -123,6 +125,7 @@ The authenticated root route forwards administrators to `/dashboard` and recruit
 - Applicant and booking grids apply branch scope in database fetch and count queries.
 - Booking grid visibility follows `booking.applicant.branch`, not the schedule branch.
 - Cross-branch identifiers are rejected by mutation services rather than filtered only in the UI.
+- Applicant profile URLs authorize the applicant root record before any related history query. Recruiters receive access only for applicants whose authoritative branch matches their own.
 
 ## 5. Domain model and workflow
 
@@ -147,6 +150,16 @@ Important behavior:
 - Applicant activation and deactivation are supported.
 
 The applicant grid uses database-backed keyword/status filtering and lazy 50-row pages. Keyword matching covers first name, last name, and email. Results are ordered by last name, first name, and ID.
+
+### Applicant profile and recruitment timeline
+
+The applicant grid links to a dedicated profile that combines an applicant summary, the derived current recruitment state, current appointment, context-sensitive quick actions, and an oldest-first recruitment timeline. The profile is a read model and does not add persistent workflow state.
+
+The current/next interview stage is derived from the applicant status, the current booking, and the central booking-stage eligibility policy. The booking's immutable `interviewStage` remains the historical source. Current appointments include active `BOOKED`, `CONFIRMED`, or legacy `RESCHEDULED` bookings on an active, non-cancelled schedule; cancelled and no-show bookings are never displayed as current appointments. Hiring quick actions use the same passed applicant/booking/evaluation eligibility predicate as the hiring workflow. Mutation actions reuse the existing booking and evaluation dialogs or navigate to the booking/hiring workspaces, whose services reauthorize and revalidate every operation.
+
+The timeline uses only timestamps already reliable in the domain: `Applicant.createdAt`, `Booking.bookedDateTime`, `BookingRescheduleHistory.rescheduledAt`, `InterviewEvaluation.evaluationDate`, and immutable `HiringDecisionAudit.occurredAt`. It does not fabricate dated confirmation, cancellation, attendance, or no-show events because those transitions currently have no dedicated persisted timestamp. Booking-created events show only their immutable stage and booking reference rather than treating the mutable current `Booking.schedule` as the original slot. Reschedule history identifies the source and destination schedule records, but schedule slot fields are mutable and are therefore not immutable historical snapshots.
+
+The recruiter workbench includes the explicit interview stage and a link to the same authorized applicant profile.
 
 ### Position openings
 

@@ -14,3 +14,53 @@ vaadin-login-overlay-wrapper {
 vaadin-login-overlay::part(overlay) {
     backdrop-filter: blur(10px);
 }
+
+.applicant-profile {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.applicant-profile__header,
+.applicant-profile__actions {
+    flex-wrap: wrap;
+}
+
+.applicant-profile__cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: var(--vaadin-gap-m);
+    width: 100%;
+}
+
+.applicant-profile__card {
+    box-sizing: border-box;
+    width: 100%;
+    padding: var(--vaadin-padding-l);
+    border: 1px solid var(--vaadin-border-color-secondary);
+    border-radius: var(--vaadin-radius-l);
+    background: var(--vaadin-background-container);
+}
+
+.applicant-profile__fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: var(--vaadin-gap-m);
+}
+
+.applicant-profile__field {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.applicant-profile__label,
+.applicant-profile__timeline-time {
+    color: var(--vaadin-text-color-secondary);
+    font-size: var(--vaadin-font-size-s);
+}
+
+.applicant-profile__timeline-item {
+    border-inline-start: 3px solid var(--vaadin-border-color-secondary);
+    padding: var(--vaadin-padding-s) var(--vaadin-padding-m);
+}

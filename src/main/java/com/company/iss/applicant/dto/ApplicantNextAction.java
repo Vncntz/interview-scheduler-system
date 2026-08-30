@@ -1,0 +1,14 @@
+package com.company.iss.applicant.dto;
+
+public enum ApplicantNextAction {
+    SCHEDULE_INTERVIEW,
+    CONFIRM_INTERVIEW,
+    RECORD_ATTENDANCE,
+    MANAGE_BOOKING,
+    EVALUATE_INTERVIEW,
+    ISSUE_JOB_OFFER,
+    RECORD_OFFER_DECISION,
+    REVIEW,
+    RECRUITMENT_COMPLETE,
+    RECRUITMENT_CLOSED
+}

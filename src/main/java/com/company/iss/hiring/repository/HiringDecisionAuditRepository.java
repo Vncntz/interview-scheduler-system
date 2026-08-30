@@ -10,7 +10,7 @@ public interface HiringDecisionAuditRepository
         extends Repository<HiringDecisionAudit, Long>, HiringDecisionAuditAppender {
 
     @EntityGraph(attributePaths = {"actor"})
-    List<HiringDecisionAudit> findByDecisionIdOrderByOccurredAtAsc(Long decisionId);
+    List<HiringDecisionAudit> findByDecisionIdOrderByOccurredAtAscIdAsc(Long decisionId);
 
     long count();
 }

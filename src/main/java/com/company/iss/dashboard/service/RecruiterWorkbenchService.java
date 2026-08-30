@@ -69,6 +69,7 @@ public class RecruiterWorkbenchService {
     private WorkbenchInterview toDto(Booking booking) {
         return new WorkbenchInterview(
                 booking.getId(),
+                booking.getApplicant().getId(),
                 booking.getBookingReference(),
                 booking.getApplicant().getFullName(),
                 booking.getApplicant().getPositionOpening() == null
@@ -78,6 +79,7 @@ public class RecruiterWorkbenchService {
                 booking.getSchedule().getStartTime(),
                 booking.getSchedule().getEndTime(),
                 booking.getSchedule().getRecruiter().getFullName(),
+                booking.getInterviewStage(),
                 booking.getStatus()
         );
     }

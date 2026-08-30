@@ -30,6 +30,7 @@ import com.vaadin.flow.data.provider.DataProvider;
 import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.router.RouteParameters;
 import jakarta.annotation.security.RolesAllowed;
 
 @Route(value = "applicants", layout = MainLayout.class)
@@ -58,6 +59,7 @@ public class ApplicantView extends VerticalLayout {
     private Button addButton;
     private Button editButton;
     private Button bookButton;
+    private Button profileButton;
 
     public ApplicantView(
             ApplicantService applicantService,
@@ -161,7 +163,11 @@ public class ApplicantView extends VerticalLayout {
         bookButton.addThemeVariants(ButtonVariant.LUMO_SUCCESS);
         bookButton.addClickListener(e -> onBook());
 
-        actionLayout.add(addButton, editButton, bookButton);
+        profileButton = new Button("View Profile");
+        profileButton.setIcon(VaadinIcon.USER_CARD.create());
+        profileButton.addClickListener(e -> onViewProfile());
+
+        actionLayout.add(addButton, editButton, bookButton, profileButton);
 
         dataProvider = DataProvider.fromCallbacks(
                 query -> applicantService.findGridPage(
@@ -260,6 +266,19 @@ public class ApplicantView extends VerticalLayout {
         }
 
         openBookingDialog(selected);
+    }
+
+    private void onViewProfile() {
+        Applicant selected = applicantGrid.asSingleSelect().getValue();
+        if (selected == null) {
+            Notification.show("Please select an applicant first.", 3000, Notification.Position.MIDDLE)
+                    .addThemeVariants(NotificationVariant.LUMO_WARNING);
+            return;
+        }
+        getUI().ifPresent(ui -> ui.navigate(
+                ApplicantDetailView.class,
+                new RouteParameters("applicantId", selected.getId().toString())
+        ));
     }
 
     private int toIntCount(long count) {

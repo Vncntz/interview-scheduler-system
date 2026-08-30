@@ -1,6 +1,7 @@
 package com.company.iss.dashboard.view;
 
 import com.company.iss.booking.entity.Booking;
+import com.company.iss.applicant.view.ApplicantDetailView;
 import com.company.iss.booking.service.BookingService;
 import com.company.iss.dashboard.dto.RecruiterWorkbenchData;
 import com.company.iss.dashboard.dto.WorkbenchInterview;
@@ -26,6 +27,7 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.router.RouteParameters;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.security.RolesAllowed;
 
@@ -106,11 +108,20 @@ public class RecruiterWorkbenchView extends VerticalLayout {
         grid.setItems(interviews);
         grid.addColumn(WorkbenchInterview::bookingReference).setHeader("Reference").setAutoWidth(true);
         grid.addColumn(WorkbenchInterview::applicant).setHeader("Applicant").setAutoWidth(true);
+        grid.addColumn(item -> item.interviewStage().name()).setHeader("Stage").setKey("interview-stage").setAutoWidth(true);
         grid.addColumn(WorkbenchInterview::position).setHeader("Position").setAutoWidth(true);
         grid.addColumn(WorkbenchInterview::date).setHeader("Date").setAutoWidth(true);
         grid.addColumn(item -> DateTimeUtil.formatTime(item.startTime())).setHeader("Time").setAutoWidth(true);
         grid.addColumn(WorkbenchInterview::recruiter).setHeader("Recruiter").setAutoWidth(true);
         grid.addColumn(item -> item.status().name()).setHeader("Status").setAutoWidth(true);
+        grid.addComponentColumn(item -> {
+            Button profile = new Button("Profile", event -> getUI().ifPresent(
+                    ui -> ui.navigate(ApplicantDetailView.class,
+                            new RouteParameters("applicantId", item.applicantId().toString()))
+            ));
+            profile.addThemeVariants(ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SMALL);
+            return profile;
+        }).setHeader("Applicant Profile").setKey("applicant-profile").setAutoWidth(true);
         if (actionFactory != null) {
             grid.addComponentColumn(actionFactory::apply).setHeader("Actions").setAutoWidth(true);
         }

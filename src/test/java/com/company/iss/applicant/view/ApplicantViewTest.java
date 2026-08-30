@@ -11,6 +11,7 @@ import com.company.iss.position.service.PositionOpeningService;
 import com.company.iss.schedule.service.ScheduleService;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.combobox.ComboBox;
+import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.provider.CallbackDataProvider;
@@ -86,6 +87,18 @@ class ApplicantViewTest {
         int size = grid.getDataProvider().size(new Query<>(0, 50, List.of(), null, null));
 
         assertEquals(Integer.MAX_VALUE, size);
+    }
+
+    @Test
+    void profileActionIsAvailableWithoutRemovingExistingActions() {
+        ApplicantView view = view(mock(ApplicantService.class));
+        List<String> labels = descendants(view)
+                .filter(Button.class::isInstance)
+                .map(Button.class::cast)
+                .map(Button::getText)
+                .toList();
+
+        assertTrue(labels.containsAll(List.of("Add", "Edit", "Book Schedule", "View Profile")));
     }
 
     private ApplicantView view(ApplicantService applicantService) {
