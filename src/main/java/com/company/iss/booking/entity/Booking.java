@@ -9,6 +9,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 @Entity
 @Table(name = "bookings")
@@ -32,9 +33,20 @@ public class Booking extends BaseEntity {
     @Column(nullable = false, length = 30)
     private BookingStatus status = BookingStatus.BOOKED;
 
+    @Setter(lombok.AccessLevel.NONE)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "interview_stage", nullable = false, length = 20, updatable = false)
+    private InterviewStage interviewStage = InterviewStage.INITIAL;
+
     @Column(length = 1000)
     private String remarks;
 
     @Column(nullable = false)
     private LocalDateTime bookedDateTime = LocalDateTime.now();
+
+    public static Booking forInterviewStage(InterviewStage interviewStage) {
+        Booking booking = new Booking();
+        booking.interviewStage = Objects.requireNonNull(interviewStage, "Interview stage is required.");
+        return booking;
+    }
 }

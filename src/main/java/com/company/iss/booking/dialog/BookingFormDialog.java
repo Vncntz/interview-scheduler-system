@@ -1,6 +1,8 @@
 package com.company.iss.booking.dialog;
 
 import com.company.iss.applicant.entity.Applicant;
+import com.company.iss.booking.dto.CreateBookingCommand;
+import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.service.ScheduleService;
 import com.vaadin.flow.component.button.Button;
@@ -11,6 +13,7 @@ import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.textfield.TextArea;
+import com.vaadin.flow.component.textfield.TextField;
 
 import java.util.List;
 
@@ -20,13 +23,19 @@ public class BookingFormDialog extends Dialog {
     private final SaveListener saveListener;
 
     private ComboBox<Schedule> scheduleField;
+    private TextField interviewStageField;
     private TextArea remarksField;
 
     public interface SaveListener {
-        void onSave(Schedule schedule, String remarks);
+        void onSave(CreateBookingCommand command);
     }
 
-    public BookingFormDialog(Applicant applicant, ScheduleService scheduleService, SaveListener saveListener) {
+    public BookingFormDialog(
+            Applicant applicant,
+            InterviewStage interviewStage,
+            ScheduleService scheduleService,
+            SaveListener saveListener
+    ) {
         this.applicant = applicant;
         this.saveListener = saveListener;
 
@@ -36,14 +45,19 @@ public class BookingFormDialog extends Dialog {
         setCloseOnOutsideClick(false);
         setCloseOnEsc(false);
 
-        initFields(scheduleService);
+        initFields(interviewStage, scheduleService);
 
         add(buildForm());
 
         getFooter().add(buildFooter());
     }
 
-    private void initFields(ScheduleService scheduleService) {
+    private void initFields(InterviewStage interviewStage, ScheduleService scheduleService) {
+
+        interviewStageField = new TextField("Interview Stage");
+        interviewStageField.setValue(interviewStage.name());
+        interviewStageField.setReadOnly(true);
+        interviewStageField.setWidthFull();
 
         scheduleField = new ComboBox<>("Available Schedule");
 
@@ -64,7 +78,7 @@ public class BookingFormDialog extends Dialog {
     private FormLayout buildForm() {
         FormLayout form = new FormLayout();
 
-        form.add(scheduleField, remarksField);
+        form.add(interviewStageField, scheduleField, remarksField);
 
         form.setColspan(remarksField, 2);
 
@@ -90,7 +104,13 @@ public class BookingFormDialog extends Dialog {
             return;
         }
 
-        saveListener.onSave(scheduleField.getValue(), remarksField.getValue());
+        Schedule schedule = scheduleField.getValue();
+        saveListener.onSave(new CreateBookingCommand(
+                applicant.getId(),
+                schedule.getId(),
+                InterviewStage.valueOf(interviewStageField.getValue()),
+                remarksField.getValue()
+        ));
 
         close();
     }

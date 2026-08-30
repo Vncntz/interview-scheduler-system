@@ -67,6 +67,7 @@ public class NotificationTemplateFormDialog extends Dialog {
                 {{time}}
                 {{recruiter}}
                 {{interviewMode}}
+                {{interviewStage}}
                 """);
 
         placeholders.setReadOnly(true);

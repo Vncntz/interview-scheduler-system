@@ -7,9 +7,11 @@ import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.auth.service.SecurityService;
 import com.company.iss.booking.dto.BookingRescheduleCommand;
+import com.company.iss.booking.dto.CreateBookingCommand;
 import com.company.iss.booking.entity.Booking;
 import com.company.iss.booking.entity.BookingRescheduleHistory;
 import com.company.iss.booking.entity.BookingStatus;
+import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.booking.dto.BookingGridFilter;
 import com.company.iss.booking.event.BookingCancelledEvent;
 import com.company.iss.booking.event.BookingConfirmedEvent;
@@ -57,6 +59,7 @@ public class BookingService {
     private final ApplicantService applicantService;
     private final SecurityService securityService;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final BookingStageEligibilityPolicy bookingStageEligibilityPolicy = new BookingStageEligibilityPolicy();
 
     public BookingService(
             BookingRepository bookingRepository,
@@ -116,7 +119,32 @@ public class BookingService {
     }
 
     @Transactional
+    public Booking createBooking(CreateBookingCommand command) {
+        if (command == null || command.applicantId() == null) {
+            throw new BusinessRuleViolationException("Applicant is required.");
+        }
+        return createBooking(
+                command.applicantId(),
+                command.scheduleId(),
+                command.interviewStage(),
+                command.remarks(),
+                false
+        );
+    }
+
+    @Deprecated(forRemoval = false)
+    @Transactional
     public Booking createBooking(Long applicantId, Long scheduleId, String remarks) {
+        return createBooking(applicantId, scheduleId, null, remarks, true);
+    }
+
+    private Booking createBooking(
+            Long applicantId,
+            Long scheduleId,
+            InterviewStage requestedStage,
+            String remarks,
+            boolean inferStage
+    ) {
         User actor = requireAuthorizedActor("You are not authorized to create bookings.");
         Applicant applicant = applicantService.findForBookingUpdate(applicantId, actor);
         if (scheduleId == null) {
@@ -129,10 +157,19 @@ public class BookingService {
                 || !Objects.equals(applicant.getBranch().getId(), schedule.getBranch().getId())) {
             throw new BusinessRuleViolationException("Applicant and schedule must belong to the same branch.");
         }
-        return createBookingInternal(applicant, schedule, remarks);
+        Booking mostRecentBooking = bookingRepository
+                .findFirstByApplicantOrderByBookedDateTimeDescIdDesc(applicant)
+                .orElse(null);
+        InterviewStage interviewStage = inferStage
+                ? bookingStageEligibilityPolicy.requiredStage(applicant.getStatus(), mostRecentBooking)
+                : bookingStageEligibilityPolicy.validateRequestedStage(
+                        applicant.getStatus(), mostRecentBooking, requestedStage
+                );
+        return createBookingInternal(applicant, schedule, interviewStage, remarks);
     }
 
     @Deprecated(forRemoval = false)
+    @Transactional
     public Booking createBooking(Applicant applicant, Schedule schedule, String remarks) {
         if (applicant == null || applicant.getId() == null || schedule == null || schedule.getId() == null) {
             throw new BusinessRuleViolationException("Persisted applicant and schedule are required.");
@@ -140,10 +177,28 @@ public class BookingService {
         return createBooking(applicant.getId(), schedule.getId(), remarks);
     }
 
-    private Booking createBookingInternal(Applicant applicant, Schedule schedule, String remarks) {
+    @Transactional
+    public InterviewStage determineEligibleInterviewStage(Long applicantId) {
+        User actor = requireAuthorizedActor("You are not authorized to create bookings.");
+        Applicant applicant = applicantService.findForBookingUpdate(applicantId, actor);
+        if (!applicant.isActive()) {
+            throw new BusinessRuleViolationException("Applicant is inactive.");
+        }
+        Booking mostRecentBooking = bookingRepository
+                .findFirstByApplicantOrderByBookedDateTimeDescIdDesc(applicant)
+                .orElse(null);
+        return bookingStageEligibilityPolicy.requiredStage(applicant.getStatus(), mostRecentBooking);
+    }
+
+    private Booking createBookingInternal(
+            Applicant applicant,
+            Schedule schedule,
+            InterviewStage interviewStage,
+            String remarks
+    ) {
         validateBooking(applicant, schedule);
 
-        Booking booking = new Booking();
+        Booking booking = Booking.forInterviewStage(interviewStage);
 
         booking.setApplicant(applicant);
         booking.setSchedule(schedule);
@@ -166,10 +221,11 @@ public class BookingService {
         Booking saved = bookingRepository.save(booking);
 
         log.info(
-                "[BOOKING] Booking created bookingId={} applicantId={} scheduleId={}",
+                "[BOOKING] Booking created bookingId={} applicantId={} scheduleId={} interviewStage={}",
                 saved.getId(),
                 applicant.getId(),
-                schedule.getId()
+                schedule.getId(),
+                saved.getInterviewStage()
         );
 
         applicationEventPublisher.publishEvent(new BookingCreatedEvent(saved.getId()));
@@ -396,17 +452,6 @@ public class BookingService {
 
         if (!applicant.isActive()) {
             throw new BusinessRuleViolationException("Applicant is inactive.");
-        }
-
-        if (List.of(
-                ApplicantStatus.OFFERED,
-                ApplicantStatus.HIRED,
-                ApplicantStatus.OFFER_DECLINED,
-                ApplicantStatus.WITHDRAWN
-        ).contains(applicant.getStatus())) {
-            throw new BusinessRuleViolationException(
-                    "Applicants with a final hiring decision cannot be booked for another interview."
-            );
         }
 
         Optional<Booking> activeBooking = bookingRepository.findFirstByApplicantAndStatusIn(applicant, List.of(BookingStatus.BOOKED, BookingStatus.CONFIRMED, BookingStatus.RESCHEDULED));

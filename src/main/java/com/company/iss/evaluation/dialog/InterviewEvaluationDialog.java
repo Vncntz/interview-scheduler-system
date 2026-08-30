@@ -14,6 +14,7 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextArea;
+import com.vaadin.flow.component.textfield.TextField;
 import org.springframework.beans.factory.annotation.Autowired;
 
 public class InterviewEvaluationDialog extends Dialog {
@@ -23,6 +24,7 @@ public class InterviewEvaluationDialog extends Dialog {
     private final Runnable onSave;
 
     private IntegerField communicationScoreField;
+    private TextField interviewStageField;
     private IntegerField technicalScoreField;
     private IntegerField attitudeScoreField;
     private ComboBox<InterviewResult> resultField;
@@ -46,6 +48,11 @@ public class InterviewEvaluationDialog extends Dialog {
     }
 
     private void initFields() {
+        interviewStageField = new TextField("Interview Stage");
+        interviewStageField.setValue(booking.getInterviewStage().name());
+        interviewStageField.setReadOnly(true);
+        interviewStageField.setWidthFull();
+
         communicationScoreField = new IntegerField("Communication Score");
         communicationScoreField.setMin(1);
         communicationScoreField.setMax(10);
@@ -62,7 +69,7 @@ public class InterviewEvaluationDialog extends Dialog {
         attitudeScoreField.setWidthFull();
 
         resultField = new ComboBox<>("Result");
-        resultField.setItems(InterviewResult.values());
+        resultField.setItems(interviewEvaluationService.allowedResults(booking.getInterviewStage()));
         resultField.setWidthFull();
 
         remarksField = new TextArea("Remarks");
@@ -72,7 +79,7 @@ public class InterviewEvaluationDialog extends Dialog {
     private FormLayout buildForm() {
         FormLayout form = new FormLayout();
 
-        form.add(communicationScoreField, technicalScoreField, attitudeScoreField, resultField, remarksField);
+        form.add(interviewStageField, communicationScoreField, technicalScoreField, attitudeScoreField, resultField, remarksField);
 
         form.setColspan(remarksField, 2);
 

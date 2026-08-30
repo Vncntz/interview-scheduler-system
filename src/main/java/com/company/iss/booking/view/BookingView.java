@@ -99,6 +99,7 @@ public class BookingView extends VerticalLayout {
         bookingGrid.addColumn(o -> o.getSchedule() == null ? null : o.getSchedule().getScheduleDate()).setHeader("Schedule Date").setWidth("150px").setTextAlign(CENTER).setResizable(true);
         bookingGrid.addColumn(o -> o.getSchedule() == null ? null : o.getSchedule().getStartTime()).setHeader("Start Time").setWidth("120px").setTextAlign(CENTER).setResizable(true);
         bookingGrid.addColumn(this::recruiterName).setHeader("Recruiter").setWidth("220px").setResizable(true);
+        bookingGrid.addColumn(o -> o.getInterviewStage() == null ? "" : o.getInterviewStage().name()).setHeader("Interview Stage").setWidth("160px").setTextAlign(CENTER).setResizable(true);
         bookingGrid.addColumn(o -> o.getStatus() == null ? "" : o.getStatus().name()).setHeader("Status").setWidth("140px").setTextAlign(CENTER).setResizable(true);
         bookingGrid.addComponentColumn(booking -> {
 

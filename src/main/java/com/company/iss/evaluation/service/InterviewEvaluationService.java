@@ -7,6 +7,7 @@ import com.company.iss.auth.entity.User;
 import com.company.iss.auth.service.SecurityService;
 import com.company.iss.booking.entity.Booking;
 import com.company.iss.booking.entity.BookingStatus;
+import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.evaluation.dto.CreateEvaluationCommand;
 import com.company.iss.evaluation.entity.InterviewEvaluation;
@@ -30,6 +31,7 @@ public class InterviewEvaluationService {
     private final PositionOpeningRepository positionOpeningRepository;
     private final BookingRepository bookingRepository;
     private final SecurityService securityService;
+    private final InterviewStageResultPolicy interviewStageResultPolicy = new InterviewStageResultPolicy();
 
     public InterviewEvaluationService(
             InterviewEvaluationRepository evaluationRepository,
@@ -57,6 +59,7 @@ public class InterviewEvaluationService {
         if (evaluationRepository.existsByBookingId(booking.getId())) {
             throw new BusinessRuleViolationException("Booking already has an evaluation.");
         }
+        interviewStageResultPolicy.validate(booking.getInterviewStage(), command.result());
 
         Applicant applicant = booking.getApplicant();
         if (applicant == null) {
@@ -104,6 +107,10 @@ public class InterviewEvaluationService {
         return evaluationRepository.findByBookingScheduleBranchIdOrderByEvaluationDateDesc(
                 actor.getBranch().getId()
         );
+    }
+
+    public List<InterviewResult> allowedResults(InterviewStage interviewStage) {
+        return interviewStageResultPolicy.allowedResults(interviewStage);
     }
 
     private void validateCommand(CreateEvaluationCommand command) {

@@ -225,20 +225,29 @@ public class ApplicantView extends VerticalLayout {
             return;
         }
 
-        BookingFormDialog dialog = new BookingFormDialog(applicant, scheduleService, (schedule, remarks) -> {
-            try {
-                bookingService.createBooking(applicant.getId(), schedule.getId(), remarks);
+        try {
+            var interviewStage = bookingService.determineEligibleInterviewStage(applicant.getId());
+            BookingFormDialog dialog = new BookingFormDialog(applicant, interviewStage, scheduleService, command -> {
+                try {
+                    bookingService.createBooking(command);
 
-                Notification.show("Interview booked successfully.", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                    Notification.show(
+                            command.interviewStage().name() + " interview booked successfully.",
+                            3000,
+                            Notification.Position.TOP_CENTER
+                    ).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
 
-                refreshGrid();
+                    refreshGrid();
 
-            } catch (Exception ex) {
-                UserSafeNotifier.showError(ex);
-            }
-        });
+                } catch (Exception ex) {
+                    UserSafeNotifier.showError(ex);
+                }
+            });
 
-        dialog.open();
+            dialog.open();
+        } catch (Exception ex) {
+            UserSafeNotifier.showError(ex);
+        }
     }
 
     private void onBook() {

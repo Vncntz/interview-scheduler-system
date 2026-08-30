@@ -37,6 +37,8 @@ public class InterviewEvaluationView extends VerticalLayout {
 
         evaluationGrid.addColumn(o -> o.getApplicant().getPositionOpening().getClient().getCompanyName()).setHeader("Client").setWidth("220px").setResizable(true);
 
+        evaluationGrid.addColumn(o -> o.getBooking().getInterviewStage().name()).setHeader("Interview Stage").setWidth("160px").setTextAlign(ColumnTextAlign.CENTER).setResizable(true);
+
         evaluationGrid.addColumn(InterviewEvaluation::getCommunicationScore).setHeader("Communication").setWidth("140px").setTextAlign(ColumnTextAlign.CENTER).setResizable(true);
 
         evaluationGrid.addColumn(InterviewEvaluation::getTechnicalScore).setHeader("Technical").setWidth("120px").setTextAlign(ColumnTextAlign.CENTER).setResizable(true);

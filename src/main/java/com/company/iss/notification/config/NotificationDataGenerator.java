@@ -49,9 +49,10 @@ public class NotificationDataGenerator {
         createTemplateIfMissing(NotificationEvent.BOOKING_CREATED, "Interview Schedule Confirmation", """
                 Good day {{applicantName}},
                 
-                Your interview has been successfully scheduled.
+                Your {{interviewStage}} interview has been successfully scheduled.
                 
                 Booking Reference: {{bookingReference}}
+                Interview Stage: {{interviewStage}}
                 Position: {{position}}
                 Client: {{client}}
                 Work Location: {{workLocation}}
@@ -66,9 +67,10 @@ public class NotificationDataGenerator {
         createTemplateIfMissing(NotificationEvent.BOOKING_CONFIRMED, "Interview Booking Confirmed", """
                 Good day {{applicantName}},
                 
-                Your interview booking has been confirmed.
+                Your {{interviewStage}} interview booking has been confirmed.
                 
                 Position: {{position}}
+                Interview Stage: {{interviewStage}}
                 Date: {{date}}
                 Time: {{time}}
                 
@@ -90,9 +92,10 @@ public class NotificationDataGenerator {
         createTemplateIfMissing(NotificationEvent.BOOKING_RESCHEDULED, "Interview Booking Rescheduled", """
                 Good day {{applicantName}},
 
-                Your interview booking has been rescheduled.
+                Your {{interviewStage}} interview booking has been rescheduled.
 
                 Booking Reference: {{bookingReference}}
+                Interview Stage: {{interviewStage}}
                 Position: {{position}}
                 Interview Date: {{date}}
                 Interview Time: {{time}}
