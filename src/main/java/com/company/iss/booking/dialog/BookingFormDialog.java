@@ -2,6 +2,7 @@ package com.company.iss.booking.dialog;
 
 import com.company.iss.applicant.entity.Applicant;
 import com.company.iss.booking.dto.CreateBookingCommand;
+import com.company.iss.booking.dto.BookingApplicantInput;
 import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.service.ScheduleService;
@@ -19,7 +20,7 @@ import java.util.List;
 
 public class BookingFormDialog extends Dialog {
 
-    private final Applicant applicant;
+    private final BookingApplicantInput applicant;
     private final SaveListener saveListener;
 
     private ComboBox<Schedule> scheduleField;
@@ -32,6 +33,19 @@ public class BookingFormDialog extends Dialog {
 
     public BookingFormDialog(
             Applicant applicant,
+            InterviewStage interviewStage,
+            ScheduleService scheduleService,
+            SaveListener saveListener
+    ) {
+        this(new BookingApplicantInput(
+                applicant.getId(),
+                applicant.getBranch() == null ? null : applicant.getBranch().getId(),
+                applicant.getFullName()
+        ), interviewStage, scheduleService, saveListener);
+    }
+
+    public BookingFormDialog(
+            BookingApplicantInput applicant,
             InterviewStage interviewStage,
             ScheduleService scheduleService,
             SaveListener saveListener
@@ -62,7 +76,7 @@ public class BookingFormDialog extends Dialog {
         scheduleField = new ComboBox<>("Available Schedule");
 
         List<Schedule> schedules = scheduleService.findAvailableForCurrentUser(
-                applicant.getBranch() == null ? null : applicant.getBranch().getId()
+                applicant.branchId()
         );
 
         scheduleField.setItems(schedules);
@@ -106,7 +120,7 @@ public class BookingFormDialog extends Dialog {
 
         Schedule schedule = scheduleField.getValue();
         saveListener.onSave(new CreateBookingCommand(
-                applicant.getId(),
+                applicant.applicantId(),
                 schedule.getId(),
                 InterviewStage.valueOf(interviewStageField.getValue()),
                 remarksField.getValue()

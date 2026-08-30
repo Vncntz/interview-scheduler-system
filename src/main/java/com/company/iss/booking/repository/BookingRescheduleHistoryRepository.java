@@ -9,4 +9,10 @@ public interface BookingRescheduleHistoryRepository
         extends Repository<BookingRescheduleHistory, Long>, BookingRescheduleHistoryAppender {
 
     List<BookingRescheduleHistory> findByBookingIdOrderByRescheduledAtAscIdAsc(Long bookingId);
+
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {
+            "booking", "sourceSchedule", "sourceSchedule.recruiter",
+            "destinationSchedule", "destinationSchedule.recruiter", "actor"
+    })
+    List<BookingRescheduleHistory> findByBookingApplicantIdOrderByRescheduledAtAscIdAsc(Long applicantId);
 }

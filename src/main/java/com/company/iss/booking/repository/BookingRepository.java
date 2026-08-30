@@ -24,6 +24,9 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     Optional<Booking> findFirstByApplicantOrderByBookedDateTimeDescIdDesc(Applicant applicant);
 
+    @EntityGraph(attributePaths = {"schedule", "schedule.recruiter", "schedule.branch", "recruiter"})
+    List<Booking> findByApplicantIdOrderByBookedDateTimeAscIdAsc(Long applicantId);
+
     List<Booking> findBySchedule(Schedule schedule);
 
     List<Booking> findByStatus(BookingStatus status);

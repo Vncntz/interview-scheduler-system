@@ -110,7 +110,7 @@ public class HiringDecisionService {
         User actor = securityService.requireOperationsUser();
         HiringDecision decision = requireDetailedDecision(decisionId);
         authorize(actor, decision.getApplicant());
-        return auditRepository.findByDecisionIdOrderByOccurredAtAsc(decisionId).stream()
+        return auditRepository.findByDecisionIdOrderByOccurredAtAscIdAsc(decisionId).stream()
                 .map(audit -> new HiringDecisionAuditSummary(
                         audit.getAction(),
                         audit.getPreviousStatus(),

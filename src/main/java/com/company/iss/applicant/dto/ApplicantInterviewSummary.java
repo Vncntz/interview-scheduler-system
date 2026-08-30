@@ -1,22 +1,21 @@
-package com.company.iss.dashboard.dto;
+package com.company.iss.applicant.dto;
 
 import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.entity.InterviewStage;
+import com.company.iss.schedule.entity.InterviewMode;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
 
-public record WorkbenchInterview(
+public record ApplicantInterviewSummary(
         Long bookingId,
-        Long applicantId,
         String bookingReference,
-        String applicant,
-        String position,
+        InterviewStage interviewStage,
         LocalDate date,
         LocalTime startTime,
         LocalTime endTime,
+        InterviewMode interviewMode,
         String recruiter,
-        InterviewStage interviewStage,
-        BookingStatus status
+        BookingStatus bookingStatus
 ) {
 }

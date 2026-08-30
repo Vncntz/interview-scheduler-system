@@ -17,6 +17,27 @@ public interface HiringDecisionRepository extends JpaRepository<HiringDecision, 
 
     boolean existsByApplicantId(Long applicantId);
 
+    @EntityGraph(attributePaths = {"applicant", "evaluation", "evaluation.booking", "position", "offeredBy", "resolvedBy"})
+    Optional<HiringDecision> findByApplicantId(Long applicantId);
+
+    @Query("""
+            select count(e) > 0 from InterviewEvaluation e
+            join e.applicant a
+            join e.booking b
+            join a.positionOpening p
+            where a.id = :applicantId
+              and e.result = com.company.iss.evaluation.entity.InterviewResult.PASS
+              and b.status = com.company.iss.booking.entity.BookingStatus.PASSED
+              and b.applicant = a
+              and a.active = true
+              and a.status = com.company.iss.applicant.entity.ApplicantStatus.PASSED
+              and p.active = true
+              and p.status = com.company.iss.position.entity.PositionStatus.OPEN
+              and p.hiredCount < p.requiredHeadcount
+              and not exists (select d.id from HiringDecision d where d.applicant = a or d.evaluation = e)
+            """)
+    boolean existsEligibleEvaluationByApplicantId(@Param("applicantId") Long applicantId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @EntityGraph(attributePaths = {"applicant", "applicant.branch", "evaluation", "position", "position.client"})
     @Query("select d from HiringDecision d where d.applicant.id = :applicantId")
