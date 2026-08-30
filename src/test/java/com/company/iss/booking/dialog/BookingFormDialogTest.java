@@ -2,6 +2,7 @@ package com.company.iss.booking.dialog;
 
 import com.company.iss.applicant.entity.Applicant;
 import com.company.iss.booking.entity.InterviewStage;
+import com.company.iss.booking.dto.BookingApplicantInput;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.schedule.service.ScheduleService;
 import com.vaadin.flow.component.Component;
@@ -43,6 +44,25 @@ class BookingFormDialogTest {
                 .orElseThrow();
         assertEquals("FINAL", stageField.getValue());
         assertTrue(stageField.isReadOnly());
+    }
+
+    @Test
+    void acceptsImmutableApplicantInputForProfileReuse() {
+        ScheduleService scheduleService = mock(ScheduleService.class);
+        when(scheduleService.findAvailableForCurrentUser(10L)).thenReturn(List.of());
+
+        BookingFormDialog dialog = new BookingFormDialog(
+                new BookingApplicantInput(20L, 10L, "Alex Candidate"),
+                InterviewStage.CLIENT,
+                scheduleService,
+                command -> { }
+        );
+
+        TextField stage = descendants(dialog).filter(TextField.class::isInstance)
+                .map(TextField.class::cast)
+                .filter(field -> "Interview Stage".equals(field.getLabel()))
+                .findFirst().orElseThrow();
+        assertEquals("CLIENT", stage.getValue());
     }
 
     private Stream<Component> descendants(Component component) {

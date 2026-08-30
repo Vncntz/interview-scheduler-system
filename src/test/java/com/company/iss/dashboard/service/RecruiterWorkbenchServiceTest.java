@@ -4,6 +4,11 @@ import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.auth.service.SecurityService;
 import com.company.iss.booking.entity.BookingStatus;
+import com.company.iss.booking.entity.Booking;
+import com.company.iss.booking.entity.InterviewStage;
+import com.company.iss.applicant.entity.Applicant;
+import com.company.iss.position.entity.PositionOpening;
+import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.branch.entity.Branch;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +25,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @ExtendWith(MockitoExtension.class)
 class RecruiterWorkbenchServiceTest {
@@ -67,5 +73,52 @@ class RecruiterWorkbenchServiceTest {
         verify(bookingRepository).findOverdueUnevaluatedByBranch(
                 eq(17L), eq(BookingStatus.ATTENDED), any(LocalDate.class), any(LocalTime.class)
         );
+    }
+
+    @Test
+    void workbenchDtoIncludesApplicantIdAndInterviewStage() {
+        Branch branch = new Branch();
+        branch.setId(17L);
+        User recruiter = new User();
+        recruiter.setId(23L);
+        recruiter.setFullName("Maria Santos");
+        recruiter.setRole(Role.RECRUITER);
+        recruiter.setActive(true);
+        recruiter.setBranch(branch);
+        Applicant applicant = new Applicant();
+        applicant.setId(31L);
+        applicant.setFirstName("Alex");
+        applicant.setLastName("Candidate");
+        PositionOpening position = new PositionOpening();
+        position.setTitle("Engineer");
+        applicant.setPositionOpening(position);
+        Schedule schedule = new Schedule();
+        schedule.setScheduleDate(LocalDate.now());
+        schedule.setStartTime(LocalTime.of(9, 0));
+        schedule.setEndTime(LocalTime.of(10, 0));
+        schedule.setRecruiter(recruiter);
+        Booking booking = Booking.forInterviewStage(InterviewStage.FINAL);
+        booking.setId(41L);
+        booking.setApplicant(applicant);
+        booking.setSchedule(schedule);
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setBookingReference("BK-41");
+        when(securityService.requireOperationsUser()).thenReturn(recruiter);
+        when(bookingRepository.findByScheduleRecruiterIdAndScheduleScheduleDateAndStatusInOrderByScheduleStartTime(
+                eq(23L), any(LocalDate.class), any()
+        )).thenReturn(List.of(booking));
+        when(bookingRepository.findUpcomingAssigned(eq(23L), any(), any(), any())).thenReturn(List.of());
+        when(bookingRepository.findByScheduleBranchIdAndStatusOrderByScheduleScheduleDateAscScheduleStartTimeAsc(
+                17L, BookingStatus.BOOKED
+        )).thenReturn(List.of());
+        when(bookingRepository.findDueByBranchAndStatus(eq(17L), eq(BookingStatus.CONFIRMED), any(), any()))
+                .thenReturn(List.of());
+        when(bookingRepository.findOverdueUnevaluatedByBranch(eq(17L), eq(BookingStatus.ATTENDED), any(), any()))
+                .thenReturn(List.of());
+
+        var item = service.load().todaysAssigned().getFirst();
+
+        assertEquals(31L, item.applicantId());
+        assertEquals(InterviewStage.FINAL, item.interviewStage());
     }
 }

@@ -90,12 +90,14 @@ class HiringDecisionRepositoryTest {
         TestData data = persistEligibleCandidate("eligible-query");
 
         assertEquals(1, decisionRepository.findEligibleEvaluations().size());
+        assertTrue(decisionRepository.existsEligibleEvaluationByApplicantId(data.applicant().getId()));
         assertEquals(1, decisionRepository.findEligibleEvaluationsByBranchId(data.branch().getId()).size());
         assertEquals(0, decisionRepository.findEligibleEvaluationsByBranchId(data.branch().getId() + 100).size());
 
         decisionRepository.saveAndFlush(decision(data, data.evaluation()));
 
         assertEquals(0, decisionRepository.findEligibleEvaluations().size());
+        assertFalse(decisionRepository.existsEligibleEvaluationByApplicantId(data.applicant().getId()));
     }
 
     @Test
@@ -116,7 +118,7 @@ class HiringDecisionRepositoryTest {
         entityManager.clear();
 
         HiringDecisionAudit persisted = auditRepository
-                .findByDecisionIdOrderByOccurredAtAsc(decision.getId())
+                .findByDecisionIdOrderByOccurredAtAscIdAsc(decision.getId())
                 .getFirst();
         Field remarks = HiringDecisionAudit.class.getDeclaredField("remarks");
         remarks.setAccessible(true);
@@ -126,7 +128,7 @@ class HiringDecisionRepositoryTest {
 
         assertEquals(
                 "Original remarks",
-                auditRepository.findByDecisionIdOrderByOccurredAtAsc(decision.getId()).getFirst().getRemarks()
+                auditRepository.findByDecisionIdOrderByOccurredAtAscIdAsc(decision.getId()).getFirst().getRemarks()
         );
     }
 
@@ -139,7 +141,7 @@ class HiringDecisionRepositoryTest {
         assertTrue(methodNames.containsAll(Set.of(
                 "append",
                 "count",
-                "findByDecisionIdOrderByOccurredAtAsc"
+                "findByDecisionIdOrderByOccurredAtAscIdAsc"
         )));
         assertFalse(CrudRepository.class.isAssignableFrom(HiringDecisionAuditRepository.class));
         assertFalse(methodNames.stream().anyMatch(name -> name.startsWith("save")
