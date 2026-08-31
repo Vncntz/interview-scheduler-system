@@ -7,9 +7,8 @@ import com.vaadin.flow.component.page.AppShellConfigurator;
 import com.vaadin.flow.theme.aura.Aura;
 
 @SpringBootApplication
-@StyleSheet("styles.css")
-@StyleSheet("styles.css")
 @StyleSheet(Aura.STYLESHEET)
+@StyleSheet("styles.css")
 public class InterviewSchedulerSystemApplication implements AppShellConfigurator {
 
     public static void main(String[] args) {

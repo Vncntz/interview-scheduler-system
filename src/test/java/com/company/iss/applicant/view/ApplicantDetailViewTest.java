@@ -20,6 +20,7 @@ import com.company.iss.schedule.service.ScheduleService;
 import com.company.iss.shared.view.MainLayout;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.html.ListItem;
@@ -114,25 +115,19 @@ class ApplicantDetailViewTest {
     @Test
     void rendersPopulatedAppointmentAndTimelineInServiceOrder() {
         ApplicantInterviewSummary appointment = new ApplicantInterviewSummary(
-                91L, "BK-2026-VERY-LONG-REFERENCE", InterviewStage.CLIENT,
+                91L, "BK-2026-VERY-LONG-REFERENCE", InterviewStage.INITIAL,
                 LocalDate.of(2026, 9, 14), LocalTime.of(9, 30), LocalTime.of(10, 45),
                 InterviewMode.ONSITE, "Riley Recruiter", BookingStatus.CONFIRMED);
         ApplicantRecruitmentState state = new ApplicantRecruitmentState(
-                ApplicantStatus.SCHEDULED, InterviewStage.CLIENT, null,
+                ApplicantStatus.SCHEDULED, InterviewStage.INITIAL, null,
                 ApplicantNextAction.CONFIRM_INTERVIEW, appointment, false, false);
         List<RecruitmentTimelineItem> timeline = List.of(
-                new RecruitmentTimelineItem(RecruitmentTimelineEvent.INTERVIEW_RESCHEDULED,
-                        LocalDateTime.of(2026, 9, 3, 10, 0), "Do not use this raw title",
-                        "Moved to a later slot", InterviewStage.CLIENT),
                 new RecruitmentTimelineItem(RecruitmentTimelineEvent.APPLICATION_CREATED,
-                        LocalDateTime.of(2026, 8, 1, 8, 0), "Also ignored",
-                        "Engineer · Manila", null),
-                new RecruitmentTimelineItem(RecruitmentTimelineEvent.INTERVIEW_EVALUATED,
-                        LocalDateTime.of(2026, 9, 16, 11, 30), "Ignored evaluation title",
-                        "Result recorded", InterviewStage.CLIENT),
-                new RecruitmentTimelineItem(RecruitmentTimelineEvent.HIRED,
-                        LocalDateTime.of(2026, 9, 20, 9, 0), "Ignored hiring title",
-                        "Hiring completed", null)
+                        LocalDateTime.of(2026, 8, 25, 17, 34), "Ignored application title",
+                        "Sales Associate · Tanza\nSource: Indeed", null),
+                new RecruitmentTimelineItem(RecruitmentTimelineEvent.INTERVIEW_BOOKED,
+                        LocalDateTime.of(2026, 8, 26, 16, 11), "Ignored interview title",
+                        "Reference: BK-813A4172", InterviewStage.INITIAL)
         );
 
         ApplicantDetailView view = render(profile(state, List.of(), timeline));
@@ -144,20 +139,30 @@ class ApplicantDetailViewTest {
         assertTrue(text.contains("Riley Recruiter"));
         assertTrue(text.contains("BK-2026-VERY-LONG-REFERENCE"));
         assertTrue(text.contains("Confirmed"));
+        assertTrue(text.contains("Aug 25, 2026 · 5:34 PM"));
+        assertTrue(text.contains("Aug 26, 2026 · 4:11 PM"));
+        assertTrue(text.contains("Reference: BK-813A4172"));
         assertFalse(text.contains("ONSITE"));
-        assertFalse(text.contains("Do not use this raw title"));
+        assertFalse(text.contains("Ignored interview title"));
 
         OrderedList orderedList = descendants(view).filter(OrderedList.class::isInstance)
                 .map(OrderedList.class::cast).findFirst().orElseThrow();
         List<ListItem> items = orderedList.getChildren().map(ListItem.class::cast).toList();
-        assertEquals(List.of("Interview Rescheduled", "Application Created", "Interview Evaluated",
-                        "Applicant Hired"),
+        assertEquals(List.of("Application Created", "Interview Booked"),
                 items.stream().map(item -> descendants(item).filter(H3.class::isInstance)
                         .map(H3.class::cast).map(H3::getText).findFirst().orElseThrow()).toList());
-        assertEquals(List.of("interview", "application", "evaluation", "hiring"),
+        assertEquals(List.of("application", "interview"),
                 items.stream().map(item -> item.getElement().getAttribute("data-event-family")).toList());
-        assertTrue(items.getFirst().getElement().getTextRecursively().contains("Client Interview"));
-        assertFalse(items.get(1).getElement().getTextRecursively().contains("Interview"));
+        assertFalse(items.getFirst().getElement().getTextRecursively().contains("Interview"));
+        assertTrue(items.get(1).getElement().getTextRecursively().contains("Initial Interview"));
+
+        Div interviewHeader = firstWithClass(items.get(1), Div.class,
+                "applicant-profile__timeline-header");
+        assertTrue(interviewHeader.getChildren().anyMatch(component -> component instanceof H3 heading
+                && "Interview Booked".equals(heading.getText())));
+        assertTrue(interviewHeader.getChildren().anyMatch(component -> component instanceof Span stage
+                && stage.hasClassName("applicant-profile__badge")
+                && "Initial Interview".equals(stage.getText())));
     }
 
     @Test

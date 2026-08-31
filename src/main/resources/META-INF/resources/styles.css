@@ -263,39 +263,53 @@ vaadin-login-overlay::part(overlay) {
 .applicant-profile__timeline {
     display: grid;
     gap: 0;
+    width: 100%;
+    max-width: 50rem;
+    box-sizing: border-box;
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
+.applicant-profile__timeline-card {
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
+}
+
 .applicant-profile__timeline-item {
     position: relative;
     display: grid;
-    grid-template-columns: 1.25rem minmax(0, 1fr);
-    gap: var(--vaadin-gap-m);
+    grid-template-columns: 1rem minmax(0, 1fr);
+    gap: var(--vaadin-gap-s);
     min-width: 0;
-    padding: 0 0 var(--vaadin-padding-xl);
+    padding: 0;
+}
+
+.applicant-profile__timeline-item:not(:last-child) {
+    padding-block-end: var(--vaadin-padding-l);
 }
 
 .applicant-profile__timeline-item:not(:last-child)::before {
     content: "";
     position: absolute;
-    inset-block: 1rem 0;
-    inset-inline-start: 0.55rem;
+    inset-block: 0.5rem -0.5rem;
+    inset-inline-start: calc(0.5rem - 1px);
     width: 2px;
-    background: var(--vaadin-border-color-secondary);
+    background: var(--vaadin-border-color);
 }
 
 .applicant-profile__timeline-marker {
     position: relative;
     z-index: 1;
-    width: 0.8rem;
-    height: 0.8rem;
-    margin-top: 0.25rem;
-    border: 3px solid var(--vaadin-background-container);
+    box-sizing: border-box;
+    width: 0.75rem;
+    height: 0.75rem;
+    margin-top: 0.125rem;
+    justify-self: center;
+    border: 1px solid var(--vaadin-background-container);
     border-radius: 50%;
     background: var(--vaadin-text-color-secondary);
-    box-shadow: 0 0 0 1px var(--vaadin-border-color-secondary);
 }
 
 .applicant-profile__timeline-item--application .applicant-profile__timeline-marker {
@@ -319,10 +333,22 @@ vaadin-login-overlay::part(overlay) {
     flex-direction: column;
     align-items: flex-start;
     gap: var(--vaadin-gap-xs);
+    min-width: 0;
+    max-width: 100%;
+}
+
+.applicant-profile__timeline-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vaadin-gap-s);
+    min-width: 0;
+    max-width: 100%;
 }
 
 .applicant-profile__timeline-title {
     font-size: var(--aura-font-size-l, 1rem);
+    overflow-wrap: anywhere;
 }
 
 .applicant-profile__timeline-description {
@@ -388,17 +414,4 @@ vaadin-login-overlay::part(overlay) {
         grid-template-columns: minmax(0, 1fr);
     }
 
-    .applicant-profile__timeline-item {
-        grid-template-columns: 1rem minmax(0, 1fr);
-        gap: var(--vaadin-gap-s);
-    }
-
-    .applicant-profile__timeline-item:not(:last-child)::before {
-        inset-inline-start: 0.43rem;
-    }
-
-    .applicant-profile__timeline-marker {
-        width: 0.65rem;
-        height: 0.65rem;
-    }
 }

@@ -50,6 +50,8 @@ public class ApplicantDetailView extends VerticalLayout implements BeforeEnterOb
 
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern(
             "MMM d, uuuu h:mm a", Locale.ENGLISH);
+    private static final DateTimeFormatter TIMELINE_DATE_TIME = DateTimeFormatter.ofPattern(
+            "MMM d, uuuu · h:mm a", Locale.ENGLISH);
     private static final DateTimeFormatter APPOINTMENT_DATE = DateTimeFormatter.ofPattern(
             "EEEE, MMMM d, uuuu", Locale.ENGLISH);
 
@@ -70,7 +72,7 @@ public class ApplicantDetailView extends VerticalLayout implements BeforeEnterOb
         this.scheduleService = scheduleService;
         this.evaluationService = evaluationService;
         addClassName("applicant-profile");
-        setSizeFull();
+        setWidthFull();
         setPadding(true);
         setSpacing(false);
     }
@@ -287,17 +289,22 @@ public class ApplicantDetailView extends VerticalLayout implements BeforeEnterOb
             Span marker = new Span();
             marker.addClassName("applicant-profile__timeline-marker");
             marker.getElement().setAttribute("aria-hidden", "true");
-            Span time = new Span(item.occurredAt() == null ? "Date unavailable" : item.occurredAt().format(DATE_TIME));
+            Span time = new Span(item.occurredAt() == null
+                    ? "Date unavailable"
+                    : item.occurredAt().format(TIMELINE_DATE_TIME));
             time.addClassName("applicant-profile__timeline-time");
             H3 title = new H3(ApplicantProfilePresentation.timelineTitle(item.event()));
             title.addClassName("applicant-profile__timeline-title");
 
-            Div content = new Div(time, title);
-            content.addClassName("applicant-profile__timeline-content");
+            Div header = new Div(title);
+            header.addClassName("applicant-profile__timeline-header");
             if (item.interviewStage() != null) {
-                content.add(badge(ApplicantProfilePresentation.interviewStageLabel(item.interviewStage()),
+                header.add(badge(ApplicantProfilePresentation.interviewStageLabel(item.interviewStage()),
                         "accent", "Interview stage"));
             }
+
+            Div content = new Div(time, header);
+            content.addClassName("applicant-profile__timeline-content");
             if (item.description() != null && !item.description().isBlank()) {
                 Paragraph description = new Paragraph(item.description());
                 description.addClassName("applicant-profile__timeline-description");
