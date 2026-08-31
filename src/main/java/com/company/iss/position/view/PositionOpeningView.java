@@ -78,7 +78,11 @@ public class PositionOpeningView extends VerticalLayout {
 
         positionGrid.addColumn(PositionOpening::getAppliedCount).setHeader("Applied").setWidth("100px").setResizable(true);
 
-        positionGrid.addColumn(PositionOpening::getInterviewedCount).setHeader("Interviewed").setWidth("120px").setResizable(true);
+        positionGrid.addColumn(PositionOpening::getInterviewEvaluationCount)
+                .setHeader("Interview Evaluations")
+                .setWidth("180px")
+                .setResizable(true)
+                .setTooltipGenerator(position -> "Counts Initial, Final, and Client interview evaluations.");
 
         positionGrid.addColumn(PositionOpening::getPassedCount).setHeader("Passed").setWidth("100px").setResizable(true);
 

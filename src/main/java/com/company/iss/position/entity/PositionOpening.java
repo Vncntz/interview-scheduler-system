@@ -31,8 +31,8 @@ public class PositionOpening extends BaseEntity {
     @Column(nullable = false)
     private Integer appliedCount = 0;
 
-    @Column(nullable = false)
-    private Integer interviewedCount = 0;
+    @Column(name = "interviewed_count", nullable = false)
+    private Integer interviewEvaluationCount = 0;
 
     @Column(nullable = false)
     private Integer passedCount = 0;
