@@ -1,8 +1,12 @@
 package com.company.iss.notification.entity;
 
+import com.company.iss.notification.config.SmtpProvider;
+import com.company.iss.notification.config.SmtpSecurity;
 import com.company.iss.shared.entity.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
@@ -33,6 +37,17 @@ public class NotificationSettings extends BaseEntity {
 
     @Column
     private String smtpFromName;
+
+    @Column
+    private String smtpFromAddress;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private SmtpProvider smtpProvider = SmtpProvider.CUSTOM;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private SmtpSecurity smtpSecurity = SmtpSecurity.STARTTLS;
 
     @Column
     private String smsProvider;

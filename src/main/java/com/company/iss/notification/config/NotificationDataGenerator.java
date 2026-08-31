@@ -41,6 +41,8 @@ public class NotificationDataGenerator {
         settings.setSmsEnabled(false);
         settings.setSmtpHost("smtp.gmail.com");
         settings.setSmtpPort(587);
+        settings.setSmtpProvider(SmtpProvider.GMAIL);
+        settings.setSmtpSecurity(SmtpSecurity.STARTTLS);
 
         notificationSettingsRepository.save(settings);
     }

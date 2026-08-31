@@ -1,7 +1,8 @@
 package com.company.iss.notification.service;
 
-import com.company.iss.notification.config.NotificationRuntimeProperties;
 import com.company.iss.notification.entity.NotificationSettings;
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.mail.MailAuthenticationException;
@@ -9,16 +10,16 @@ import org.springframework.mail.MailException;
 import org.springframework.mail.MailParseException;
 import org.springframework.mail.MailPreparationException;
 import org.springframework.mail.MailSendException;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.io.UnsupportedEncodingException;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
-import java.util.Properties;
+import java.nio.charset.StandardCharsets;
 
 @Service
 public class EmailService {
@@ -26,14 +27,17 @@ public class EmailService {
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
 
     private final NotificationSettingsService notificationSettingsService;
-    private final NotificationRuntimeProperties runtimeProperties;
+    private final SmtpConfigurationValidator validator;
+    private final SmtpClientFactory clientFactory;
 
     public EmailService(
             NotificationSettingsService notificationSettingsService,
-            NotificationRuntimeProperties runtimeProperties
+            SmtpConfigurationValidator validator,
+            SmtpClientFactory clientFactory
     ) {
         this.notificationSettingsService = notificationSettingsService;
-        this.runtimeProperties = runtimeProperties;
+        this.validator = validator;
+        this.clientFactory = clientFactory;
     }
 
     @Async
@@ -46,36 +50,13 @@ public class EmailService {
             return;
         }
 
-        if (to == null || to.isBlank()) {
-            logKnownFailure(recipient, "INVALID_RECIPIENT", "Recipient email is missing");
-            return;
-        }
-        if (settings.getSmtpHost() == null || settings.getSmtpHost().isBlank()) {
-            logKnownFailure(recipient, "SMTP_CONFIGURATION_INVALID", "SMTP host is missing");
-            return;
-        }
-        if (settings.getSmtpPort() == null) {
-            logKnownFailure(recipient, "SMTP_CONFIGURATION_INVALID", "SMTP port is missing");
-            return;
-        }
-        if (settings.getSmtpUsername() == null || settings.getSmtpUsername().isBlank()) {
-            logKnownFailure(recipient, "SMTP_AUTHENTICATION_FAILED", "SMTP username is missing");
-            return;
-        }
-        if (!runtimeProperties.getSmtp().isPasswordConfigured()) {
-            logKnownFailure(recipient, "SMTP_AUTHENTICATION_FAILED", "SMTP password is missing");
-            return;
-        }
-
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(settings.getSmtpUsername());
-        message.setTo(to);
-        message.setSubject(subject);
-        message.setText(body);
-
         try {
-            createMailSender(settings).send(message);
+            validator.requireDeliveryReady(settings);
+            validator.validateRecipient(to);
+            sendMimeMessage(settings, to, subject, body);
             log.info("[EMAIL] Email sent recipient={}", recipient);
+        } catch (SmtpConfigurationException exception) {
+            logConfigurationFailure(recipient, exception);
         } catch (MailAuthenticationException exception) {
             logKnownFailure(
                     recipient,
@@ -95,19 +76,38 @@ public class EmailService {
         }
     }
 
-    JavaMailSender createMailSender(NotificationSettings settings) {
-        JavaMailSenderImpl mailSender = new JavaMailSenderImpl();
+    void sendTestEmail(NotificationSettings settings, String recipient) {
+        validator.requireDiagnosticReady(settings);
+        validator.validateRecipient(recipient);
+        sendMimeMessage(
+                settings,
+                recipient,
+                "Interview Scheduler SMTP configuration test",
+                "This is a test email from Interview Scheduler. Your SMTP configuration can send email successfully."
+        );
+    }
 
-        mailSender.setHost(settings.getSmtpHost());
-        mailSender.setPort(settings.getSmtpPort());
-        mailSender.setUsername(settings.getSmtpUsername());
-        mailSender.setPassword(runtimeProperties.getSmtp().getPassword());
-
-        Properties props = mailSender.getJavaMailProperties();
-        props.put("mail.smtp.auth", "true");
-        props.put("mail.smtp.starttls.enable", "true");
-
-        return mailSender;
+    void sendMimeMessage(NotificationSettings settings, String to, String subject, String body) {
+        JavaMailSenderImpl mailSender = clientFactory.create(settings);
+        MimeMessage message = mailSender.createMimeMessage();
+        try {
+            MimeMessageHelper helper = new MimeMessageHelper(
+                    message,
+                    false,
+                    StandardCharsets.UTF_8.name()
+            );
+            if (settings.getSmtpFromName() == null || settings.getSmtpFromName().isBlank()) {
+                helper.setFrom(settings.getSmtpFromAddress());
+            } else {
+                helper.setFrom(settings.getSmtpFromAddress(), settings.getSmtpFromName().trim());
+            }
+            helper.setTo(to);
+            helper.setSubject(subject);
+            helper.setText(body, false);
+        } catch (MessagingException | UnsupportedEncodingException exception) {
+            throw new MailPreparationException("Could not prepare email message", exception);
+        }
+        mailSender.send(message);
     }
 
     static String maskRecipient(String email) {
@@ -117,13 +117,40 @@ public class EmailService {
 
         String sanitized = email.replaceAll("[\\r\\n\\t]", "_").trim();
         int separator = sanitized.indexOf('@');
-        if (separator <= 0 || separator == sanitized.length() - 1) {
+        if (separator <= 0
+                || separator != sanitized.lastIndexOf('@')
+                || separator == sanitized.length() - 1) {
             return sanitized.substring(0, Math.min(2, sanitized.length())) + "***";
         }
 
         String localPart = sanitized.substring(0, separator);
         String domain = sanitized.substring(separator + 1);
+        if (!domain.matches("[A-Za-z0-9.-]+")) {
+            return localPart.substring(0, Math.min(2, localPart.length())) + "***";
+        }
         return localPart.substring(0, Math.min(2, localPart.length())) + "***@" + domain;
+    }
+
+    private void logConfigurationFailure(String recipient, SmtpConfigurationException exception) {
+        String reason;
+        String detail;
+        switch (exception.getFailure()) {
+            case USERNAME_MISSING, PASSWORD_MISSING -> {
+                reason = "SMTP_AUTHENTICATION_FAILED";
+                detail = exception.getFailure() == SmtpConfigurationValidator.Failure.PASSWORD_MISSING
+                        ? "SMTP password is missing"
+                        : "SMTP username is missing";
+            }
+            case RECIPIENT_INVALID -> {
+                reason = "INVALID_RECIPIENT";
+                detail = "Recipient email is missing or invalid";
+            }
+            default -> {
+                reason = "SMTP_CONFIGURATION_INVALID";
+                detail = "SMTP configuration is incomplete or invalid";
+            }
+        }
+        logKnownFailure(recipient, reason, detail);
     }
 
     private boolean isConnectionFailure(Throwable exception) {
