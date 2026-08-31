@@ -172,7 +172,7 @@ class HiringDecisionRepositoryTest {
         position.setEmploymentType(EmploymentType.FULL_TIME);
         position.setRequiredHeadcount(1);
         position.setAppliedCount(1);
-        position.setInterviewedCount(1);
+        position.setInterviewEvaluationCount(1);
         position.setPassedCount(1);
         position.setHiredCount(0);
         position.setStatus(PositionStatus.OPEN);

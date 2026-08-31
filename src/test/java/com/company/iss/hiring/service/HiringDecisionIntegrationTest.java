@@ -218,7 +218,7 @@ class HiringDecisionIntegrationTest {
         position.setEmploymentType(EmploymentType.FULL_TIME);
         position.setRequiredHeadcount(headcount);
         position.setAppliedCount(2);
-        position.setInterviewedCount(2);
+        position.setInterviewEvaluationCount(2);
         position.setPassedCount(2);
         position.setHiredCount(0);
         position.setStatus(PositionStatus.OPEN);

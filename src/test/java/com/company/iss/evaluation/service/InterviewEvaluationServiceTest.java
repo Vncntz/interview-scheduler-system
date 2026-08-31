@@ -36,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -77,7 +78,7 @@ class InterviewEvaluationServiceTest {
         User actor = recruiter(1L);
         Booking booking = booking(20L, 1L, BookingStatus.ATTENDED);
         PositionOpening position = new PositionOpening();
-        position.setInterviewedCount(3);
+        position.setInterviewEvaluationCount(3);
         position.setPassedCount(1);
         booking.getApplicant().setPositionOpening(position);
         when(securityService.requireOperationsUser()).thenReturn(actor);
@@ -89,10 +90,112 @@ class InterviewEvaluationServiceTest {
         assertSame(actor, result.getEvaluator());
         assertEquals(BookingStatus.PASSED, booking.getStatus());
         assertEquals(ApplicantStatus.PASSED, booking.getApplicant().getStatus());
-        assertEquals(4, position.getInterviewedCount());
+        assertEquals(4, position.getInterviewEvaluationCount());
         assertEquals(2, position.getPassedCount());
         verify(evaluationRepository).existsByBookingId(20L);
         verify(evaluationRepository).save(result);
+    }
+
+    @Test
+    void initialProgressionThenFinalPassCountsTwoEvaluationsAndOnePass() {
+        User actor = recruiter(1L);
+        PositionOpening position = positionWithCounters(0, 0);
+        Applicant applicant = applicantFor(position);
+        Booking initialBooking = booking(20L, 1L, BookingStatus.ATTENDED, InterviewStage.INITIAL);
+        initialBooking.setApplicant(applicant);
+        Booking finalBooking = booking(21L, 1L, BookingStatus.ATTENDED, InterviewStage.FINAL);
+        finalBooking.setApplicant(applicant);
+        when(securityService.requireOperationsUser()).thenReturn(actor);
+        when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(initialBooking));
+        when(bookingRepository.findByIdForUpdate(21L)).thenReturn(Optional.of(finalBooking));
+        when(evaluationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.create(command(20L, InterviewResult.FOR_FINAL_INTERVIEW));
+
+        assertEquals(1, position.getInterviewEvaluationCount());
+        assertEquals(0, position.getPassedCount());
+        assertEquals(ApplicantStatus.FOR_FINAL_INTERVIEW, applicant.getStatus());
+
+        applicant.setStatus(ApplicantStatus.INTERVIEWED);
+        service.create(command(21L, InterviewResult.PASS));
+
+        assertEquals(2, position.getInterviewEvaluationCount());
+        assertEquals(1, position.getPassedCount());
+        assertEquals(ApplicantStatus.PASSED, applicant.getStatus());
+    }
+
+    @Test
+    void threeStageProgressionCountsThreeEvaluationsAndOnePass() {
+        User actor = recruiter(1L);
+        PositionOpening position = positionWithCounters(0, 0);
+        Applicant applicant = applicantFor(position);
+        Booking initialBooking = booking(20L, 1L, BookingStatus.ATTENDED, InterviewStage.INITIAL);
+        initialBooking.setApplicant(applicant);
+        Booking finalBooking = booking(21L, 1L, BookingStatus.ATTENDED, InterviewStage.FINAL);
+        finalBooking.setApplicant(applicant);
+        Booking clientBooking = booking(22L, 1L, BookingStatus.ATTENDED, InterviewStage.CLIENT);
+        clientBooking.setApplicant(applicant);
+        when(securityService.requireOperationsUser()).thenReturn(actor);
+        when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(initialBooking));
+        when(bookingRepository.findByIdForUpdate(21L)).thenReturn(Optional.of(finalBooking));
+        when(bookingRepository.findByIdForUpdate(22L)).thenReturn(Optional.of(clientBooking));
+        when(evaluationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.create(command(20L, InterviewResult.FOR_FINAL_INTERVIEW));
+        assertEquals(1, position.getInterviewEvaluationCount());
+        assertEquals(0, position.getPassedCount());
+
+        applicant.setStatus(ApplicantStatus.INTERVIEWED);
+        service.create(command(21L, InterviewResult.FOR_CLIENT_INTERVIEW));
+        assertEquals(2, position.getInterviewEvaluationCount());
+        assertEquals(0, position.getPassedCount());
+
+        applicant.setStatus(ApplicantStatus.INTERVIEWED);
+        service.create(command(22L, InterviewResult.PASS));
+
+        assertEquals(3, position.getInterviewEvaluationCount());
+        assertEquals(1, position.getPassedCount());
+        assertEquals(ApplicantStatus.PASSED, applicant.getStatus());
+    }
+
+    @Test
+    void failedEvaluationIncrementsEvaluationCountWithoutIncrementingPassedCount() {
+        User actor = recruiter(1L);
+        Booking booking = booking(20L, 1L, BookingStatus.ATTENDED);
+        PositionOpening position = positionWithCounters(4, 2);
+        booking.getApplicant().setPositionOpening(position);
+        when(securityService.requireOperationsUser()).thenReturn(actor);
+        when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
+        when(evaluationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.create(command(20L, InterviewResult.FAIL));
+
+        assertEquals(5, position.getInterviewEvaluationCount());
+        assertEquals(2, position.getPassedCount());
+        assertEquals(ApplicantStatus.FAILED, booking.getApplicant().getStatus());
+    }
+
+    @Test
+    void duplicateEvaluationIsRejectedWithoutDoubleCounting() {
+        User actor = recruiter(1L);
+        Booking booking = booking(20L, 1L, BookingStatus.ATTENDED);
+        PositionOpening position = positionWithCounters(0, 0);
+        booking.getApplicant().setPositionOpening(position);
+        when(securityService.requireOperationsUser()).thenReturn(actor);
+        when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
+        when(evaluationRepository.existsByBookingId(20L)).thenReturn(false, true);
+        when(evaluationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.create(command(20L, InterviewResult.PASS));
+        booking.setStatus(BookingStatus.ATTENDED);
+
+        assertThrows(BusinessRuleViolationException.class,
+                () -> service.create(command(20L, InterviewResult.PASS)));
+
+        assertEquals(1, position.getInterviewEvaluationCount());
+        assertEquals(1, position.getPassedCount());
+        verify(evaluationRepository, times(1)).save(any());
+        verify(positionOpeningRepository, times(1)).save(position);
     }
 
     @Test
@@ -178,6 +281,20 @@ class InterviewEvaluationServiceTest {
         booking.setApplicant(applicant);
         booking.setStatus(status);
         return booking;
+    }
+
+    private Applicant applicantFor(PositionOpening position) {
+        Applicant applicant = new Applicant();
+        applicant.setStatus(ApplicantStatus.INTERVIEWED);
+        applicant.setPositionOpening(position);
+        return applicant;
+    }
+
+    private PositionOpening positionWithCounters(int interviewEvaluationCount, int passedCount) {
+        PositionOpening position = new PositionOpening();
+        position.setInterviewEvaluationCount(interviewEvaluationCount);
+        position.setPassedCount(passedCount);
+        return position;
     }
 
     private static Stream<Arguments> allowedStageTransitions() {
