@@ -165,7 +165,16 @@ The recruiter workbench includes the explicit interview stage and a link to the 
 
 Position states are `OPEN`, `ON_HOLD`, `FILLED`, `CLOSED`, and `CANCELLED`.
 
-Position openings track required headcount and recruitment counters, including applications, interviews, passes, and hires. Employment types are `FULL_TIME`, `PART_TIME`, `CONTRACTUAL`, `PROJECT_BASED`, and `SEASONAL`.
+Position openings track required headcount and these recruitment counters:
+
+- **Applications**: applicant assignments to the position. Creating an assigned applicant increments the counter, while moving an applicant between positions decrements the old position and increments the new one.
+- **Interview Evaluations**: completed interview evaluations recorded for the position. Because an applicant can complete `INITIAL`, `FINAL`, and `CLIENT` stages, one applicant may contribute more than one evaluation.
+- **Passed**: `PASS` evaluation outcomes recorded for the position.
+- **Hired**: successful, idempotent hiring decisions accepted for the position.
+
+Interview Evaluations is an operational interview-volume metric, not a count of unique interviewed applicants. Existing evaluations and bookings do not store an immutable historical position snapshot, so the system does not derive a historical unique-applicant count through an applicant's mutable current position assignment.
+
+Employment types are `FULL_TIME`, `PART_TIME`, `CONTRACTUAL`, `PROJECT_BASED`, and `SEASONAL`.
 
 ### Scheduling
 
@@ -235,7 +244,7 @@ Evaluation results are:
 - `FOR_CLIENT_INTERVIEW`
 - `ON_HOLD`
 
-Creating an evaluation updates the evaluation record, booking status, applicant status, and position counters transactionally.
+Creating an evaluation updates the evaluation record, booking status, applicant status, and position counters transactionally. Every successfully created evaluation increments the position's Interview Evaluations counter exactly once; only a `PASS` result also increments Passed.
 
 Evaluation results are constrained by the booking stage:
 
