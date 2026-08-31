@@ -1,5 +1,11 @@
 package com.company.iss;
 
+import java.net.URL;
+import java.util.Arrays;
+import java.util.List;
+
+import com.vaadin.flow.component.dependency.StyleSheet;
+import com.vaadin.flow.theme.aura.Aura;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +19,7 @@ import org.springframework.security.authentication.dao.DaoAuthenticationProvider
 import com.company.iss.auth.service.AccountAuthenticationProvider;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @SpringBootTest
 class InterviewSchedulerSystemApplicationTests {
@@ -80,6 +87,20 @@ class InterviewSchedulerSystemApplicationTests {
 				0,
 				providerManager.getProviders().stream().filter(DaoAuthenticationProvider.class::isInstance).count()
 		);
+	}
+
+	@Test
+	void registersAuraBeforeClasspathApplicationStylesheet() {
+		List<String> stylesheets = Arrays.stream(
+				InterviewSchedulerSystemApplication.class.getAnnotationsByType(StyleSheet.class)
+		)
+				.map(StyleSheet::value)
+				.toList();
+
+		assertEquals(List.of(Aura.STYLESHEET, "styles.css"), stylesheets);
+		URL stylesheet = InterviewSchedulerSystemApplication.class.getClassLoader()
+				.getResource("META-INF/resources/styles.css");
+		assertNotNull(stylesheet, "The application stylesheet must be available as a classpath static resource");
 	}
 
 }

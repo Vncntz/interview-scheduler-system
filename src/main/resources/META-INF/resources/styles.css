@@ -1,0 +1,417 @@
+vaadin-login-overlay-wrapper {
+    background-image:
+            linear-gradient(
+                    rgba(10, 20, 40, 0.55),
+                    rgba(10, 20, 40, 0.55)
+            ),
+            url("/META-INF/resources/images/login-bg.png");
+
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+vaadin-login-overlay::part(overlay) {
+    backdrop-filter: blur(10px);
+}
+
+.applicant-profile {
+    max-width: 1200px;
+    margin: 0 auto;
+    gap: var(--vaadin-gap-l);
+    box-sizing: border-box;
+}
+
+.applicant-profile__back-row {
+    width: 100%;
+}
+
+.applicant-profile__hero {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(180px, auto);
+    align-items: center;
+    gap: var(--vaadin-gap-l);
+    width: 100%;
+    box-sizing: border-box;
+    padding: var(--vaadin-padding-xl);
+    border: 1px solid var(--vaadin-border-color-secondary);
+    border-radius: var(--vaadin-radius-l);
+    background:
+            linear-gradient(135deg, color-mix(in srgb, var(--vaadin-background-container) 88%, var(--vaadin-focus-ring-color)),
+            var(--vaadin-background-container));
+    box-shadow: var(--aura-shadow-s, 0 2px 5px -1px color-mix(in srgb, var(--vaadin-text-color) 15%, transparent));
+}
+
+.applicant-profile__avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 4.5rem;
+    height: 4.5rem;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--vaadin-focus-ring-color);
+    color: var(--vaadin-text-color);
+    font-size: var(--aura-font-size-xl, 1.25rem);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.applicant-profile__identity,
+.applicant-profile__actions,
+.applicant-profile__timeline-content {
+    min-width: 0;
+}
+
+.applicant-profile__name,
+.applicant-profile__subtitle,
+.applicant-profile__branch,
+.applicant-profile__next-step p,
+.applicant-profile__empty-state h3,
+.applicant-profile__empty-state p,
+.applicant-profile__timeline-title,
+.applicant-profile__timeline-description,
+.applicant-profile__empty-state-copy {
+    margin: 0;
+}
+
+.applicant-profile__name,
+.applicant-profile__subtitle,
+.applicant-profile__branch {
+    overflow-wrap: anywhere;
+}
+
+.applicant-profile__subtitle {
+    margin-top: var(--vaadin-gap-xs);
+    color: var(--vaadin-text-color-secondary);
+    font-size: var(--aura-font-size-l, 1rem);
+}
+
+.applicant-profile__branch {
+    margin-top: var(--vaadin-gap-xs);
+    color: var(--vaadin-text-color-secondary);
+    font-size: var(--aura-font-size-s, 0.875rem);
+}
+
+.applicant-profile__badges,
+.applicant-profile__actions,
+.applicant-profile__appointment-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vaadin-gap-s);
+}
+
+.applicant-profile__badges {
+    margin-top: var(--vaadin-gap-m);
+}
+
+.applicant-profile__actions {
+    justify-content: flex-end;
+}
+
+.applicant-profile__actions-empty {
+    max-width: 16rem;
+    color: var(--vaadin-text-color-secondary);
+    font-size: var(--aura-font-size-s, 0.875rem);
+    text-align: end;
+}
+
+.applicant-profile__workflow {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--vaadin-gap-l);
+    width: 100%;
+}
+
+.applicant-profile__card {
+    box-sizing: border-box;
+    width: 100%;
+    padding: var(--vaadin-padding-l);
+    border: 1px solid var(--vaadin-border-color-secondary);
+    border-radius: var(--vaadin-radius-l);
+    background: var(--vaadin-background-container);
+    box-shadow: var(--aura-shadow-xs, 0 1px 4px -2px color-mix(in srgb, var(--vaadin-text-color) 15%, transparent));
+}
+
+.applicant-profile__section-title {
+    margin: 0 0 var(--vaadin-gap-l);
+    font-size: var(--aura-font-size-xl, 1.25rem);
+}
+
+.applicant-profile__state-content,
+.applicant-profile__appointment-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--vaadin-gap-m);
+}
+
+.applicant-profile__next-step,
+.applicant-profile__empty-state {
+    grid-column: 1 / -1;
+}
+
+.applicant-profile__next-step {
+    padding-top: var(--vaadin-padding-m);
+    border-top: 1px solid var(--vaadin-border-color-secondary);
+}
+
+.applicant-profile__next-step p {
+    margin-top: var(--vaadin-gap-xs);
+    line-height: 1.5;
+}
+
+.applicant-profile__appointment-header {
+    margin-bottom: var(--vaadin-gap-m);
+}
+
+.applicant-profile__empty-state {
+    display: grid;
+    gap: var(--vaadin-gap-s);
+    min-height: 9rem;
+    align-content: center;
+    padding: var(--vaadin-padding-l);
+    border-radius: var(--vaadin-radius-m);
+    background: var(--vaadin-background-container-strong, var(--vaadin-background-container));
+}
+
+.applicant-profile__empty-state p,
+.applicant-profile__empty-state-copy {
+    color: var(--vaadin-text-color-secondary);
+}
+
+.applicant-profile__details-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--vaadin-gap-l) var(--vaadin-gap-xl);
+}
+
+.applicant-profile__field {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--vaadin-gap-xs);
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.applicant-profile__field--wide {
+    grid-column: 1 / -1;
+}
+
+.applicant-profile__label,
+.applicant-profile__timeline-time {
+    color: var(--vaadin-text-color-secondary);
+    font-size: var(--aura-font-size-s, 0.875rem);
+}
+
+.applicant-profile__label {
+    font-weight: 600;
+}
+
+.applicant-profile__value,
+.applicant-profile__timeline-description {
+    max-width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.applicant-profile__badge {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: var(--aura-font-size-xs, 0.75rem);
+    font-weight: 650;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.applicant-profile__badge--neutral {
+    border-color: var(--vaadin-border-color-secondary);
+    background: var(--vaadin-background-container-strong, var(--vaadin-background-container));
+    color: var(--vaadin-text-color-secondary);
+}
+
+.applicant-profile__badge--accent {
+    border-color: color-mix(in srgb, var(--vaadin-focus-ring-color) 45%, transparent);
+    background: color-mix(in srgb, var(--vaadin-focus-ring-color) 14%, var(--vaadin-background-container));
+    color: var(--vaadin-text-color);
+}
+
+.applicant-profile__badge--warning {
+    border-color: color-mix(in srgb, var(--aura-yellow, var(--vaadin-focus-ring-color)) 45%, transparent);
+    background: color-mix(in srgb, var(--aura-yellow, var(--vaadin-focus-ring-color)) 14%, var(--vaadin-background-container));
+    color: var(--aura-yellow-text, var(--vaadin-text-color));
+}
+
+.applicant-profile__badge--success {
+    border-color: color-mix(in srgb, var(--aura-green, var(--vaadin-focus-ring-color)) 45%, transparent);
+    background: color-mix(in srgb, var(--aura-green, var(--vaadin-focus-ring-color)) 14%, var(--vaadin-background-container));
+    color: var(--aura-green-text, var(--vaadin-text-color));
+}
+
+.applicant-profile__badge--danger {
+    border-color: color-mix(in srgb, var(--aura-red, var(--vaadin-focus-ring-color)) 45%, transparent);
+    background: color-mix(in srgb, var(--aura-red, var(--vaadin-focus-ring-color)) 14%, var(--vaadin-background-container));
+    color: var(--aura-red-text, var(--vaadin-text-color));
+}
+
+.applicant-profile__timeline {
+    display: grid;
+    gap: 0;
+    width: 100%;
+    max-width: 50rem;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.applicant-profile__timeline-card {
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
+}
+
+.applicant-profile__timeline-item {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1rem minmax(0, 1fr);
+    gap: var(--vaadin-gap-s);
+    min-width: 0;
+    padding: 0;
+}
+
+.applicant-profile__timeline-item:not(:last-child) {
+    padding-block-end: var(--vaadin-padding-l);
+}
+
+.applicant-profile__timeline-item:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    inset-block: 0.5rem -0.5rem;
+    inset-inline-start: calc(0.5rem - 1px);
+    width: 2px;
+    background: var(--vaadin-border-color);
+}
+
+.applicant-profile__timeline-marker {
+    position: relative;
+    z-index: 1;
+    box-sizing: border-box;
+    width: 0.75rem;
+    height: 0.75rem;
+    margin-top: 0.125rem;
+    justify-self: center;
+    border: 1px solid var(--vaadin-background-container);
+    border-radius: 50%;
+    background: var(--vaadin-text-color-secondary);
+}
+
+.applicant-profile__timeline-item--application .applicant-profile__timeline-marker {
+    background: var(--vaadin-text-color-secondary);
+}
+
+.applicant-profile__timeline-item--interview .applicant-profile__timeline-marker {
+    background: var(--vaadin-focus-ring-color);
+}
+
+.applicant-profile__timeline-item--evaluation .applicant-profile__timeline-marker {
+    background: var(--aura-yellow, var(--vaadin-focus-ring-color));
+}
+
+.applicant-profile__timeline-item--hiring .applicant-profile__timeline-marker {
+    background: var(--aura-green, var(--vaadin-focus-ring-color));
+}
+
+.applicant-profile__timeline-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--vaadin-gap-xs);
+    min-width: 0;
+    max-width: 100%;
+}
+
+.applicant-profile__timeline-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vaadin-gap-s);
+    min-width: 0;
+    max-width: 100%;
+}
+
+.applicant-profile__timeline-title {
+    font-size: var(--aura-font-size-l, 1rem);
+    overflow-wrap: anywhere;
+}
+
+.applicant-profile__timeline-description {
+    margin-top: var(--vaadin-gap-xs);
+    color: var(--vaadin-text-color-secondary);
+    line-height: 1.5;
+}
+
+@media (max-width: 800px) {
+    .applicant-profile__hero {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .applicant-profile__actions {
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+    }
+
+    .applicant-profile__actions-empty {
+        max-width: none;
+        text-align: start;
+    }
+
+    .applicant-profile__workflow {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .applicant-profile__details-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 560px) {
+    .applicant-profile {
+        padding-inline: var(--vaadin-padding-m);
+    }
+
+    .applicant-profile__hero {
+        grid-template-columns: minmax(0, 1fr);
+        padding: var(--vaadin-padding-l);
+    }
+
+    .applicant-profile__avatar {
+        width: 3.75rem;
+        height: 3.75rem;
+    }
+
+    .applicant-profile__actions {
+        grid-column: auto;
+    }
+
+    .applicant-profile__actions vaadin-button {
+        flex: 1 1 100%;
+    }
+
+    .applicant-profile__card {
+        padding: var(--vaadin-padding-m);
+    }
+
+    .applicant-profile__state-content,
+    .applicant-profile__appointment-fields,
+    .applicant-profile__details-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+}

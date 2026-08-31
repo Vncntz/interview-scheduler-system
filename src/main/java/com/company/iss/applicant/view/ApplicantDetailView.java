@@ -1,6 +1,11 @@
 package com.company.iss.applicant.view;
 
-import com.company.iss.applicant.dto.*;
+import com.company.iss.applicant.dto.ApplicantInterviewSummary;
+import com.company.iss.applicant.dto.ApplicantProfile;
+import com.company.iss.applicant.dto.ApplicantProfileAction;
+import com.company.iss.applicant.dto.ApplicantRecruitmentState;
+import com.company.iss.applicant.dto.ApplicantSummary;
+import com.company.iss.applicant.dto.RecruitmentTimelineItem;
 import com.company.iss.applicant.service.ApplicantJourneyService;
 import com.company.iss.booking.dialog.BookingFormDialog;
 import com.company.iss.booking.dto.BookingApplicantInput;
@@ -21,12 +26,13 @@ import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H1;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
+import com.vaadin.flow.component.html.ListItem;
+import com.vaadin.flow.component.html.OrderedList;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
-import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.BeforeEnterObserver;
@@ -35,13 +41,19 @@ import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.RolesAllowed;
 
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 
 @Route(value = "applicants/:applicantId", layout = MainLayout.class)
 @PageTitle("Applicant Profile")
 @RolesAllowed({"ADMIN", "RECRUITER"})
 public class ApplicantDetailView extends VerticalLayout implements BeforeEnterObserver {
 
-    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("MMM d, uuuu h:mm a");
+    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern(
+            "MMM d, uuuu h:mm a", Locale.ENGLISH);
+    private static final DateTimeFormatter TIMELINE_DATE_TIME = DateTimeFormatter.ofPattern(
+            "MMM d, uuuu · h:mm a", Locale.ENGLISH);
+    private static final DateTimeFormatter APPOINTMENT_DATE = DateTimeFormatter.ofPattern(
+            "EEEE, MMMM d, uuuu", Locale.ENGLISH);
 
     private final ApplicantJourneyService journeyService;
     private final BookingService bookingService;
@@ -60,9 +72,9 @@ public class ApplicantDetailView extends VerticalLayout implements BeforeEnterOb
         this.scheduleService = scheduleService;
         this.evaluationService = evaluationService;
         addClassName("applicant-profile");
-        setSizeFull();
+        setWidthFull();
         setPadding(true);
-        setSpacing(true);
+        setSpacing(false);
     }
 
     @Override
@@ -89,106 +101,217 @@ public class ApplicantDetailView extends VerticalLayout implements BeforeEnterOb
 
     private void render(ApplicantProfile profile) {
         ApplicantSummary summary = profile.summary();
+
+        Div backRow = new Div();
+        backRow.addClassName("applicant-profile__back-row");
         Button back = new Button("Back to Applicants", VaadinIcon.ARROW_LEFT.create(),
                 event -> getUI().ifPresent(ui -> ui.navigate(ApplicantView.class)));
         back.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
-        H1 name = new H1(summary.fullName().isBlank() ? "Applicant Profile" : summary.fullName());
-        name.getStyle().set("margin", "0");
-        Paragraph subtitle = new Paragraph(joinNonBlank(summary.position(), summary.client()));
-        subtitle.getStyle().set("margin", "0");
-        VerticalLayout identity = new VerticalLayout(name, subtitle);
-        identity.setPadding(false);
-        identity.setSpacing(false);
-        HorizontalLayout header = new HorizontalLayout(identity, back);
-        header.addClassName("applicant-profile__header");
-        header.setWidthFull();
-        header.expand(identity);
-        header.setAlignItems(Alignment.CENTER);
+        backRow.add(back);
 
-        Div cards = new Div(summaryCard(summary), stateCard(profile.currentState()));
-        cards.addClassName("applicant-profile__cards");
-        add(header, cards, actionsCard(profile), timelineCard(profile));
-    }
+        Div hero = new Div();
+        hero.addClassName("applicant-profile__hero");
+        Span avatar = new Span(ApplicantProfilePresentation.initials(summary.fullName()));
+        avatar.addClassName("applicant-profile__avatar");
+        avatar.getElement().setAttribute("aria-label", "Applicant initials: " + avatar.getText());
 
-    private Component summaryCard(ApplicantSummary summary) {
-        Div card = card("Applicant Summary", "applicant-profile__summary");
-        Div fields = new Div();
-        fields.addClassName("applicant-profile__fields");
-        fields.add(
-                field("Email", summary.email()), field("Mobile", summary.mobileNumber()),
-                field("Branch", summary.branch()), field("Position", summary.position()),
-                field("Client", summary.client()), field("Work location", summary.workLocation()),
-                field("Status", summary.status() == null ? "" : summary.status().name()),
-                field("Record", summary.active() ? "Active" : "Inactive"),
-                field("Source", summary.source()), field("Remarks", summary.remarks())
+        Div identity = new Div();
+        identity.addClassName("applicant-profile__identity");
+        H1 name = new H1(display(summary.fullName(), "Applicant Profile"));
+        name.addClassName("applicant-profile__name");
+        Paragraph role = new Paragraph(joinNonBlank(summary.position(), summary.client()));
+        role.addClassName("applicant-profile__subtitle");
+        Paragraph branch = new Paragraph(display(summary.branch(), "Branch not assigned"));
+        branch.addClassName("applicant-profile__branch");
+        Div badges = new Div();
+        badges.addClassName("applicant-profile__badges");
+        badges.add(
+                badge(summary.active() ? "Active" : "Inactive", summary.active() ? "success" : "neutral",
+                        "Applicant record"),
+                badge(ApplicantProfilePresentation.applicantStatusLabel(summary.status()),
+                        ApplicantProfilePresentation.applicantStatusTone(summary.status()), "Applicant status")
         );
-        card.add(fields);
-        return card;
-    }
-
-    private Component stateCard(ApplicantRecruitmentState state) {
-        Div card = card("Current Recruitment State", "applicant-profile__state");
-        Div fields = new Div();
-        fields.addClassName("applicant-profile__fields");
-        fields.add(
-                field("Status", state.status() == null ? "" : state.status().name()),
-                field("Current stage", name(state.currentStage())),
-                field("Next required stage", name(state.nextRequiredStage())),
-                field("Next action", nextActionLabel(state.nextAction()))
-        );
-        if (state.currentInterview() == null) {
-            fields.add(field("Current Interview", "No current interview"));
-        } else {
-            ApplicantInterviewSummary appointment = state.currentInterview();
-            fields.add(
-                    field("Current Interview", appointment.date() + " · "
-                            + DateTimeUtil.formatTime(appointment.startTime()) + "–"
-                            + DateTimeUtil.formatTime(appointment.endTime())),
-                    field("Mode", name(appointment.interviewMode())),
-                    field("Recruiter", appointment.recruiter()),
-                    field("Booking", appointment.bookingReference() + " · " + name(appointment.bookingStatus()))
-            );
+        if (profile.currentState().currentStage() != null) {
+            badges.add(badge(ApplicantProfilePresentation.interviewStageLabel(
+                    profile.currentState().currentStage()), "accent", "Current interview stage"));
         }
+        identity.add(name, role, branch, badges);
+
+        Div actions = profileActions(profile, summary);
+        hero.add(avatar, identity, actions);
+
+        Div workflow = new Div(recruitmentStateCard(profile.currentState()),
+                currentInterviewCard(profile.currentState()));
+        workflow.addClassName("applicant-profile__workflow");
+
+        add(backRow, hero, workflow, candidateDetailsCard(summary), timelineCard(profile));
+    }
+
+    private Component recruitmentStateCard(ApplicantRecruitmentState state) {
+        Div card = card("Recruitment State", "applicant-profile__state");
+        Div content = new Div();
+        content.addClassName("applicant-profile__state-content");
+        content.add(labeledBadge("Status",
+                ApplicantProfilePresentation.applicantStatusLabel(state.status()),
+                ApplicantProfilePresentation.applicantStatusTone(state.status()), "Recruitment status"));
+        if (state.currentStage() != null) {
+            content.add(labeledBadge("Current stage",
+                    ApplicantProfilePresentation.interviewStageLabel(state.currentStage()),
+                    "accent", "Current interview stage"));
+        }
+        if (state.nextRequiredStage() != null) {
+            content.add(labeledBadge("Next required stage",
+                    ApplicantProfilePresentation.interviewStageLabel(state.nextRequiredStage()),
+                    "warning", "Next required interview stage"));
+        }
+        Div nextStep = new Div();
+        nextStep.addClassName("applicant-profile__next-step");
+        Span label = new Span("Next step");
+        label.addClassName("applicant-profile__label");
+        Paragraph description = new Paragraph(ApplicantProfilePresentation.nextStep(
+                state.nextAction(), state.nextRequiredStage()));
+        nextStep.add(label, description);
+        content.add(nextStep);
+        card.add(content);
+        return card;
+    }
+
+    private Component currentInterviewCard(ApplicantRecruitmentState state) {
+        Div card = card("Current Interview", "applicant-profile__appointment");
+        ApplicantInterviewSummary appointment = state.currentInterview();
+        if (appointment == null) {
+            Div empty = new Div();
+            empty.addClassName("applicant-profile__empty-state");
+            H3 heading = new H3("No current interview");
+            Paragraph description = new Paragraph("No active interview appointment is currently scheduled.");
+            empty.add(heading, description);
+            if (state.nextRequiredStage() != null) {
+                empty.add(labeledBadge("Next required stage",
+                        ApplicantProfilePresentation.interviewStageLabel(state.nextRequiredStage()),
+                        "warning", "Next required interview stage"));
+            }
+            card.add(empty);
+            return card;
+        }
+
+        Div appointmentHeader = new Div();
+        appointmentHeader.addClassName("applicant-profile__appointment-header");
+        appointmentHeader.add(badge(
+                ApplicantProfilePresentation.interviewStageLabel(appointment.interviewStage()),
+                "accent", "Interview stage"));
+        Div fields = new Div();
+        fields.addClassName("applicant-profile__appointment-fields");
+        fields.add(
+                field("Date", appointment.date() == null ? null : appointment.date().format(APPOINTMENT_DATE)),
+                field("Time", appointment.startTime() == null || appointment.endTime() == null ? null
+                        : DateTimeUtil.formatTime(appointment.startTime()) + "–"
+                        + DateTimeUtil.formatTime(appointment.endTime())),
+                field("Mode", ApplicantProfilePresentation.interviewModeLabel(appointment.interviewMode())),
+                field("Recruiter", appointment.recruiter()),
+                field("Booking reference", appointment.bookingReference()),
+                labeledBadge("Booking status",
+                        ApplicantProfilePresentation.bookingStatusLabel(appointment.bookingStatus()),
+                        ApplicantProfilePresentation.bookingStatusTone(appointment.bookingStatus()),
+                        "Booking status")
+        );
+        card.add(appointmentHeader, fields);
+        return card;
+    }
+
+    private Component candidateDetailsCard(ApplicantSummary summary) {
+        Div card = card("Candidate Details", "applicant-profile__details");
+        Div fields = new Div();
+        fields.addClassName("applicant-profile__details-grid");
+        fields.add(
+                field("Email", summary.email()),
+                field("Mobile", summary.mobileNumber()),
+                field("Branch", summary.branch()),
+                field("Position", summary.position()),
+                field("Client", summary.client()),
+                field("Work Location", summary.workLocation()),
+                field("Source", summary.source()),
+                field("Record status", summary.active() ? "Active" : "Inactive"),
+                field("Application date", summary.createdAt() == null ? null : summary.createdAt().format(DATE_TIME))
+        );
+        Div remarks = field("Remarks", summary.remarks());
+        remarks.addClassName("applicant-profile__field--wide");
+        fields.add(remarks);
         card.add(fields);
         return card;
     }
 
-    private Component actionsCard(ApplicantProfile profile) {
-        Div card = card("Quick Actions", "applicant-profile__actions-card");
-        HorizontalLayout actions = new HorizontalLayout();
+    private Div profileActions(ApplicantProfile profile, ApplicantSummary summary) {
+        Div actions = new Div();
         actions.addClassName("applicant-profile__actions");
-        actions.setWidthFull();
-        for (ApplicantProfileAction action : profile.actions()) {
-            Button button = new Button(action.label(), event -> execute(action, profile.summary()));
-            button.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        actions.getElement().setAttribute("role", "group");
+        actions.getElement().setAttribute("aria-label", "Applicant profile actions");
+        for (int index = 0; index < profile.actions().size(); index++) {
+            ApplicantProfileAction action = profile.actions().get(index);
+            String label = ApplicantProfilePresentation.actionLabel(action);
+            Button button = new Button(label, event -> execute(action, summary));
+            button.addClassName(index == 0
+                    ? "applicant-profile__action--primary"
+                    : "applicant-profile__action--secondary");
+            button.getElement().setAttribute("aria-label", label);
+            if (index == 0) {
+                button.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+            } else {
+                button.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
+            }
             actions.add(button);
         }
         if (profile.actions().isEmpty()) {
-            actions.add(new Span("No quick action is available. Review the current state or use the dedicated workflow screen."));
+            Span empty = new Span("No profile actions are currently available.");
+            empty.addClassName("applicant-profile__actions-empty");
+            actions.add(empty);
         }
-        card.add(actions);
-        return card;
+        return actions;
     }
 
     private Component timelineCard(ApplicantProfile profile) {
         Div card = card("Recruitment Timeline", "applicant-profile__timeline-card");
-        VerticalLayout timeline = new VerticalLayout();
-        timeline.addClassName("applicant-profile__timeline");
-        timeline.setPadding(false);
-        for (RecruitmentTimelineItem item : profile.timeline()) {
-            Div row = new Div();
-            row.addClassName("applicant-profile__timeline-item");
-            Span time = new Span(item.occurredAt().format(DATE_TIME));
-            time.addClassName("applicant-profile__timeline-time");
-            H3 title = new H3(item.title());
-            title.getStyle().set("margin", "0");
-            Paragraph description = new Paragraph(item.description());
-            description.getStyle().set("margin", "0");
-            row.add(time, title, description);
-            timeline.add(row);
-        }
         if (profile.timeline().isEmpty()) {
-            timeline.add(new Span("No timestamped recruitment history is available."));
+            Paragraph empty = new Paragraph("No timestamped recruitment history is available.");
+            empty.addClassName("applicant-profile__empty-state-copy");
+            card.add(empty);
+            return card;
+        }
+
+        OrderedList timeline = new OrderedList();
+        timeline.addClassName("applicant-profile__timeline");
+        for (RecruitmentTimelineItem item : profile.timeline()) {
+            String family = ApplicantProfilePresentation.timelineFamily(item.event());
+            ListItem entry = new ListItem();
+            entry.addClassNames("applicant-profile__timeline-item",
+                    "applicant-profile__timeline-item--" + family);
+            entry.getElement().setAttribute("data-event-family", family);
+
+            Span marker = new Span();
+            marker.addClassName("applicant-profile__timeline-marker");
+            marker.getElement().setAttribute("aria-hidden", "true");
+            Span time = new Span(item.occurredAt() == null
+                    ? "Date unavailable"
+                    : item.occurredAt().format(TIMELINE_DATE_TIME));
+            time.addClassName("applicant-profile__timeline-time");
+            H3 title = new H3(ApplicantProfilePresentation.timelineTitle(item.event()));
+            title.addClassName("applicant-profile__timeline-title");
+
+            Div header = new Div(title);
+            header.addClassName("applicant-profile__timeline-header");
+            if (item.interviewStage() != null) {
+                header.add(badge(ApplicantProfilePresentation.interviewStageLabel(item.interviewStage()),
+                        "accent", "Interview stage"));
+            }
+
+            Div content = new Div(time, header);
+            content.addClassName("applicant-profile__timeline-content");
+            if (item.description() != null && !item.description().isBlank()) {
+                Paragraph description = new Paragraph(item.description());
+                description.addClassName("applicant-profile__timeline-description");
+                content.add(description);
+            }
+            entry.add(marker, content);
+            timeline.add(entry);
         }
         card.add(timeline);
         return card;
@@ -222,7 +345,7 @@ public class ApplicantDetailView extends VerticalLayout implements BeforeEnterOb
         Div card = new Div();
         card.addClassNames("applicant-profile__card", className);
         H2 title = new H2(heading);
-        title.getStyle().set("margin", "0 0 var(--vaadin-gap-m) 0");
+        title.addClassName("applicant-profile__section-title");
         card.add(title);
         return card;
     }
@@ -232,31 +355,30 @@ public class ApplicantDetailView extends VerticalLayout implements BeforeEnterOb
         field.addClassName("applicant-profile__field");
         Span caption = new Span(label);
         caption.addClassName("applicant-profile__label");
-        Span content = new Span(value == null || value.isBlank() ? "—" : value);
+        Span content = new Span(display(value, "—"));
+        content.addClassName("applicant-profile__value");
         field.add(caption, content);
         return field;
     }
 
-    private String nextActionLabel(ApplicantNextAction action) {
-        if (action == null) {
-            return "Review";
-        }
-        return switch (action) {
-            case SCHEDULE_INTERVIEW -> "Schedule interview";
-            case CONFIRM_INTERVIEW -> "Confirm interview";
-            case RECORD_ATTENDANCE -> "Record attendance";
-            case MANAGE_BOOKING -> "Manage booking";
-            case EVALUATE_INTERVIEW -> "Evaluate interview";
-            case ISSUE_JOB_OFFER -> "Issue job offer";
-            case RECORD_OFFER_DECISION -> "Record offer decision";
-            case REVIEW -> "Manual review";
-            case RECRUITMENT_COMPLETE -> "Recruitment complete";
-            case RECRUITMENT_CLOSED -> "Recruitment closed";
-        };
+    private Div labeledBadge(String label, String value, String tone, String accessibleContext) {
+        Div field = new Div();
+        field.addClassName("applicant-profile__field");
+        Span caption = new Span(label);
+        caption.addClassName("applicant-profile__label");
+        field.add(caption, badge(value, tone, accessibleContext));
+        return field;
     }
 
-    private String name(Enum<?> value) {
-        return value == null ? "" : value.name();
+    private Span badge(String value, String tone, String accessibleContext) {
+        Span badge = new Span(value);
+        badge.addClassNames("applicant-profile__badge", "applicant-profile__badge--" + tone);
+        badge.getElement().setAttribute("aria-label", accessibleContext + ": " + value);
+        return badge;
+    }
+
+    private String display(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private String joinNonBlank(String first, String second) {
