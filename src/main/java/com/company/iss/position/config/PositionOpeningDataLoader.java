@@ -137,7 +137,7 @@ public class PositionOpeningDataLoader implements CommandLineRunner {
         opening.setEmploymentType(employmentType);
         opening.setRequiredHeadcount(requiredHeadcount);
         opening.setAppliedCount(0);
-        opening.setInterviewedCount(0);
+        opening.setInterviewEvaluationCount(0);
         opening.setPassedCount(0);
         opening.setHiredCount(0);
         opening.setDescription("Seeded demo opening");

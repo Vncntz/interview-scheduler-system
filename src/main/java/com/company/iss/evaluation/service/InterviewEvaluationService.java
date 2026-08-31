@@ -171,7 +171,7 @@ public class InterviewEvaluationService {
         if (position == null) {
             return;
         }
-        position.setInterviewedCount(position.getInterviewedCount() + 1);
+        position.setInterviewEvaluationCount(position.getInterviewEvaluationCount() + 1);
         if (result == InterviewResult.PASS) {
             position.setPassedCount(position.getPassedCount() + 1);
         }

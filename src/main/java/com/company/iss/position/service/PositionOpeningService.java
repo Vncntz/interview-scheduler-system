@@ -70,12 +70,6 @@ public class PositionOpeningService {
         positionOpeningRepository.save(positionOpening);
     }
 
-    public void incrementInterviewed(PositionOpening positionOpening) {
-        positionOpening.setInterviewedCount(positionOpening.getInterviewedCount() + 1);
-
-        positionOpeningRepository.save(positionOpening);
-    }
-
     public void incrementPassed(PositionOpening positionOpening) {
         positionOpening.setPassedCount(positionOpening.getPassedCount() + 1);
 
