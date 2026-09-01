@@ -8,6 +8,7 @@ import com.company.iss.config.AsyncConfig;
 import com.company.iss.notification.entity.NotificationSettings;
 import com.company.iss.notification.config.NotificationRuntimeProperties;
 import com.company.iss.notification.repository.NotificationSettingsRepository;
+import com.company.iss.notification.repository.NotificationSettingsAuditRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.time.Duration;
+import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -112,10 +114,24 @@ class EmailServiceAsyncTest {
         @Bean
         NotificationSettingsService notificationSettingsService(
                 NotificationSettingsRepository repository,
+                NotificationSettingsAuditRepository auditRepository,
                 NotificationRuntimeProperties properties,
+                SmtpConfigurationValidator validator,
                 SecurityService securityService
         ) {
-            return new NotificationSettingsService(repository, properties, securityService);
+            return new NotificationSettingsService(
+                    repository,
+                    auditRepository,
+                    properties,
+                    validator,
+                    securityService,
+                    Clock.systemUTC()
+            );
+        }
+
+        @Bean
+        NotificationSettingsAuditRepository notificationSettingsAuditRepository() {
+            return mock(NotificationSettingsAuditRepository.class);
         }
 
         @Bean
@@ -126,9 +142,20 @@ class EmailServiceAsyncTest {
         @Bean
         EmailService emailService(
                 NotificationSettingsService notificationSettingsService,
-                NotificationRuntimeProperties properties
+                SmtpConfigurationValidator validator,
+                SmtpClientFactory factory
         ) {
-            return new EmailService(notificationSettingsService, properties);
+            return new EmailService(notificationSettingsService, validator, factory);
+        }
+
+        @Bean
+        SmtpConfigurationValidator smtpConfigurationValidator(NotificationRuntimeProperties properties) {
+            return new SmtpConfigurationValidator(properties);
+        }
+
+        @Bean
+        SmtpClientFactory smtpClientFactory(NotificationRuntimeProperties properties) {
+            return new SmtpClientFactory(properties);
         }
     }
 

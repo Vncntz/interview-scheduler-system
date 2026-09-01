@@ -5,6 +5,8 @@ import com.company.iss.notification.entity.NotificationEvent;
 import com.company.iss.notification.entity.NotificationSettings;
 import com.company.iss.notification.entity.NotificationTemplate;
 import com.company.iss.notification.config.NotificationRuntimeProperties;
+import com.company.iss.notification.config.SmtpProvider;
+import com.company.iss.notification.config.SmtpSecurity;
 import com.company.iss.notification.repository.NotificationSettingsRepository;
 import com.company.iss.notification.repository.NotificationTemplateRepository;
 import com.company.iss.shared.exception.BusinessRuleViolationException;
@@ -29,7 +31,7 @@ class PasswordResetNotificationReadinessTest {
         assertThrows(
                 BusinessRuleViolationException.class,
                 () -> new PasswordResetNotificationReadiness(
-                        settings, templates, runtimeProperties("unit-test-password")
+                        settings, templates, validator("unit-test-password")
                 ).requireReady()
         );
 
@@ -40,18 +42,14 @@ class PasswordResetNotificationReadinessTest {
     void completeSmtpAndActiveTemplateAreReady() {
         NotificationSettingsRepository settings = mock(NotificationSettingsRepository.class);
         NotificationTemplateRepository templates = mock(NotificationTemplateRepository.class);
-        NotificationSettings configured = new NotificationSettings();
-        configured.setEmailEnabled(true);
-        configured.setSmtpHost("smtp.example.test");
-        configured.setSmtpPort(587);
-        configured.setSmtpUsername("mailer@example.test");
+        NotificationSettings configured = configuredSettings();
         when(settings.findByActiveTrue()).thenReturn(Optional.of(configured));
         when(templates.findByEventAndChannelAndActiveTrue(
                 NotificationEvent.PASSWORD_RESET, NotificationChannel.EMAIL
         )).thenReturn(Optional.of(new NotificationTemplate()));
 
         assertDoesNotThrow(() -> new PasswordResetNotificationReadiness(
-                settings, templates, runtimeProperties("unit-test-password")
+                settings, templates, validator("unit-test-password")
         ).requireReady());
     }
 
@@ -59,18 +57,14 @@ class PasswordResetNotificationReadinessTest {
     void missingRuntimePasswordIsNotReady() {
         NotificationSettingsRepository settings = mock(NotificationSettingsRepository.class);
         NotificationTemplateRepository templates = mock(NotificationTemplateRepository.class);
-        NotificationSettings configured = new NotificationSettings();
-        configured.setEmailEnabled(true);
-        configured.setSmtpHost("smtp.example.test");
-        configured.setSmtpPort(587);
-        configured.setSmtpUsername("mailer@example.test");
+        NotificationSettings configured = configuredSettings();
         when(settings.findByActiveTrue()).thenReturn(Optional.of(configured));
         when(templates.findByEventAndChannelAndActiveTrue(
                 NotificationEvent.PASSWORD_RESET, NotificationChannel.EMAIL
         )).thenReturn(Optional.of(new NotificationTemplate()));
 
         assertThrows(BusinessRuleViolationException.class, () -> new PasswordResetNotificationReadiness(
-                settings, templates, runtimeProperties("")
+                settings, templates, validator("")
         ).requireReady());
     }
 
@@ -78,24 +72,32 @@ class PasswordResetNotificationReadinessTest {
     void missingPasswordResetTemplateIsNotReady() {
         NotificationSettingsRepository settings = mock(NotificationSettingsRepository.class);
         NotificationTemplateRepository templates = mock(NotificationTemplateRepository.class);
-        NotificationSettings configured = new NotificationSettings();
-        configured.setEmailEnabled(true);
-        configured.setSmtpHost("smtp.example.test");
-        configured.setSmtpPort(587);
-        configured.setSmtpUsername("mailer@example.test");
+        NotificationSettings configured = configuredSettings();
         when(settings.findByActiveTrue()).thenReturn(Optional.of(configured));
         when(templates.findByEventAndChannelAndActiveTrue(
                 NotificationEvent.PASSWORD_RESET, NotificationChannel.EMAIL
         )).thenReturn(Optional.empty());
 
         assertThrows(BusinessRuleViolationException.class, () -> new PasswordResetNotificationReadiness(
-                settings, templates, runtimeProperties("runtime-only-test-fixture")
+                settings, templates, validator("runtime-only-test-fixture")
         ).requireReady());
     }
 
-    private NotificationRuntimeProperties runtimeProperties(String password) {
+    private SmtpConfigurationValidator validator(String password) {
         NotificationRuntimeProperties properties = new NotificationRuntimeProperties();
         properties.getSmtp().setPassword(password);
-        return properties;
+        return new SmtpConfigurationValidator(properties);
+    }
+
+    private NotificationSettings configuredSettings() {
+        NotificationSettings configured = new NotificationSettings();
+        configured.setEmailEnabled(true);
+        configured.setSmtpProvider(SmtpProvider.CUSTOM);
+        configured.setSmtpHost("smtp.example.test");
+        configured.setSmtpPort(587);
+        configured.setSmtpSecurity(SmtpSecurity.STARTTLS);
+        configured.setSmtpUsername("mailer@example.test");
+        configured.setSmtpFromAddress("notifications@example.test");
+        return configured;
     }
 }

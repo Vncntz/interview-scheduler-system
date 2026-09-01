@@ -15,12 +15,12 @@ class FlywayMigrationTest {
     private static final String LOCATIONS = "classpath:db/migration/h2";
 
     @Test
-    void freshSchemaMigratesThroughV6WithoutPersistedNotificationSecrets() throws SQLException {
-        String url = databaseUrl("fresh_v6");
+    void freshSchemaMigratesThroughV7WithoutPersistedNotificationSecrets() throws SQLException {
+        String url = databaseUrl("fresh_v7");
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("6", flyway.info().current().getVersion().getVersion());
+        assertEquals("7", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement();
              var result = statement.executeQuery("""
@@ -31,6 +31,59 @@ class FlywayMigrationTest {
                      """)) {
             result.next();
             assertEquals(0, result.getInt(1));
+        }
+    }
+
+    @Test
+    void v7BackfillsSmtpProviderSecurityAndFromAddressWithoutAddingSecrets() throws SQLException {
+        String url = databaseUrl("v7_smtp_upgrade");
+        migrate(url, "6");
+
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+             var statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    INSERT INTO notification_settings (
+                        active, email_enabled, sms_enabled, smtp_port, created_at, updated_at,
+                        version, company_name, smtp_from_name, smtp_host, smtp_username
+                    ) VALUES (
+                        TRUE, TRUE, FALSE, 587, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                        0, 'ISS Notifications', 'Interview Scheduler',
+                        'SMTP.GMAIL.COM', 'mailer@example.test'
+                    )
+                    """);
+        }
+
+        Flyway flyway = migrate(url, null);
+
+        assertEquals("7", flyway.info().current().getVersion().getVersion());
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+             var statement = connection.createStatement()) {
+            try (var result = statement.executeQuery("""
+                    SELECT smtp_provider, smtp_security, smtp_from_address
+                    FROM notification_settings
+                    """)) {
+                result.next();
+                assertEquals("GMAIL", result.getString("smtp_provider"));
+                assertEquals("STARTTLS", result.getString("smtp_security"));
+                assertEquals("mailer@example.test", result.getString("smtp_from_address"));
+            }
+            try (var result = statement.executeQuery("""
+                    SELECT COUNT(*)
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = 'NOTIFICATION_SETTINGS'
+                      AND COLUMN_NAME IN ('SMTP_PASSWORD', 'SMS_API_KEY')
+                    """)) {
+                result.next();
+                assertEquals(0, result.getInt(1));
+            }
+            try (var result = statement.executeQuery("""
+                    SELECT COUNT(*)
+                    FROM INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_NAME = 'NOTIFICATION_SETTINGS_AUDITS'
+                    """)) {
+                result.next();
+                assertEquals(1, result.getInt(1));
+            }
         }
     }
 
@@ -83,7 +136,7 @@ class FlywayMigrationTest {
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("6", flyway.info().current().getVersion().getVersion());
+        assertEquals("7", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
             try (var result = statement.executeQuery(
@@ -168,7 +221,7 @@ class FlywayMigrationTest {
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("6", flyway.info().current().getVersion().getVersion());
+        assertEquals("7", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
             try (var result = statement.executeQuery("""

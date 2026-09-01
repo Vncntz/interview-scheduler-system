@@ -15,6 +15,106 @@ vaadin-login-overlay::part(overlay) {
     backdrop-filter: blur(10px);
 }
 
+.notification-settings {
+    max-width: 72rem;
+    margin: 0 auto;
+    gap: var(--vaadin-gap-l);
+    box-sizing: border-box;
+}
+
+.notification-settings__title,
+.notification-settings__description,
+.notification-settings__section-title {
+    margin: 0;
+}
+
+.notification-settings__description {
+    margin-top: var(--vaadin-gap-xs);
+    color: var(--vaadin-text-color-secondary);
+}
+
+.notification-settings__card {
+    display: grid;
+    gap: var(--vaadin-gap-l);
+    width: 100%;
+    box-sizing: border-box;
+    padding: var(--vaadin-padding-xl);
+    border: 1px solid var(--vaadin-border-color-secondary);
+    border-radius: var(--vaadin-radius-l);
+    background: var(--vaadin-background-container);
+    box-shadow: var(--aura-shadow-xs, 0 1px 4px -2px color-mix(in srgb, var(--vaadin-text-color) 15%, transparent));
+}
+
+.notification-settings__card-heading {
+    gap: var(--vaadin-gap-m);
+}
+
+.notification-settings__section {
+    display: grid;
+    gap: var(--vaadin-gap-s);
+    padding-top: var(--vaadin-padding-m);
+    border-top: 1px solid var(--vaadin-border-color-secondary);
+}
+
+.notification-settings__section-title {
+    font-size: var(--aura-font-size-l, 1rem);
+}
+
+.notification-settings__badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: var(--aura-font-size-s, 0.875rem);
+    font-weight: 650;
+}
+
+.notification-settings__badge--enabled {
+    border-color: color-mix(in srgb, var(--aura-green, var(--vaadin-focus-ring-color)) 45%, transparent);
+    background: color-mix(in srgb, var(--aura-green, var(--vaadin-focus-ring-color)) 14%, var(--vaadin-background-container));
+    color: var(--aura-green-text, var(--vaadin-text-color));
+}
+
+.notification-settings__badge--disabled {
+    border-color: var(--vaadin-border-color-secondary);
+    background: var(--vaadin-background-container-strong, var(--vaadin-background-container));
+    color: var(--vaadin-text-color-secondary);
+}
+
+.notification-settings__password-status,
+.notification-settings__connection-status {
+    display: flex;
+    align-items: center;
+    min-height: var(--vaadin-input-field-height, 2.25rem);
+    box-sizing: border-box;
+    padding: var(--vaadin-padding-s) var(--vaadin-padding-m);
+    border-radius: var(--vaadin-radius-m);
+    background: var(--vaadin-background-container-strong, var(--vaadin-background-container));
+}
+
+.notification-settings__password-status [data-configured="true"],
+.notification-settings__connection-status--success {
+    color: var(--aura-green-text, var(--vaadin-text-color));
+}
+
+.notification-settings__password-status [data-configured="false"],
+.notification-settings__connection-status--error {
+    color: var(--aura-red-text, var(--vaadin-text-color));
+}
+
+.notification-settings__connection-status--neutral {
+    color: var(--vaadin-text-color-secondary);
+}
+
+.notification-settings__actions {
+    position: sticky;
+    bottom: 0;
+    padding: var(--vaadin-padding-m) 0;
+    background: color-mix(in srgb, var(--vaadin-background-color) 94%, transparent);
+    backdrop-filter: blur(8px);
+}
+
 .applicant-profile {
     max-width: 1200px;
     margin: 0 auto;

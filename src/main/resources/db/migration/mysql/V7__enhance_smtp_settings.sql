@@ -1,0 +1,43 @@
+ALTER TABLE notification_settings
+    ADD COLUMN smtp_provider VARCHAR(30),
+    ADD COLUMN smtp_security VARCHAR(20),
+    ADD COLUMN smtp_from_address VARCHAR(255);
+
+UPDATE notification_settings
+SET smtp_security = 'STARTTLS';
+
+UPDATE notification_settings
+SET smtp_provider = CASE
+    WHEN LOWER(TRIM(smtp_host)) = 'smtp.gmail.com' THEN 'GMAIL'
+    WHEN LOWER(TRIM(smtp_host)) = 'smtp.office365.com' THEN 'MICROSOFT_365'
+    ELSE 'CUSTOM'
+END;
+
+UPDATE notification_settings
+SET smtp_from_address = TRIM(smtp_username)
+WHERE smtp_username IS NOT NULL
+  AND TRIM(smtp_username) <> '';
+
+ALTER TABLE notification_settings
+    MODIFY COLUMN smtp_provider VARCHAR(30) NOT NULL,
+    MODIFY COLUMN smtp_security VARCHAR(20) NOT NULL;
+
+CREATE TABLE notification_settings_audits (
+    actor_id BIGINT NOT NULL,
+    settings_id BIGINT NOT NULL,
+    created_at DATETIME(6) NOT NULL,
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    occurred_at DATETIME(6) NOT NULL,
+    updated_at DATETIME(6) NOT NULL,
+    version BIGINT,
+    action VARCHAR(40) NOT NULL,
+    changed_fields VARCHAR(500),
+    PRIMARY KEY (id),
+    CONSTRAINT fk_notification_settings_audits_actor
+        FOREIGN KEY (actor_id) REFERENCES users (id),
+    CONSTRAINT fk_notification_settings_audits_settings
+        FOREIGN KEY (settings_id) REFERENCES notification_settings (id)
+) ENGINE=InnoDB;
+
+CREATE INDEX idx_notification_settings_audits_settings_occurred
+    ON notification_settings_audits (settings_id, occurred_at, id);

@@ -377,9 +377,9 @@ Migration locations:
 - Runtime MySQL: `classpath:db/migration/mysql`
 - Automated tests: `classpath:db/migration/h2`
 
-Flyway clean is disabled. The production application requires migration version 6, and automated tests assert the expected migrated schema.
+Flyway clean is disabled. The production application requires migration version 7, and automated tests assert the expected migrated schema.
 
-Audit/history state includes hiring decision audit, account security audit, and booking reschedule history. Their repositories expose explicit append/query APIs, and immutable history records cannot be updated or deleted through generic repository operations.
+Audit/history state includes hiring decision audit, account security audit, notification settings audit, and booking reschedule history. Their repositories expose explicit append/query APIs, and immutable history records cannot be updated or deleted through generic repository operations.
 
 ## 10. Runtime configuration
 

@@ -1,6 +1,5 @@
 package com.company.iss.notification.service;
 
-import com.company.iss.notification.config.NotificationRuntimeProperties;
 import com.company.iss.notification.entity.NotificationChannel;
 import com.company.iss.notification.entity.NotificationEvent;
 import com.company.iss.notification.entity.NotificationSettings;
@@ -15,36 +14,27 @@ public class PasswordResetNotificationReadiness {
 
     private final NotificationSettingsRepository settingsRepository;
     private final NotificationTemplateRepository templateRepository;
-    private final NotificationRuntimeProperties runtimeProperties;
+    private final SmtpConfigurationValidator smtpValidator;
 
     public PasswordResetNotificationReadiness(
             NotificationSettingsRepository settingsRepository,
             NotificationTemplateRepository templateRepository,
-            NotificationRuntimeProperties runtimeProperties
+            SmtpConfigurationValidator smtpValidator
     ) {
         this.settingsRepository = settingsRepository;
         this.templateRepository = templateRepository;
-        this.runtimeProperties = runtimeProperties;
+        this.smtpValidator = smtpValidator;
     }
 
     @Transactional(readOnly = true)
     public void requireReady() {
         NotificationSettings settings = settingsRepository.findByActiveTrue().orElse(null);
-        boolean smtpComplete = settings != null
-                && Boolean.TRUE.equals(settings.getEmailEnabled())
-                && hasText(settings.getSmtpHost())
-                && settings.getSmtpPort() != null
-                && hasText(settings.getSmtpUsername())
-                && runtimeProperties.getSmtp().isPasswordConfigured();
+        boolean smtpComplete = smtpValidator.isDeliveryReady(settings);
         boolean templateReady = templateRepository
                 .findByEventAndChannelAndActiveTrue(NotificationEvent.PASSWORD_RESET, NotificationChannel.EMAIL)
                 .isPresent();
         if (!smtpComplete || !templateReady) {
             throw new BusinessRuleViolationException("Password reset email is not configured.");
         }
-    }
-
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
     }
 }
