@@ -4,6 +4,9 @@ import com.company.iss.branch.service.BranchService;
 import com.company.iss.recruiter.service.RecruiterService;
 import com.company.iss.schedule.dialog.BulkScheduleDialog;
 import com.company.iss.schedule.dialog.ScheduleFormDialog;
+import com.company.iss.schedule.dto.ScheduleGridFilter;
+import com.company.iss.schedule.dto.ScheduleGridSort;
+import com.company.iss.schedule.dto.ScheduleGridSortOrder;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.service.ScheduleService;
@@ -20,27 +23,27 @@ import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.data.provider.CallbackDataProvider;
+import com.vaadin.flow.data.provider.DataProvider;
+import com.vaadin.flow.data.provider.SortDirection;
+import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
-import jakarta.annotation.PostConstruct;
 import jakarta.annotation.security.RolesAllowed;
-import org.springframework.beans.factory.annotation.Autowired;
 
 @Route(value = "scheduling", layout = MainLayout.class)
 @PageTitle("Schedule Management")
 @RolesAllowed("ADMIN")
 public class ScheduleView extends VerticalLayout {
 
-    @Autowired
-    private ScheduleService scheduleService;
+    private static final int GRID_PAGE_SIZE = 50;
 
-    @Autowired
-    private BranchService branchService;
-
-    @Autowired
-    private RecruiterService recruiterService;
+    private final ScheduleService scheduleService;
+    private final BranchService branchService;
+    private final RecruiterService recruiterService;
 
     private Grid<Schedule> scheduleGrid;
+    private CallbackDataProvider<Schedule, Void> dataProvider;
 
     private HorizontalLayout filterLayout;
     private TextField searchField;
@@ -52,18 +55,28 @@ public class ScheduleView extends VerticalLayout {
     private Button bulkGenerateButton;
     private Button deleteButton;
 
-    public ScheduleView() {
+    public ScheduleView(
+            ScheduleService scheduleService,
+            BranchService branchService,
+            RecruiterService recruiterService
+    ) {
+        this.scheduleService = scheduleService;
+        this.branchService = branchService;
+        this.recruiterService = recruiterService;
         setSizeFull();
 
         filterLayout = new HorizontalLayout();
 
         searchField = new TextField();
         searchField.setPlaceholder("Search Schedule");
+        searchField.setClearButtonVisible(true);
+        searchField.setValueChangeMode(ValueChangeMode.LAZY);
+        searchField.addValueChangeListener(event -> refreshGrid());
 
         searchButton = new Button("Search");
         searchButton.setIcon(VaadinIcon.SEARCH.create());
         searchButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-        searchButton.addClickListener(e -> onSearch(searchField.getValue()));
+        searchButton.addClickListener(e -> refreshGrid());
 
         filterLayout.add(searchField, searchButton);
         filterLayout.setWidthFull();
@@ -72,17 +85,18 @@ public class ScheduleView extends VerticalLayout {
         scheduleGrid = new Grid<>();
         scheduleGrid.setHeightFull();
         scheduleGrid.setWidth("100%");
+        scheduleGrid.setPageSize(GRID_PAGE_SIZE);
         scheduleGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COLUMN_BORDERS, GridVariant.LUMO_COMPACT);
 
-        scheduleGrid.addColumn(o -> o.getScheduleDate()).setHeader("Date").setWidth("80px").setResizable(true);
-        scheduleGrid.addColumn(o -> DateTimeUtil.formatTime(o.getStartTime())).setHeader("Start").setWidth("70px").setResizable(true);
-        scheduleGrid.addColumn(o -> DateTimeUtil.formatTime(o.getEndTime())).setHeader("End").setWidth("70px").setResizable(true);
-        scheduleGrid.addColumn(o -> o.getBranch().getBranchName()).setHeader("Branch").setWidth("150px").setResizable(true);
-        scheduleGrid.addColumn(o -> o.getRecruiter().getFullName()).setHeader("Recruiter").setWidth("150px").setResizable(true);
-        scheduleGrid.addColumn(o -> o.getInterviewMode().name()).setHeader("Mode").setWidth("50px").setResizable(true);
-        scheduleGrid.addColumn(o -> o.getSlotCapacity()).setHeader("Capacity").setWidth("50px").setResizable(true);
-        scheduleGrid.addColumn(o -> o.getBookedCount()).setHeader("Booked").setWidth("50px").setResizable(true);
-        scheduleGrid.addColumn(o -> o.getStatus().name()).setHeader("Status").setWidth("60px").setResizable(true);
+        scheduleGrid.addColumn(Schedule::getScheduleDate).setHeader("Date").setSortProperty("date").setWidth("80px").setResizable(true);
+        scheduleGrid.addColumn(o -> DateTimeUtil.formatTime(o.getStartTime())).setHeader("Start").setSortProperty("startTime").setWidth("70px").setResizable(true);
+        scheduleGrid.addColumn(o -> DateTimeUtil.formatTime(o.getEndTime())).setHeader("End").setSortProperty("endTime").setWidth("70px").setResizable(true);
+        scheduleGrid.addColumn(o -> o.getBranch() == null ? "" : o.getBranch().getBranchName()).setHeader("Branch").setSortProperty("branch").setWidth("150px").setResizable(true);
+        scheduleGrid.addColumn(o -> o.getRecruiter() == null ? "" : o.getRecruiter().getFullName()).setHeader("Recruiter").setSortProperty("recruiter").setWidth("150px").setResizable(true);
+        scheduleGrid.addColumn(o -> o.getInterviewMode() == null ? "" : o.getInterviewMode().name()).setHeader("Mode").setSortProperty("mode").setWidth("50px").setResizable(true);
+        scheduleGrid.addColumn(Schedule::getSlotCapacity).setHeader("Capacity").setSortProperty("capacity").setWidth("50px").setResizable(true);
+        scheduleGrid.addColumn(Schedule::getBookedCount).setHeader("Booked").setSortProperty("booked").setWidth("50px").setResizable(true);
+        scheduleGrid.addColumn(o -> o.getStatus() == null ? "" : o.getStatus().name()).setHeader("Status").setSortProperty("status").setWidth("60px").setResizable(true);
         scheduleGrid.addComponentColumn(schedule -> {
 
             HorizontalLayout actions = new HorizontalLayout();
@@ -97,7 +111,7 @@ public class ScheduleView extends VerticalLayout {
 
                 closeButton.addClickListener(e -> {
                     scheduleService.close(schedule.getId());
-                    init();
+                    refreshGrid();
                 });
 
                 Button cancelButton = new Button("Cancel");
@@ -106,7 +120,7 @@ public class ScheduleView extends VerticalLayout {
                 cancelButton.addClickListener(e -> {
                     try {
                         scheduleService.cancel(schedule.getId());
-                        init();
+                        refreshGrid();
                     } catch (Exception ex) {
                         UserSafeNotifier.showError(ex);
                     }
@@ -121,7 +135,7 @@ public class ScheduleView extends VerticalLayout {
 
                 reopenButton.addClickListener(e -> {
                     scheduleService.reopen(schedule.getId());
-                    init();
+                    refreshGrid();
                 });
 
                 Button cancelButton = new Button("Cancel");
@@ -130,7 +144,7 @@ public class ScheduleView extends VerticalLayout {
                 cancelButton.addClickListener(e -> {
                     try {
                         scheduleService.cancel(schedule.getId());
-                        init();
+                        refreshGrid();
                     } catch (Exception ex) {
                         UserSafeNotifier.showError(ex);
                     }
@@ -183,6 +197,14 @@ public class ScheduleView extends VerticalLayout {
 
         actionLayout.add(addButton, editButton, bulkGenerateButton, deleteButton);
 
+        dataProvider = DataProvider.fromCallbacks(
+                query -> scheduleService.findGridPage(
+                        currentFilter(), query.getOffset(), query.getLimit(), mapSortOrders(query.getSortOrders())
+                ).stream(),
+                query -> toIntCount(scheduleService.countGrid(currentFilter()))
+        );
+        scheduleGrid.setDataProvider(dataProvider);
+
         add(filterLayout, scheduleGrid, actionLayout);
     }
 
@@ -199,7 +221,7 @@ public class ScheduleView extends VerticalLayout {
 
             Notification.show("Schedule deleted successfully.", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
 
-            init();
+            refreshGrid();
 
         } catch (Exception ex) {
             UserSafeNotifier.showError(ex);
@@ -207,12 +229,10 @@ public class ScheduleView extends VerticalLayout {
     }
 
     private void openBulkDialog() {
-        BulkScheduleDialog dialog = new BulkScheduleDialog(branchService, recruiterService, scheduleService, this::init);
+        BulkScheduleDialog dialog = new BulkScheduleDialog(
+                branchService, recruiterService, scheduleService, this::refreshGrid
+        );
         dialog.open();
-    }
-
-    private void onSearch(String value) {
-        scheduleGrid.setItems(scheduleService.search(value));
     }
 
     private void onEdit() {
@@ -225,9 +245,32 @@ public class ScheduleView extends VerticalLayout {
         }
     }
 
-    @PostConstruct
-    private void init() {
-        scheduleGrid.setItems(scheduleService.search(null));
+    private ScheduleGridFilter currentFilter() {
+        return new ScheduleGridFilter(searchField.getValue());
+    }
+
+    private java.util.List<ScheduleGridSortOrder> mapSortOrders(
+            java.util.List<com.vaadin.flow.data.provider.QuerySortOrder> sortOrders
+    ) {
+        return sortOrders.stream()
+                .map(order -> ScheduleGridSort.fromKey(order.getSorted())
+                        .map(field -> new ScheduleGridSortOrder(
+                                field,
+                                order.getDirection() == SortDirection.ASCENDING
+                                        ? org.springframework.data.domain.Sort.Direction.ASC
+                                        : org.springframework.data.domain.Sort.Direction.DESC
+                        )))
+                .flatMap(java.util.Optional::stream)
+                .toList();
+    }
+
+    private void refreshGrid() {
+        scheduleGrid.deselectAll();
+        dataProvider.refreshAll();
+    }
+
+    private int toIntCount(long count) {
+        return count > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) count;
     }
 
     private void openDialog(Schedule schedule) {
@@ -237,7 +280,7 @@ public class ScheduleView extends VerticalLayout {
 
                 Notification.show("Schedule saved successfully.", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
 
-                init();
+                refreshGrid();
 
             } catch (Exception ex) {
                 UserSafeNotifier.showError(ex);
