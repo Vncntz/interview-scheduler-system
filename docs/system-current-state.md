@@ -1,6 +1,6 @@
 # Interview Scheduler System — Current State
 
-> Snapshot date: 2026-08-31
+> Snapshot date: 2026-09-01
 >
 > Repository reference: the commit containing this document
 >
@@ -222,7 +222,9 @@ Implemented booking rules and actions:
 - Successful creation updates the schedule count and applicant state atomically.
 - Bookings can be confirmed, marked attended, marked no-show, cancelled, or rescheduled according to their source state.
 - Cancellation releases schedule capacity and updates related state in one transaction.
-- Rescheduling transfers capacity between locked schedules and appends a history record.
+- Rescheduling transfers capacity between locked schedules and appends a history record through an
+  explicit append/query repository API. Repository contract and dirty-checking tests protect the
+  history from generic update or delete operations.
 - Created, confirmed, cancelled, and rescheduled notifications are published as ID-only events and delivered after commit.
 - Rescheduling preserves the booking's immutable interview stage.
 
@@ -350,13 +352,21 @@ Email notification templates are seeded idempotently for:
 Notification behavior:
 
 - Email delivery must be enabled in notification settings.
-- SMTP host, port, username, sender name, and company name are stored as non-secret settings.
+- SMTP provider, security mode, host, port, username, sender name, sender address, and company name
+  are stored as non-secret settings.
 - The SMTP password is supplied only through `SMTP_PASSWORD` at runtime.
+- Connection, read, and write timeouts are runtime-configurable through
+  `SMTP_CONNECTION_TIMEOUT`, `SMTP_READ_TIMEOUT`, and `SMTP_WRITE_TIMEOUT`; each defaults to five
+  seconds.
+- The administrator-only settings screen provides Gmail and Microsoft 365 presets, custom SMTP,
+  STARTTLS and SSL/TLS modes, runtime-password status, a connection test, and an explicit test-email
+  action. Settings changes append a notification-settings audit record.
 - Booking, hiring, and reset listeners deliver only after the business transaction commits.
 - Listeners reload state using stable IDs and contain delivery failures.
 - Delivery is asynchronous, in-process, and best-effort.
 - There is no durable outbox, retry queue, dead-letter handling, delivery audit, or exactly-once guarantee.
-- SMS configuration is visible only as disabled/read-only metadata; runtime SMS delivery is unsupported.
+- The settings screen does not expose SMS controls, and runtime SMS delivery is unsupported. Legacy
+  non-secret SMS metadata remains in the schema, while saves keep SMS disabled.
 
 ## 9. Persistence and migrations
 
@@ -371,6 +381,8 @@ MySQL runtime migrations and logically equivalent H2 test migrations currently c
 | V3 | Hiring decision workflow |
 | V4 | Secure account lifecycle |
 | V5 | Remove persisted notification secrets and disable SMS |
+| V6 | Add and backfill the required booking interview stage |
+| V7 | Add SMTP provider/security/sender metadata and notification-settings audit history |
 
 Migration locations:
 
@@ -413,7 +425,7 @@ Clients, positions, and applicants are demo data. Their loaders require both the
 
 ## 12. Testing and continuous integration
 
-At this snapshot, the clean Java 25 suite contains **247 tests** with:
+At this snapshot, the clean Java 25 suite contains **354 tests** with:
 
 - 0 failures
 - 0 errors
@@ -432,7 +444,9 @@ Coverage includes:
 - Applicant and booking grid pagination, filtering, count parity, stable ordering, and branch isolation
 - Notification templates/settings and user-safe UI boundaries
 
-GitHub Actions runs `./mvnw clean test` using Temurin Java 25 for every pull request and push to `main`.
+GitHub Actions runs `./mvnw clean test` on Ubuntu using Temurin Java 25 and Maven dependency caching
+for every pull request and push to `main`. The workflow uses the isolated H2 configuration; it does
+not currently start MySQL or run a MySQL/Testcontainers migration rehearsal.
 
 H2 in MySQL mode is a fast compatibility test; it is not proof that MySQL-specific DDL is production-safe. Production migration requires the backup, rehearsal, and authorization process described in [`database-migrations.md`](database-migrations.md) and [`production-release-checklist.md`](production-release-checklist.md).
 
@@ -462,16 +476,34 @@ H2 in MySQL mode is a fast compatibility test; it is not proof that MySQL-specif
 - Evaluation and other remaining grids still use unpaged list loading.
 - Tracked Vaadin-generated frontend artifacts require careful synchronization during builds.
 
-## 14. Recommended next priorities
+## 14. Current development priorities
 
-Based on the current implementation, the next coherent priorities are:
+The P0 documentation/state alignment is complete in this snapshot. Booking reschedule history is
+already protected by its explicit append/query repository API, and interview-stage eligibility and
+progression rules are already implemented. Based on the remaining gaps, the next priorities are:
 
-1. Protect booking reschedule history behind an explicit append/query repository API.
-2. Define and implement the guided final/client interview progression policy.
-3. Add scheduled, duplicate-safe interview reminder emails after the stage policy is settled.
-4. Continue server-side pagination for evaluation, schedule, hiring, and administration grids based on measured usage.
-5. Design applicant identity, provisioning, and ownership rules before enabling applicant self-service.
-6. Introduce a durable outbox only if the business requires notification retry and delivery guarantees.
+### P1
+
+1. Add a recruiter follow-up queue for applicants awaiting `FINAL` or `CLIENT` interviews, with a
+   guided path into the existing stage-aware booking workflow.
+2. Continue server-side pagination and database filtering for the remaining high-volume evaluation,
+   schedule, hiring, and administration grids, prioritized by measured usage.
+
+### P2
+
+3. Add scheduled, duplicate-safe interview reminder emails.
+4. Add isolated MySQL Testcontainers/Flyway migration validation to CI; keep the H2 suite as the fast
+   compatibility layer.
+
+### P3
+
+5. Introduce a durable notification outbox and retry mechanism only if the business requires delivery
+   guarantees beyond the current best-effort model.
+
+### Later
+
+6. Design applicant identity, provisioning, authorization, and record-ownership rules before enabling
+   any applicant-facing portal or self-service workflow.
 
 ## 15. Related documentation
 

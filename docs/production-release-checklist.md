@@ -41,9 +41,12 @@ data.
 - Confirm `notification_settings.smtp_password` and `notification_settings.sms_api_key` are absent.
 - Confirm all `notification_settings.sms_enabled` values are false and non-secret settings remain.
 - Confirm SMTP provider/security backfills, sender-address backfills, and the settings audit table.
+- Confirm the runtime SMTP password is reported as present without displaying it, and verify the
+  configured timeout values are appropriate for the environment.
 - Confirm every booking has `interview_stage`, the column is non-null, and no database default remains.
 - Confirm Hibernate schema validation succeeds with the release binary.
-- Run controlled smoke checks with real email/SMS delivery disabled or replaced by a safe test double.
+- Run controlled smoke checks with email delivery disabled or replaced by a safe test double. Runtime
+  SMS delivery does not exist.
 - Record duration, locks, disk use, errors, and recovery evidence without recording credentials or
   applicant contact data.
 
@@ -58,7 +61,9 @@ H2 MySQL mode is useful automated coverage but is not evidence that the MySQL DD
 - Verify `flyway_schema_history` is successful at version 7 before scaling out.
 - Verify the two legacy notification secret columns are absent and SMS is disabled.
 - Verify historical bookings are readable with the conservative `INITIAL` stage backfill.
-- Verify SMTP provider/security metadata, sender addresses, and settings audit persistence.
+- Verify SMTP provider/security metadata, sender addresses, settings audit persistence, and the
+  administrator-only connection diagnostic. Send a test email only when that exact recipient and
+  external delivery action are approved.
 - Verify Hibernate validation, application readiness, authentication, recruiter branch scope, booking,
   evaluation, hiring, password change, and password reset readiness.
 - Perform at most the specifically approved notification delivery check; do not send test messages to
