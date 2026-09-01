@@ -146,6 +146,36 @@ class EmailServiceTest {
         assertFalse(masked.contains("Bcc"));
     }
 
+    @Test
+    void synchronousReminderSeamClassifiesSuccessAndKnownProviderFailure() {
+        Fixture success = fixture("password");
+        assertEquals(
+                ReminderNotificationResult.Disposition.SENT,
+                success.service().sendSynchronously("admin@example.com", "Subject", "Body").disposition()
+        );
+
+        Fixture failure = fixture("password");
+        doThrow(new MailAuthenticationException("raw provider response"))
+                .when(failure.sender()).send(any(MimeMessage.class));
+        ReminderNotificationResult result = failure.service()
+                .sendSynchronously("admin@example.com", "Subject", "Body");
+
+        assertEquals(ReminderNotificationResult.Disposition.RETRYABLE_FAILURE, result.disposition());
+        assertEquals("SMTP_AUTHENTICATION_FAILED", result.reason());
+    }
+
+    @Test
+    void synchronousReminderSeamTreatsInvalidRecipientAsTerminalSkip() {
+        Fixture fixture = fixture("password");
+
+        ReminderNotificationResult result = fixture.service()
+                .sendSynchronously("not-an-email", "Subject", "Body");
+
+        assertEquals(ReminderNotificationResult.Disposition.SKIPPED, result.disposition());
+        assertEquals("INVALID_RECIPIENT", result.reason());
+        verify(fixture.factory(), never()).create(any());
+    }
+
     private Fixture fixture(String password) {
         NotificationRuntimeProperties properties = new NotificationRuntimeProperties();
         properties.getSmtp().setPassword(password);

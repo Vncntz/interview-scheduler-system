@@ -322,6 +322,7 @@ class BookingRescheduleIntegrationTest {
         Schedule destination = scheduleRepository.findById(fixture.destinationScheduleId()).orElseThrow();
 
         assertEquals(fixture.sourceScheduleId(), booking.getSchedule().getId());
+        assertEquals(0, booking.getReminderGeneration());
         assertEquals(1, source.getBookedCount());
         assertEquals(ScheduleStatus.FULL, source.getStatus());
         assertEquals(0, destination.getBookedCount());
@@ -334,6 +335,7 @@ class BookingRescheduleIntegrationTest {
         Schedule destination = scheduleRepository.findById(fixture.destinationScheduleId()).orElseThrow();
 
         assertEquals(fixture.destinationScheduleId(), booking.getSchedule().getId());
+        assertEquals(1, booking.getReminderGeneration());
         assertEquals(0, source.getBookedCount());
         assertEquals(ScheduleStatus.OPEN, source.getStatus());
         assertEquals(1, destination.getBookedCount());

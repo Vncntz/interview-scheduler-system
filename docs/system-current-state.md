@@ -359,6 +359,8 @@ Email notification templates are seeded idempotently for:
 - Booking confirmed
 - Booking cancelled
 - Booking rescheduled
+- Interview reminder (24-hour window)
+- Interview reminder (2-hour window)
 - Job offered
 - Applicant hired
 - Password reset
@@ -379,8 +381,32 @@ Notification behavior:
   action. Settings changes append a notification-settings audit record.
 - Booking, hiring, and reset listeners deliver only after the business transaction commits.
 - Listeners reload state using stable IDs and contain delivery failures.
-- Delivery is asynchronous, in-process, and best-effort.
-- There is no durable outbox, retry queue, dead-letter handling, delivery audit, or exactly-once guarantee.
+- Normal event-driven delivery is asynchronous, in-process, and best-effort.
+- The disabled-by-default reminder scheduler scans bounded database windows: `(now + 2h, now + 24h]`
+  for 24-hour reminders and `(now, now + 2h]` for 2-hour reminders, using the configured business zone
+  (default `Asia/Manila`) and a UTC `Clock`.
+- Reminder eligibility requires a current `BOOKED`, `CONFIRMED`, or legacy `RESCHEDULED` booking, an
+  active `SCHEDULED` applicant, an active non-cancelled schedule, a valid current applicant email, and
+  enabled email/template policy. Candidate and retry scans are database-filtered and bounded.
+- Reminder claims lock the booking first, persist a token lease, commit, send synchronously through the
+  existing SMTP infrastructure outside a database transaction, and complete in a separate short
+  transaction. Failures use bounded retries, and stale leases can be reclaimed with a new token so a
+  late worker cannot overwrite the reclaimed delivery's database state. This is at-least-once recovery,
+  not duplicate-proof external delivery: if an SMTP attempt runs longer than the stale-claim timeout,
+  another worker can reclaim the lease and send again while the first attempt is still in progress.
+- Configure the stale-claim timeout comfortably above the sum of the configured SMTP connection, read,
+  and write timeout budgets plus expected processing margin. The application validates these values
+  individually but does not cross-validate their combined budget.
+- `interview_reminder_deliveries` records `PENDING`, `SENT`, `FAILED`, or `SKIPPED` status without storing
+  message bodies, recipient addresses, provider responses, or credentials. Database uniqueness on
+  booking, reschedule generation, and reminder type prevents normal concurrent/retry duplicates.
+- Rescheduling the same booking increments its reminder generation exactly once. Schedule appointment
+  date/time/mode fields cannot be edited directly once any booking references the schedule.
+- There is no durable notification outbox, dead-letter dashboard, or exactly-once external-delivery
+  guarantee. A provider acceptance followed by a process crash before `SENT` completion, an ambiguous
+  SMTP failure, a stale-lease reclaim during a still-running SMTP attempt, or cancellation/rescheduling
+  after claim commit but before SMTP delivery can still cause a duplicate or stale external message.
+  Exactly-once delivery requires a future outbox/provider idempotency design.
 - The settings screen does not expose SMS controls, and runtime SMS delivery is unsupported. Legacy
   non-secret SMS metadata remains in the schema, while saves keep SMS disabled.
 
@@ -399,13 +425,14 @@ MySQL runtime migrations and logically equivalent H2 test migrations currently c
 | V5 | Remove persisted notification secrets and disable SMS |
 | V6 | Add and backfill the required booking interview stage |
 | V7 | Add SMTP provider/security/sender metadata and notification-settings audit history |
+| V8 | Add generation-aware, duplicate-safe scheduled interview reminder delivery tracking |
 
 Migration locations:
 
 - Runtime MySQL: `classpath:db/migration/mysql`
 - Automated tests: `classpath:db/migration/h2`
 
-Flyway clean is disabled. The production application requires migration version 7, and automated tests assert the expected migrated schema.
+Flyway clean is disabled. The production application requires migration version 8, and automated tests assert the expected migrated schema.
 
 Audit/history state includes hiring decision audit, account security audit, notification settings audit, and booking reschedule history. Their repositories expose explicit append/query APIs, and immutable history records cannot be updated or deleted through generic repository operations.
 
@@ -420,6 +447,7 @@ Audit/history state includes hiring decision audit, account security audit, noti
 ### Notification and password-reset variables
 
 - `SMTP_PASSWORD`
+- `INTERVIEW_REMINDERS_ENABLED` and optional `INTERVIEW_REMINDER_*` scheduler/zone/retry overrides
 - `APP_BASE_URL`
 - `ACCOUNT_RESET_TOKEN_SECRET`
 
@@ -441,7 +469,7 @@ Clients, positions, and applicants are demo data. Their loaders require both the
 
 ## 12. Testing and continuous integration
 
-At this snapshot, the clean Java 25 suite contains **386 tests** with:
+At this snapshot, the clean Java 25 suite contains **409 tests** with:
 
 - 0 failures
 - 0 errors
@@ -474,7 +502,6 @@ H2 in MySQL mode is a fast compatibility test; it is not proof that MySQL-specif
 - No applicant-facing portal or ownership-protected applicant workflow.
 - `APPLICANT` has no authorized landing route.
 - The recruiter follow-up queue is currently unpaged and has no configured follow-up SLA.
-- No scheduled interview reminder automation.
 - No automated interview-result email policy or default template.
 - No offer reversal, re-offer, or applicant self-service acceptance.
 
@@ -510,18 +537,17 @@ progression rules are already implemented. Based on the remaining gaps, the next
 
 ### P2
 
-2. Add scheduled, duplicate-safe interview reminder emails.
-3. Add isolated MySQL Testcontainers/Flyway migration validation to CI; keep the H2 suite as the fast
+2. Add isolated MySQL Testcontainers/Flyway migration validation to CI; keep the H2 suite as the fast
    compatibility layer.
 
 ### P3
 
-4. Introduce a durable notification outbox and retry mechanism only if the business requires delivery
+3. Introduce a durable notification outbox and retry mechanism only if the business requires delivery
    guarantees beyond the current best-effort model.
 
 ### Later
 
-5. Design applicant identity, provisioning, authorization, and record-ownership rules before enabling
+4. Design applicant identity, provisioning, authorization, and record-ownership rules before enabling
    any applicant-facing portal or self-service workflow.
 
 ## 15. Related documentation

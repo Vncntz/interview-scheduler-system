@@ -54,7 +54,7 @@ return zero rows/counts before V2 is allowed to run.
 ## Fresh database rollout
 
 For an empty database, keep `FLYWAY_BASELINE_ON_MIGRATE` unset (its default is `false`). Start the
-application with normal datasource credentials. Flyway applies V1 through V7 in order, after which
+application with normal datasource credentials. Flyway applies V1 through V8 in order, after which
 Hibernate validates the resulting schema. The fresh schema has `applicants.branch_id NOT NULL`, the
 final hiring decision workflow tables, secure account lifecycle tables, and no persisted notification
 credential columns.
@@ -67,8 +67,8 @@ and has no Flyway history table.
 1. Complete backup, structural comparison, and applicant reconciliation.
 2. For one controlled deployment only, set `FLYWAY_BASELINE_ON_MIGRATE=true` and
    `FLYWAY_BASELINE_VERSION=1`.
-3. Start one application instance. Flyway records version 1 as the baseline and then runs V2 through V7.
-4. Verify `flyway_schema_history` contains the version 1 baseline and successful version 2 through 7 migrations.
+3. Start one application instance. Flyway records version 1 as the baseline and then runs V2 through V8.
+4. Verify `flyway_schema_history` contains the version 1 baseline and successful version 2 through 8 migrations.
 5. Stop the instance, remove the baseline override, and restart with
    `FLYWAY_BASELINE_ON_MIGRATE=false` (or the variable unset) before scaling out.
 
@@ -134,7 +134,7 @@ and optimistic-lock version. The SMTP password must be supplied to the applicati
 `SMTP_PASSWORD`; there is no runtime SMS sender or `SMS_API_KEY` replacement.
 
 Before applying V5, provision `SMTP_PASSWORD` in the approved external secret source for deployments
-that require email. Rehearse the complete V1-to-V7 path and a V4-to-V7 upgrade against an isolated
+that require email. Rehearse the complete V1-to-V8 path and a V4-to-V8 upgrade against an isolated
 MySQL database restored from representative data. Confirm that non-secret notification settings are
 preserved, SMS is disabled, both legacy columns are absent, Hibernate validation succeeds, and no
 real notification is delivered during rehearsal.
@@ -179,6 +179,32 @@ null sender address; administrators must complete that value before email can be
 Rollback should restore the matching pre-V7 backup and deploy the pre-V7 binary together if the schema
 must be reversed. Do not drop V7 columns or its audit table while V7 code is running, and never use
 Flyway clean or edit the applied migration.
+
+## V8 duplicate-safe interview reminder rollout
+
+V8 adds and backfills the required `bookings.reminder_generation` column, expands the notification
+event enum for 24-hour and 2-hour reminders, creates `interview_reminder_deliveries`, and adds the
+schedule scan index. Delivery identity is unique by booking, reminder generation, and reminder type.
+Rescheduling the same booking advances its generation, so the new appointment receives an independent
+pair of reminder identities while old-generation delivery rows remain diagnostic history.
+
+The scheduler is disabled by default. Enable it only after both reminder templates are present, email
+settings are valid, and the runtime SMTP credential is provisioned. The default business zone is
+`Asia/Manila`; verify the configured zone matches the business interpretation of schedule date/time.
+Configure the stale-claim timeout comfortably above the sum of the SMTP connection, read, and write
+timeout budgets plus expected processing margin; the application validates these values individually
+but does not cross-validate their combined budget. Lease-token checks protect database completion state,
+but recovery is at-least-once: a worker can reclaim and send again if another SMTP attempt outlives the
+stale-claim timeout.
+
+Rehearse both a fresh V1-to-V8 migration and V7-to-V8 upgrade on an isolated representative MySQL
+restoration. Confirm the generation backfill has no lasting database default, the unique and booking
+foreign-key constraints exist, and the retry/claim and schedule-scan indexes are present.
+
+The MySQL enum alteration, booking backfill/nullability change, and new schedule index can take metadata
+locks or rebuild structures depending on server version and data volume. Record lock time and query-plan
+behavior during rehearsal before enabling the scheduler. Rollback requires restoring the matching pre-V8
+backup and binary; do not drop delivery history while V8 code is running.
 
 ## Failure, rollback, and recovery
 

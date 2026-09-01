@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.mock.env.MockEnvironment;
 
 import java.time.Duration;
+import java.time.ZoneId;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -57,5 +58,28 @@ class NotificationRuntimePropertiesTest {
         assertEquals(Duration.ofSeconds(2), properties.getSmtp().getConnectionTimeout());
         assertEquals(Duration.ofSeconds(3), properties.getSmtp().getReadTimeout());
         assertEquals(Duration.ofSeconds(4), properties.getSmtp().getWriteTimeout());
+    }
+
+    @Test
+    void reminderDefaultsAreDisabledBoundedAndUseManilaBusinessTime() {
+        NotificationRuntimeProperties.Reminders reminders = new NotificationRuntimeProperties().getReminders();
+
+        assertFalse(reminders.isEnabled());
+        assertEquals(ZoneId.of("Asia/Manila"), reminders.zoneId());
+        assertEquals(Duration.ofMinutes(5), reminders.getFixedDelay());
+        assertEquals(100, reminders.getBatchSize());
+        assertEquals(3, reminders.getMaxAttempts());
+    }
+
+    @Test
+    void invalidReminderConfigurationIsRejectedDuringBinding() {
+        NotificationRuntimeProperties properties = new NotificationRuntimeProperties();
+
+        assertThrows(IllegalArgumentException.class, () -> properties.getReminders().setBatchSize(0));
+        assertThrows(IllegalArgumentException.class, () -> properties.getReminders().setMaxAttempts(0));
+        assertThrows(IllegalArgumentException.class,
+                () -> properties.getReminders().setBusinessZone("Not/A-Time-Zone"));
+        assertThrows(IllegalArgumentException.class,
+                () -> properties.getReminders().setRetryDelay(Duration.ZERO));
     }
 }

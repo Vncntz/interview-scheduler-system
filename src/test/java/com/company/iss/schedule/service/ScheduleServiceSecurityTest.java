@@ -6,11 +6,13 @@ import com.company.iss.auth.repository.UserRepository;
 import com.company.iss.auth.service.SecurityService;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.branch.repository.BranchRepository;
+import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.schedule.entity.InterviewMode;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.dto.ScheduleGridFilter;
 import com.company.iss.schedule.repository.ScheduleRepository;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,12 +45,15 @@ class ScheduleServiceSecurityTest {
     @Mock BranchRepository branchRepository;
     @Mock UserRepository userRepository;
     @Mock SecurityService securityService;
+    @Mock BookingRepository bookingRepository;
 
     private ScheduleService service;
 
     @BeforeEach
     void setUp() {
-        service = new ScheduleService(scheduleRepository, branchRepository, userRepository, securityService);
+        service = new ScheduleService(
+                scheduleRepository, branchRepository, userRepository, securityService, bookingRepository
+        );
     }
 
     @Test
@@ -146,6 +151,27 @@ class ScheduleServiceSecurityTest {
         assertEquals(ScheduleStatus.FULL, result.getStatus());
         assertTrue(result.isActive());
         assertEquals("Updated", result.getNotes());
+    }
+
+    @Test
+    void adminCannotChangeAppointmentFieldsWhenScheduleHasBookings() {
+        User admin = user(99L, Role.ADMIN, null);
+        Branch branch = branch(1L);
+        User recruiter = user(20L, Role.RECRUITER, branch);
+        Schedule existing = schedule(10L, branch, recruiter);
+        existing.setBookedCount(0);
+        Schedule input = schedule(10L, branch(1L), user(20L, Role.RECRUITER, branch(1L)));
+        input.setStartTime(existing.getStartTime().plusHours(1));
+
+        when(securityService.requireOperationsUser()).thenReturn(admin);
+        when(branchRepository.findById(1L)).thenReturn(Optional.of(branch));
+        when(userRepository.findById(20L)).thenReturn(Optional.of(recruiter));
+        when(scheduleRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(existing));
+        when(bookingRepository.existsByScheduleId(10L)).thenReturn(true);
+
+        assertThrows(BusinessRuleViolationException.class, () -> service.save(input));
+
+        verify(scheduleRepository, never()).save(any());
     }
 
     @Test

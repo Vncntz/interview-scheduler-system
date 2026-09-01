@@ -6,6 +6,7 @@ import com.company.iss.auth.repository.UserRepository;
 import com.company.iss.auth.service.SecurityService;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.branch.repository.BranchRepository;
+import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.schedule.dto.BulkScheduleResult;
 import com.company.iss.schedule.dto.ScheduleGridFilter;
 import com.company.iss.schedule.dto.ScheduleGridSortOrder;
@@ -36,17 +37,20 @@ public class ScheduleService {
     private final BranchRepository branchRepository;
     private final UserRepository userRepository;
     private final SecurityService securityService;
+    private final BookingRepository bookingRepository;
 
     public ScheduleService(
             ScheduleRepository scheduleRepository,
             BranchRepository branchRepository,
             UserRepository userRepository,
-            SecurityService securityService
+            SecurityService securityService,
+            BookingRepository bookingRepository
     ) {
         this.scheduleRepository = scheduleRepository;
         this.branchRepository = branchRepository;
         this.userRepository = userRepository;
         this.securityService = securityService;
+        this.bookingRepository = bookingRepository;
     }
 
     @Transactional(readOnly = true)
@@ -105,6 +109,7 @@ public class ScheduleService {
         } else {
             schedule = requireScheduleForUpdate(input.getId());
             preventBookedScheduleOwnershipChange(schedule, branch, recruiter);
+            preventBookedScheduleAppointmentChange(schedule, input);
         }
         copyEditableFields(input, schedule, branch, recruiter);
         validate(schedule);
@@ -361,6 +366,21 @@ public class ScheduleService {
         if (!Objects.equals(existing.getBranch().getId(), branch.getId())
                 || !Objects.equals(existing.getRecruiter().getId(), recruiter.getId())) {
             throw new BusinessRuleViolationException("A booked schedule cannot be reassigned to another branch or recruiter.");
+        }
+    }
+
+    private void preventBookedScheduleAppointmentChange(Schedule existing, Schedule input) {
+        boolean hasRecordedCapacity = existing.getBookedCount() != null && existing.getBookedCount() > 0;
+        if (!hasRecordedCapacity && !bookingRepository.existsByScheduleId(existing.getId())) {
+            return;
+        }
+        if (!Objects.equals(existing.getScheduleDate(), input.getScheduleDate())
+                || !Objects.equals(existing.getStartTime(), input.getStartTime())
+                || !Objects.equals(existing.getEndTime(), input.getEndTime())
+                || existing.getInterviewMode() != input.getInterviewMode()) {
+            throw new BusinessRuleViolationException(
+                    "A schedule with bookings cannot change its appointment date, time, or interview mode. Reschedule each booking instead."
+            );
         }
     }
 

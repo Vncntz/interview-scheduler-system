@@ -9,6 +9,8 @@ public enum NotificationEvent {
     INTERVIEW_RESULT,
     JOB_OFFERED,
     HIRED,
-    PASSWORD_RESET
+    PASSWORD_RESET,
+    INTERVIEW_REMINDER_24H,
+    INTERVIEW_REMINDER_2H
 
 }
