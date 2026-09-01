@@ -182,6 +182,104 @@ class BookingServiceTest {
     }
 
     @Test
+    void createBookingRejectsFinalStageForClientProgression() {
+        Branch branch = branch(100L);
+        User actor = user(200L, Role.RECRUITER, branch);
+        Applicant applicant = new Applicant();
+        applicant.setId(300L);
+        applicant.setBranch(branch);
+        applicant.setActive(true);
+        applicant.setStatus(ApplicantStatus.FOR_CLIENT_INTERVIEW);
+        Schedule schedule = schedule(20L, branch, actor, 0, 2, ScheduleStatus.OPEN);
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(applicantService.findForBookingUpdate(300L, actor)).thenReturn(applicant);
+        when(scheduleRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(schedule));
+
+        assertThrows(
+                BusinessRuleViolationException.class,
+                () -> bookingService.createBooking(
+                        new CreateBookingCommand(300L, 20L, InterviewStage.FINAL, "Invalid downgrade")
+                )
+        );
+
+        verify(bookingRepository, never()).save(any());
+        verify(scheduleRepository, never()).save(any());
+    }
+
+    @Test
+    void createBookingRejectsStaleFollowUpAfterApplicantStateChanges() {
+        Branch branch = branch(100L);
+        User actor = user(200L, Role.RECRUITER, branch);
+        Applicant applicant = new Applicant();
+        applicant.setId(300L);
+        applicant.setBranch(branch);
+        applicant.setActive(true);
+        applicant.setStatus(ApplicantStatus.PASSED);
+        Schedule schedule = schedule(20L, branch, actor, 0, 2, ScheduleStatus.OPEN);
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(applicantService.findForBookingUpdate(300L, actor)).thenReturn(applicant);
+        when(scheduleRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(schedule));
+
+        assertThrows(
+                BusinessRuleViolationException.class,
+                () -> bookingService.createBooking(
+                        new CreateBookingCommand(300L, 20L, InterviewStage.FINAL, "Stale queue item")
+                )
+        );
+
+        verify(bookingRepository, never()).save(any());
+        verify(scheduleRepository, never()).save(any());
+    }
+
+    @Test
+    void createBookingRejectsDuplicateActiveBookingEvenWhenQueueItemIsStale() {
+        Branch branch = branch(100L);
+        User actor = user(200L, Role.RECRUITER, branch);
+        Applicant applicant = new Applicant();
+        applicant.setId(300L);
+        applicant.setBranch(branch);
+        applicant.setActive(true);
+        applicant.setStatus(ApplicantStatus.FOR_FINAL_INTERVIEW);
+        Schedule schedule = schedule(20L, branch, actor, 0, 2, ScheduleStatus.OPEN);
+        Booking existing = booking(40L, BookingStatus.BOOKED, schedule, InterviewStage.FINAL);
+        existing.setApplicant(applicant);
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(applicantService.findForBookingUpdate(300L, actor)).thenReturn(applicant);
+        when(scheduleRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(schedule));
+        when(bookingRepository.findFirstByApplicantAndStatusIn(eq(applicant), any()))
+                .thenReturn(Optional.of(existing));
+
+        assertThrows(
+                BusinessRuleViolationException.class,
+                () -> bookingService.createBooking(
+                        new CreateBookingCommand(300L, 20L, InterviewStage.FINAL, "Duplicate")
+                )
+        );
+
+        verify(bookingRepository, never()).save(any());
+        verify(scheduleRepository, never()).save(any());
+    }
+
+    @Test
+    void recruiterCannotScheduleFollowUpApplicantOutsideTheirBranch() {
+        Branch actorBranch = branch(100L);
+        User actor = user(200L, Role.RECRUITER, actorBranch);
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(applicantService.findForBookingUpdate(300L, actor))
+                .thenThrow(new AccessDeniedException("You may only manage applicants within your branch."));
+
+        assertThrows(
+                AccessDeniedException.class,
+                () -> bookingService.createBooking(
+                        new CreateBookingCommand(300L, 20L, InterviewStage.FINAL, "Out of branch")
+                )
+        );
+
+        verifyNoInteractions(scheduleRepository);
+        verify(bookingRepository, never()).save(any());
+    }
+
+    @Test
     void cancelledBookingReplacementMustReusePreviousStage() {
         Branch branch = branch(100L);
         User actor = user(200L, Role.ADMIN, null);

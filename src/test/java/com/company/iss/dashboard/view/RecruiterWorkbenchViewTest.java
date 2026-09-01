@@ -3,16 +3,20 @@ package com.company.iss.dashboard.view;
 import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.booking.service.BookingService;
+import com.company.iss.dashboard.dto.FollowUpApplicant;
 import com.company.iss.dashboard.dto.RecruiterWorkbenchData;
 import com.company.iss.dashboard.dto.WorkbenchInterview;
 import com.company.iss.dashboard.service.RecruiterWorkbenchService;
 import com.company.iss.evaluation.service.InterviewEvaluationService;
+import com.company.iss.schedule.service.ScheduleService;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.grid.Grid;
+import com.vaadin.flow.component.html.Span;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.stream.Stream;
@@ -33,10 +37,10 @@ class RecruiterWorkbenchViewTest {
                 "Maria Santos", InterviewStage.FINAL, BookingStatus.CONFIRMED
         );
         when(service.load()).thenReturn(new RecruiterWorkbenchData(
-                List.of(item), List.of(), List.of(), List.of(), List.of()
+                List.of(item), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
         ));
         RecruiterWorkbenchView view = new RecruiterWorkbenchView(
-                service, mock(BookingService.class), mock(InterviewEvaluationService.class)
+                service, mock(BookingService.class), mock(InterviewEvaluationService.class), mock(ScheduleService.class)
         );
         Method refresh = RecruiterWorkbenchView.class.getDeclaredMethod("refresh");
         refresh.setAccessible(true);
@@ -48,6 +52,58 @@ class RecruiterWorkbenchViewTest {
         Grid<?> grid = (Grid<?>) grids.getFirst();
         assertNotNull(grid.getColumnByKey("interview-stage"));
         assertNotNull(grid.getColumnByKey("applicant-profile"));
+    }
+
+    @Test
+    void followUpQueuesExposeOperationalColumnsAndScheduleAction() throws ReflectiveOperationException {
+        RecruiterWorkbenchService service = mock(RecruiterWorkbenchService.class);
+        FollowUpApplicant followUp = new FollowUpApplicant(
+                20L, 30L, "Alex Candidate", "Engineer", "Acme",
+                InterviewStage.FINAL,
+                LocalDateTime.now().minusDays(3),
+                LocalDateTime.now().minusDays(3)
+        );
+        when(service.load()).thenReturn(new RecruiterWorkbenchData(
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(followUp), List.of()
+        ));
+        RecruiterWorkbenchView view = new RecruiterWorkbenchView(
+                service, mock(BookingService.class), mock(InterviewEvaluationService.class), mock(ScheduleService.class)
+        );
+        Method refresh = RecruiterWorkbenchView.class.getDeclaredMethod("refresh");
+        refresh.setAccessible(true);
+
+        refresh.invoke(view);
+
+        Grid<?> grid = descendants(view).filter(Grid.class::isInstance)
+                .map(Grid.class::cast)
+                .filter(candidate -> candidate.getColumnByKey("follow-up-stage") != null)
+                .findFirst().orElseThrow();
+        assertNotNull(grid.getColumnByKey("follow-up-applicant"));
+        assertNotNull(grid.getColumnByKey("follow-up-position"));
+        assertNotNull(grid.getColumnByKey("follow-up-client"));
+        assertNotNull(grid.getColumnByKey("follow-up-last-interview"));
+        assertNotNull(grid.getColumnByKey("follow-up-waiting"));
+        assertNotNull(grid.getColumnByKey("follow-up-actions"));
+    }
+
+    @Test
+    void emptyFollowUpQueuesShowAnExplicitEmptyState() throws ReflectiveOperationException {
+        RecruiterWorkbenchService service = mock(RecruiterWorkbenchService.class);
+        when(service.load()).thenReturn(new RecruiterWorkbenchData(
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()
+        ));
+        RecruiterWorkbenchView view = new RecruiterWorkbenchView(
+                service, mock(BookingService.class), mock(InterviewEvaluationService.class), mock(ScheduleService.class)
+        );
+        Method refresh = RecruiterWorkbenchView.class.getDeclaredMethod("refresh");
+        refresh.setAccessible(true);
+
+        refresh.invoke(view);
+
+        assertFalse(descendants(view)
+                .filter(Span.class::isInstance)
+                .map(Span.class::cast)
+                .noneMatch(span -> "No applicants currently require interview follow-up.".equals(span.getText())));
     }
 
     private Stream<Component> descendants(Component component) {

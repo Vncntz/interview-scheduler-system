@@ -3,11 +3,18 @@ package com.company.iss.dashboard.service;
 import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.auth.service.SecurityService;
+import com.company.iss.applicant.entity.ApplicantStatus;
 import com.company.iss.booking.entity.Booking;
 import com.company.iss.booking.entity.BookingStatus;
+import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.booking.repository.BookingRepository;
+import com.company.iss.booking.service.BookingStageEligibilityPolicy;
+import com.company.iss.dashboard.dto.FollowUpApplicant;
 import com.company.iss.dashboard.dto.RecruiterWorkbenchData;
 import com.company.iss.dashboard.dto.WorkbenchInterview;
+import com.company.iss.dashboard.repository.FollowUpApplicantProjection;
+import com.company.iss.dashboard.repository.RecruiterFollowUpRepository;
+import com.company.iss.evaluation.entity.InterviewResult;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,15 +29,25 @@ public class RecruiterWorkbenchService {
     private static final List<BookingStatus> ACTIVE_STATUSES = List.of(
             BookingStatus.BOOKED, BookingStatus.CONFIRMED
     );
+    private static final List<BookingStatus> FOLLOW_UP_ACTIVE_STATUSES = List.of(
+            BookingStatus.BOOKED, BookingStatus.CONFIRMED, BookingStatus.RESCHEDULED
+    );
     private static final List<BookingStatus> TODAY_STATUSES = List.of(
             BookingStatus.BOOKED, BookingStatus.CONFIRMED, BookingStatus.ATTENDED
     );
 
     private final BookingRepository bookingRepository;
+    private final RecruiterFollowUpRepository followUpRepository;
     private final SecurityService securityService;
+    private final BookingStageEligibilityPolicy stageEligibilityPolicy = new BookingStageEligibilityPolicy();
 
-    public RecruiterWorkbenchService(BookingRepository bookingRepository, SecurityService securityService) {
+    public RecruiterWorkbenchService(
+            BookingRepository bookingRepository,
+            RecruiterFollowUpRepository followUpRepository,
+            SecurityService securityService
+    ) {
         this.bookingRepository = bookingRepository;
+        this.followUpRepository = followUpRepository;
         this.securityService = securityService;
     }
 
@@ -44,6 +61,18 @@ public class RecruiterWorkbenchService {
         LocalDate today = LocalDate.now();
         LocalTime now = LocalTime.now();
         Long branchId = actor.getBranch().getId();
+        List<FollowUpApplicant> followUps = followUpRepository.findFollowUps(
+                branchId,
+                ApplicantStatus.FOR_FINAL_INTERVIEW,
+                ApplicantStatus.FOR_CLIENT_INTERVIEW,
+                ApplicantStatus.SCHEDULED,
+                List.of(ApplicantStatus.FOR_FINAL_INTERVIEW, ApplicantStatus.FOR_CLIENT_INTERVIEW),
+                InterviewResult.FOR_FINAL_INTERVIEW,
+                InterviewResult.FOR_CLIENT_INTERVIEW,
+                List.of(BookingStatus.CANCELLED, BookingStatus.NO_SHOW),
+                List.of(InterviewStage.FINAL, InterviewStage.CLIENT),
+                FOLLOW_UP_ACTIVE_STATUSES
+        ).stream().map(this::toFollowUpDto).toList();
 
         return new RecruiterWorkbenchData(
                 map(bookingRepository.findByScheduleRecruiterIdAndScheduleScheduleDateAndStatusInOrderByScheduleStartTime(
@@ -58,7 +87,13 @@ public class RecruiterWorkbenchService {
                 )),
                 map(bookingRepository.findOverdueUnevaluatedByBranch(
                         branchId, BookingStatus.ATTENDED, today, now
-                ))
+                )),
+                followUps.stream()
+                        .filter(item -> item.requiredStage() == InterviewStage.FINAL)
+                        .toList(),
+                followUps.stream()
+                        .filter(item -> item.requiredStage() == InterviewStage.CLIENT)
+                        .toList()
         );
     }
 
@@ -81,6 +116,24 @@ public class RecruiterWorkbenchService {
                 booking.getSchedule().getRecruiter().getFullName(),
                 booking.getInterviewStage(),
                 booking.getStatus()
+        );
+    }
+
+    private FollowUpApplicant toFollowUpDto(FollowUpApplicantProjection projection) {
+        InterviewStage requiredStage = stageEligibilityPolicy.requiredStage(
+                projection.getApplicantStatus(),
+                projection.getMostRecentBookingStatus(),
+                projection.getMostRecentBookingStage()
+        );
+        return new FollowUpApplicant(
+                projection.getApplicantId(),
+                projection.getBranchId(),
+                projection.getApplicantName(),
+                projection.getPositionTitle(),
+                projection.getClientName(),
+                requiredStage,
+                projection.getWaitingSince(),
+                projection.getWaitingSince()
         );
     }
 }

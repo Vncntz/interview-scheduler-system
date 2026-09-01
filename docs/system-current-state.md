@@ -290,7 +290,14 @@ The administrator dashboard provides organization-wide metrics, schedule summari
 
 ### Recruiter workbench
 
-The recruiter workbench provides branch-scoped queues and actions for upcoming interviews, attendance/no-show processing, pending evaluations, and related recruiter work.
+The recruiter workbench provides branch-scoped queues and actions for upcoming interviews,
+attendance/no-show processing, pending evaluations, and applicants requiring `FINAL` or `CLIENT`
+follow-up. The follow-up read model uses one ordered scalar query scoped by the applicant's
+authoritative branch. It includes evaluation progression plus cancelled/no-show replacement bookings,
+excludes applicants with any active booking, and derives waiting time from existing evaluation or
+booking timestamps. Scheduling reuses the read-only stage-aware booking dialog and the locked,
+transactional booking service; the service revalidates stage, branch, and active-booking uniqueness.
+The workbench remains recruiter-only, while administrator dashboard behavior is unchanged.
 
 ### Grid scalability
 
@@ -425,7 +432,7 @@ Clients, positions, and applicants are demo data. Their loaders require both the
 
 ## 12. Testing and continuous integration
 
-At this snapshot, the clean Java 25 suite contains **354 tests** with:
+At this snapshot, the clean Java 25 suite contains **369 tests** with:
 
 - 0 failures
 - 0 errors
@@ -456,7 +463,7 @@ H2 in MySQL mode is a fast compatibility test; it is not proof that MySQL-specif
 
 - No applicant-facing portal or ownership-protected applicant workflow.
 - `APPLICANT` has no authorized landing route.
-- Multi-stage progression is enforced, but there is not yet a dedicated follow-up queue for applicants awaiting final or client interviews.
+- The recruiter follow-up queue is currently unpaged and has no configured follow-up SLA.
 - No scheduled interview reminder automation.
 - No automated interview-result email policy or default template.
 - No offer reversal, re-offer, or applicant self-service acceptance.
@@ -484,25 +491,23 @@ progression rules are already implemented. Based on the remaining gaps, the next
 
 ### P1
 
-1. Add a recruiter follow-up queue for applicants awaiting `FINAL` or `CLIENT` interviews, with a
-   guided path into the existing stage-aware booking workflow.
-2. Continue server-side pagination and database filtering for the remaining high-volume evaluation,
+1. Continue server-side pagination and database filtering for the remaining high-volume evaluation,
    schedule, hiring, and administration grids, prioritized by measured usage.
 
 ### P2
 
-3. Add scheduled, duplicate-safe interview reminder emails.
-4. Add isolated MySQL Testcontainers/Flyway migration validation to CI; keep the H2 suite as the fast
+2. Add scheduled, duplicate-safe interview reminder emails.
+3. Add isolated MySQL Testcontainers/Flyway migration validation to CI; keep the H2 suite as the fast
    compatibility layer.
 
 ### P3
 
-5. Introduce a durable notification outbox and retry mechanism only if the business requires delivery
+4. Introduce a durable notification outbox and retry mechanism only if the business requires delivery
    guarantees beyond the current best-effort model.
 
 ### Later
 
-6. Design applicant identity, provisioning, authorization, and record-ownership rules before enabling
+5. Design applicant identity, provisioning, authorization, and record-ownership rules before enabling
    any applicant-facing portal or self-service workflow.
 
 ## 15. Related documentation

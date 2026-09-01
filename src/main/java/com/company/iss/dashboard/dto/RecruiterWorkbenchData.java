@@ -7,6 +7,8 @@ public record RecruiterWorkbenchData(
         List<WorkbenchInterview> upcomingAssigned,
         List<WorkbenchInterview> pendingConfirmations,
         List<WorkbenchInterview> attendanceQueue,
-        List<WorkbenchInterview> overdueEvaluations
+        List<WorkbenchInterview> overdueEvaluations,
+        List<FollowUpApplicant> finalInterviewFollowUps,
+        List<FollowUpApplicant> clientInterviewFollowUps
 ) {
 }
