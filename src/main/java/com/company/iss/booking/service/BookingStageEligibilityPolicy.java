@@ -8,6 +8,18 @@ import com.company.iss.shared.exception.BusinessRuleViolationException;
 public class BookingStageEligibilityPolicy {
 
     public InterviewStage requiredStage(ApplicantStatus applicantStatus, Booking mostRecentBooking) {
+        return requiredStage(
+                applicantStatus,
+                mostRecentBooking == null ? null : mostRecentBooking.getStatus(),
+                mostRecentBooking == null ? null : mostRecentBooking.getInterviewStage()
+        );
+    }
+
+    public InterviewStage requiredStage(
+            ApplicantStatus applicantStatus,
+            BookingStatus mostRecentBookingStatus,
+            InterviewStage mostRecentBookingStage
+    ) {
         if (applicantStatus == null) {
             throw new BusinessRuleViolationException("Applicant status is required before booking an interview.");
         }
@@ -16,7 +28,7 @@ public class BookingStageEligibilityPolicy {
             case NEW, SCREENING -> InterviewStage.INITIAL;
             case FOR_FINAL_INTERVIEW -> InterviewStage.FINAL;
             case FOR_CLIENT_INTERVIEW -> InterviewStage.CLIENT;
-            case SCHEDULED -> replacementStage(mostRecentBooking);
+            case SCHEDULED -> replacementStage(mostRecentBookingStatus, mostRecentBookingStage);
             case INTERVIEWED, ON_HOLD, PASSED, FAILED, OFFERED, HIRED, OFFER_DECLINED, WITHDRAWN ->
                     throw new BusinessRuleViolationException(
                             "Applicant status " + applicantStatus.name() + " is not eligible for a new interview."
@@ -41,15 +53,17 @@ public class BookingStageEligibilityPolicy {
         return requiredStage;
     }
 
-    private InterviewStage replacementStage(Booking mostRecentBooking) {
-        if (mostRecentBooking == null
-                || (mostRecentBooking.getStatus() != BookingStatus.CANCELLED
-                    && mostRecentBooking.getStatus() != BookingStatus.NO_SHOW)
-                || mostRecentBooking.getInterviewStage() == null) {
+    private InterviewStage replacementStage(
+            BookingStatus mostRecentBookingStatus,
+            InterviewStage mostRecentBookingStage
+    ) {
+        if ((mostRecentBookingStatus != BookingStatus.CANCELLED
+                && mostRecentBookingStatus != BookingStatus.NO_SHOW)
+                || mostRecentBookingStage == null) {
             throw new BusinessRuleViolationException(
                     "Scheduled applicants can only be rebooked after a cancelled or missed interview."
             );
         }
-        return mostRecentBooking.getInterviewStage();
+        return mostRecentBookingStage;
     }
 }

@@ -53,6 +53,19 @@ class BookingStageEligibilityPolicyTest {
         assertEquals(stage, policy.requiredStage(ApplicantStatus.SCHEDULED, previous));
     }
 
+    @ParameterizedTest
+    @EnumSource(InterviewStage.class)
+    void projectionFriendlyOverloadPreservesReplacementStage(InterviewStage stage) {
+        assertEquals(
+                stage,
+                policy.requiredStage(ApplicantStatus.SCHEDULED, BookingStatus.CANCELLED, stage)
+        );
+        assertEquals(
+                stage,
+                policy.requiredStage(ApplicantStatus.SCHEDULED, BookingStatus.NO_SHOW, stage)
+        );
+    }
+
     @Test
     void scheduledStateWithoutCancelledOrNoShowBookingIsRejected() {
         Booking active = Booking.forInterviewStage(InterviewStage.FINAL);
