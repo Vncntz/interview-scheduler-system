@@ -10,12 +10,16 @@ import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.evaluation.dto.CreateEvaluationCommand;
+import com.company.iss.evaluation.dto.EvaluationGridFilter;
+import com.company.iss.evaluation.dto.EvaluationGridSortOrder;
 import com.company.iss.evaluation.entity.InterviewEvaluation;
 import com.company.iss.evaluation.entity.InterviewResult;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
 import com.company.iss.shared.exception.BusinessRuleViolationException;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.repository.PositionOpeningRepository;
+import com.company.iss.shared.pagination.OffsetLimitPageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +30,8 @@ import java.util.Objects;
 
 @Service
 public class InterviewEvaluationService {
+
+    private static final int MAX_GRID_PAGE_SIZE = 100;
 
     private final InterviewEvaluationRepository evaluationRepository;
     private final PositionOpeningRepository positionOpeningRepository;
@@ -99,13 +105,45 @@ public class InterviewEvaluationService {
     }
 
     @Transactional(readOnly = true)
-    public List<InterviewEvaluation> findAll() {
+    public List<InterviewEvaluation> findGridPage(
+            EvaluationGridFilter filter,
+            int offset,
+            int limit,
+            List<EvaluationGridSortOrder> sortOrders
+    ) {
         User actor = securityService.requireOperationsUser();
-        if (actor.getRole() == Role.ADMIN) {
-            return evaluationRepository.findAll();
-        }
-        return evaluationRepository.findByBookingScheduleBranchIdOrderByEvaluationDateDesc(
-                actor.getBranch().getId()
+        validateGridWindow(offset, limit);
+        EvaluationGridFilter normalized = filter == null ? EvaluationGridFilter.empty() : filter;
+        LocalDateTime dateFrom = normalized.evaluationDate() == null
+                ? null : normalized.evaluationDate().atStartOfDay();
+        LocalDateTime dateTo = normalized.evaluationDate() == null
+                ? null : normalized.evaluationDate().plusDays(1).atStartOfDay();
+        return evaluationRepository.findGridPage(
+                evaluationBranchId(actor),
+                likePattern(normalized.keyword()),
+                normalized.interviewStage(),
+                normalized.result(),
+                dateFrom,
+                dateTo,
+                new OffsetLimitPageable(offset, limit, evaluationSort(sortOrders))
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public long countGrid(EvaluationGridFilter filter) {
+        User actor = securityService.requireOperationsUser();
+        EvaluationGridFilter normalized = filter == null ? EvaluationGridFilter.empty() : filter;
+        LocalDateTime dateFrom = normalized.evaluationDate() == null
+                ? null : normalized.evaluationDate().atStartOfDay();
+        LocalDateTime dateTo = normalized.evaluationDate() == null
+                ? null : normalized.evaluationDate().plusDays(1).atStartOfDay();
+        return evaluationRepository.countGrid(
+                evaluationBranchId(actor),
+                likePattern(normalized.keyword()),
+                normalized.interviewStage(),
+                normalized.result(),
+                dateFrom,
+                dateTo
         );
     }
 
@@ -139,6 +177,40 @@ public class InterviewEvaluationService {
                 || !Objects.equals(actor.getBranch().getId(), booking.getSchedule().getBranch().getId())) {
             throw new AccessDeniedException("You may only evaluate interviews within your branch.");
         }
+    }
+
+    private void validateGridWindow(int offset, int limit) {
+        if (offset < 0) {
+            throw new IllegalArgumentException("Grid offset must not be negative.");
+        }
+        if (limit < 1 || limit > MAX_GRID_PAGE_SIZE) {
+            throw new IllegalArgumentException("Grid limit must be between 1 and " + MAX_GRID_PAGE_SIZE + ".");
+        }
+    }
+
+    private Long evaluationBranchId(User actor) {
+        if (actor.getRole() == Role.ADMIN) {
+            return null;
+        }
+        if (actor.getRole() != Role.RECRUITER || actor.getBranch() == null || actor.getBranch().getId() == null) {
+            throw new AccessDeniedException("You may only view evaluations within your branch.");
+        }
+        return actor.getBranch().getId();
+    }
+
+    private String likePattern(String keyword) {
+        return keyword == null ? null : "%" + keyword + "%";
+    }
+
+    private Sort evaluationSort(List<EvaluationGridSortOrder> sortOrders) {
+        if (sortOrders == null || sortOrders.isEmpty()) {
+            return Sort.by(Sort.Order.desc("evaluationDate"), Sort.Order.desc("id"));
+        }
+        List<Sort.Order> orders = sortOrders.stream()
+                .map(order -> new Sort.Order(order.direction(), order.field().property()))
+                .collect(java.util.stream.Collectors.toCollection(java.util.ArrayList::new));
+        orders.add(Sort.Order.asc("id"));
+        return Sort.by(orders);
     }
 
     private void applyResult(Booking booking, Applicant applicant, InterviewResult result) {

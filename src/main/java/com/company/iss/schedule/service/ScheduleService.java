@@ -7,11 +7,15 @@ import com.company.iss.auth.service.SecurityService;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.branch.repository.BranchRepository;
 import com.company.iss.schedule.dto.BulkScheduleResult;
+import com.company.iss.schedule.dto.ScheduleGridFilter;
+import com.company.iss.schedule.dto.ScheduleGridSortOrder;
 import com.company.iss.schedule.entity.InterviewMode;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.repository.ScheduleRepository;
 import com.company.iss.shared.exception.BusinessRuleViolationException;
+import com.company.iss.shared.pagination.OffsetLimitPageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +29,8 @@ import java.util.Set;
 
 @Service
 public class ScheduleService {
+
+    private static final int MAX_GRID_PAGE_SIZE = 100;
 
     private final ScheduleRepository scheduleRepository;
     private final BranchRepository branchRepository;
@@ -44,18 +50,42 @@ public class ScheduleService {
     }
 
     @Transactional(readOnly = true)
-    public List<Schedule> search(String keyword) {
+    public List<Schedule> findGridPage(
+            ScheduleGridFilter filter,
+            int offset,
+            int limit,
+            List<ScheduleGridSortOrder> sortOrders
+    ) {
         requireAdmin();
-        if (keyword == null || keyword.isBlank()) {
-            return scheduleRepository.findAll();
-        }
-        String search = keyword.toLowerCase();
-        return scheduleRepository.findAll().stream()
-                .filter(schedule -> schedule.getBranch().getBranchName().toLowerCase().contains(search)
-                        || schedule.getRecruiter().getFullName().toLowerCase().contains(search)
-                        || schedule.getInterviewMode().name().toLowerCase().contains(search)
-                        || schedule.getStatus().name().toLowerCase().contains(search))
-                .toList();
+        validateGridWindow(offset, limit);
+        ScheduleKeywordCriteria criteria = scheduleCriteria(filter);
+        return scheduleRepository.findGridPage(
+                criteria.keywordPattern(),
+                criteria.matchesMode(InterviewMode.ONSITE),
+                criteria.matchesMode(InterviewMode.ONLINE),
+                criteria.matchesMode(InterviewMode.PHONE),
+                criteria.matchesStatus(ScheduleStatus.OPEN),
+                criteria.matchesStatus(ScheduleStatus.FULL),
+                criteria.matchesStatus(ScheduleStatus.CLOSED),
+                criteria.matchesStatus(ScheduleStatus.CANCELLED),
+                new OffsetLimitPageable(offset, limit, scheduleSort(sortOrders))
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public long countGrid(ScheduleGridFilter filter) {
+        requireAdmin();
+        ScheduleKeywordCriteria criteria = scheduleCriteria(filter);
+        return scheduleRepository.countGrid(
+                criteria.keywordPattern(),
+                criteria.matchesMode(InterviewMode.ONSITE),
+                criteria.matchesMode(InterviewMode.ONLINE),
+                criteria.matchesMode(InterviewMode.PHONE),
+                criteria.matchesStatus(ScheduleStatus.OPEN),
+                criteria.matchesStatus(ScheduleStatus.FULL),
+                criteria.matchesStatus(ScheduleStatus.CLOSED),
+                criteria.matchesStatus(ScheduleStatus.CANCELLED)
+        );
     }
 
     @Transactional
@@ -222,6 +252,59 @@ public class ScheduleService {
             throw new AccessDeniedException("Only an active administrator may manage schedules.");
         }
         return actor;
+    }
+
+    private void validateGridWindow(int offset, int limit) {
+        if (offset < 0) {
+            throw new IllegalArgumentException("Grid offset must not be negative.");
+        }
+        if (limit < 1 || limit > MAX_GRID_PAGE_SIZE) {
+            throw new IllegalArgumentException("Grid limit must be between 1 and " + MAX_GRID_PAGE_SIZE + ".");
+        }
+    }
+
+    private ScheduleKeywordCriteria scheduleCriteria(ScheduleGridFilter filter) {
+        ScheduleGridFilter normalized = filter == null ? ScheduleGridFilter.empty() : filter;
+        String keyword = normalized.keyword();
+        if (keyword == null) {
+            return new ScheduleKeywordCriteria(null, Set.of(), Set.of());
+        }
+        Set<InterviewMode> modes = java.util.Arrays.stream(InterviewMode.values())
+                .filter(mode -> mode.name().toLowerCase(java.util.Locale.ROOT).contains(keyword))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        Set<ScheduleStatus> statuses = java.util.Arrays.stream(ScheduleStatus.values())
+                .filter(status -> status.name().toLowerCase(java.util.Locale.ROOT).contains(keyword))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        return new ScheduleKeywordCriteria("%" + keyword + "%", modes, statuses);
+    }
+
+    private Sort scheduleSort(List<ScheduleGridSortOrder> sortOrders) {
+        if (sortOrders == null || sortOrders.isEmpty()) {
+            return Sort.by(
+                    Sort.Order.asc("scheduleDate"),
+                    Sort.Order.asc("startTime"),
+                    Sort.Order.asc("id")
+            );
+        }
+        List<Sort.Order> orders = sortOrders.stream()
+                .map(order -> new Sort.Order(order.direction(), order.field().property()))
+                .collect(java.util.stream.Collectors.toCollection(java.util.ArrayList::new));
+        orders.add(Sort.Order.asc("id"));
+        return Sort.by(orders);
+    }
+
+    private record ScheduleKeywordCriteria(
+            String keywordPattern,
+            Set<InterviewMode> modes,
+            Set<ScheduleStatus> statuses
+    ) {
+        private boolean matchesMode(InterviewMode mode) {
+            return modes.contains(mode);
+        }
+
+        private boolean matchesStatus(ScheduleStatus status) {
+            return statuses.contains(status);
+        }
     }
 
     private Schedule requireScheduleForUpdate(Long scheduleId) {

@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -16,6 +17,62 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
+
+    @EntityGraph(attributePaths = {"branch", "recruiter"})
+    @Query("""
+            select s
+            from Schedule s
+            left join s.branch branch
+            left join s.recruiter recruiter
+            where :keywordPattern is null
+               or lower(branch.branchName) like :keywordPattern
+               or lower(recruiter.fullName) like :keywordPattern
+               or (:matchesOnsite = true and s.interviewMode = com.company.iss.schedule.entity.InterviewMode.ONSITE)
+               or (:matchesOnline = true and s.interviewMode = com.company.iss.schedule.entity.InterviewMode.ONLINE)
+               or (:matchesPhone = true and s.interviewMode = com.company.iss.schedule.entity.InterviewMode.PHONE)
+               or (:matchesOpen = true and s.status = com.company.iss.schedule.entity.ScheduleStatus.OPEN)
+               or (:matchesFull = true and s.status = com.company.iss.schedule.entity.ScheduleStatus.FULL)
+               or (:matchesClosed = true and s.status = com.company.iss.schedule.entity.ScheduleStatus.CLOSED)
+               or (:matchesCancelled = true and s.status = com.company.iss.schedule.entity.ScheduleStatus.CANCELLED)
+            """)
+    List<Schedule> findGridPage(
+            @Param("keywordPattern") String keywordPattern,
+            @Param("matchesOnsite") boolean matchesOnsite,
+            @Param("matchesOnline") boolean matchesOnline,
+            @Param("matchesPhone") boolean matchesPhone,
+            @Param("matchesOpen") boolean matchesOpen,
+            @Param("matchesFull") boolean matchesFull,
+            @Param("matchesClosed") boolean matchesClosed,
+            @Param("matchesCancelled") boolean matchesCancelled,
+            Pageable pageable
+    );
+
+    @Query("""
+            select count(s)
+            from Schedule s
+            left join s.branch branch
+            left join s.recruiter recruiter
+            where :keywordPattern is null
+               or lower(branch.branchName) like :keywordPattern
+               or lower(recruiter.fullName) like :keywordPattern
+               or (:matchesOnsite = true and s.interviewMode = com.company.iss.schedule.entity.InterviewMode.ONSITE)
+               or (:matchesOnline = true and s.interviewMode = com.company.iss.schedule.entity.InterviewMode.ONLINE)
+               or (:matchesPhone = true and s.interviewMode = com.company.iss.schedule.entity.InterviewMode.PHONE)
+               or (:matchesOpen = true and s.status = com.company.iss.schedule.entity.ScheduleStatus.OPEN)
+               or (:matchesFull = true and s.status = com.company.iss.schedule.entity.ScheduleStatus.FULL)
+               or (:matchesClosed = true and s.status = com.company.iss.schedule.entity.ScheduleStatus.CLOSED)
+               or (:matchesCancelled = true and s.status = com.company.iss.schedule.entity.ScheduleStatus.CANCELLED)
+            """)
+    long countGrid(
+            @Param("keywordPattern") String keywordPattern,
+            @Param("matchesOnsite") boolean matchesOnsite,
+            @Param("matchesOnline") boolean matchesOnline,
+            @Param("matchesPhone") boolean matchesPhone,
+            @Param("matchesOpen") boolean matchesOpen,
+            @Param("matchesFull") boolean matchesFull,
+            @Param("matchesClosed") boolean matchesClosed,
+            @Param("matchesCancelled") boolean matchesCancelled
+    );
 
     List<Schedule> findByScheduleDate(LocalDate scheduleDate);
 

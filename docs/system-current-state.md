@@ -301,9 +301,18 @@ The workbench remains recruiter-only, while administrator dashboard behavior is 
 
 ### Grid scalability
 
-Applicant and booking grids now use server-side pagination, database counts, and database filtering. Their queries use deterministic ordering and eager loading of displayed to-one relationships.
+Applicant, booking, schedule, and interview-evaluation grids use server-side pagination, matching
+database counts, database filtering, and stable server-side sorting. The schedule grid keeps its
+existing contains search across branch, recruiter, mode, and status while fetching only the requested
+window. The evaluation grid adds compact keyword, stage, result, and exact-date filters; recruiter
+fetch and count queries are scoped by the applicant's authoritative branch. Both grids request pages
+of 50 rows, cap service requests at 100 rows, preserve non-page-aligned Vaadin offsets, and eagerly
+load only the displayed to-one relationships.
 
-Other management and operational grids have not all been converted to lazy paging; several still load complete result lists and remain a future scalability concern.
+Other management and operational grids have not all been converted to lazy paging. Branch, client,
+position, recruiter, notification-template, hiring-decision, dashboard, and recruiter-workbench grids
+still use bounded or complete list loading and remain future scalability candidates based on measured
+volume.
 
 ## 7. Authentication and account security
 
@@ -432,7 +441,7 @@ Clients, positions, and applicants are demo data. Their loaders require both the
 
 ## 12. Testing and continuous integration
 
-At this snapshot, the clean Java 25 suite contains **369 tests** with:
+At this snapshot, the clean Java 25 suite contains **386 tests** with:
 
 - 0 failures
 - 0 errors
@@ -448,7 +457,8 @@ Coverage includes:
 - Booking capacity, cancellation, rescheduling, attendance, and final-state behavior
 - Evaluation and hiring transitions
 - Asynchronous after-commit notification behavior
-- Applicant and booking grid pagination, filtering, count parity, stable ordering, and branch isolation
+- Applicant, booking, schedule, and evaluation grid pagination, filtering, count parity, stable
+  ordering, relationship fetching, and applicable branch isolation
 - Notification templates/settings and user-safe UI boundaries
 
 GitHub Actions runs `./mvnw clean test` on Ubuntu using Temurin Java 25 and Maven dependency caching
@@ -470,8 +480,11 @@ H2 in MySQL mode is a fast compatibility test; it is not proof that MySQL-specif
 
 ### Scalability and operability gaps
 
-- Only applicant and booking grids currently have server-side pagination and database filtering.
-- Leading-wildcard keyword searches may still become expensive at high volume.
+- Applicant, booking, schedule, and evaluation grids are paged, but branch, client, position,
+  recruiter, notification-template, hiring-decision, dashboard, and recruiter-workbench grids remain
+  unpaged.
+- Contains-style keyword filters use leading wildcards and may still become expensive at high volume;
+  offset pagination may also slow down for very deep result windows.
 - Notification delivery is not durable and can be lost if the process stops after commit but before dispatch.
 - Session invalidation is process-local rather than distributed.
 - No runtime SMS sender exists.
@@ -480,7 +493,8 @@ H2 in MySQL mode is a fast compatibility test; it is not proof that MySQL-specif
 ### Technical debt
 
 - Some existing Spring components still use field or setter injection.
-- Evaluation and other remaining grids still use unpaged list loading.
+- Several remaining administration, hiring, dashboard, and recruiter-workbench grids still use
+  unpaged list loading.
 - Tracked Vaadin-generated frontend artifacts require careful synchronization during builds.
 
 ## 14. Current development priorities
@@ -491,8 +505,8 @@ progression rules are already implemented. Based on the remaining gaps, the next
 
 ### P1
 
-1. Continue server-side pagination and database filtering for the remaining high-volume evaluation,
-   schedule, hiring, and administration grids, prioritized by measured usage.
+1. Continue server-side pagination and database filtering for the remaining high-volume hiring,
+   administration, dashboard, and recruiter-workbench grids, prioritized by measured usage.
 
 ### P2
 

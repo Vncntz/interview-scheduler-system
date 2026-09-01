@@ -9,6 +9,7 @@ import com.company.iss.branch.repository.BranchRepository;
 import com.company.iss.schedule.entity.InterviewMode;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
+import com.company.iss.schedule.dto.ScheduleGridFilter;
 import com.company.iss.schedule.repository.ScheduleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,7 +59,8 @@ class ScheduleServiceSecurityTest {
         when(securityService.requireOperationsUser()).thenReturn(recruiter);
 
         assertAll(
-                () -> assertThrows(AccessDeniedException.class, () -> service.search(null)),
+                () -> assertThrows(AccessDeniedException.class,
+                        () -> service.findGridPage(ScheduleGridFilter.empty(), 0, 50, List.of())),
                 () -> assertThrows(AccessDeniedException.class, () -> service.save(detached)),
                 () -> assertThrows(AccessDeniedException.class, () -> service.activate(10L)),
                 () -> assertThrows(AccessDeniedException.class, () -> service.deactivate(10L)),
