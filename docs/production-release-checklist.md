@@ -9,7 +9,7 @@ not authorize application startup, database migration, credential changes, or no
 - Review the final diff for secrets, debug code, generated frontend noise, and unrelated changes.
 - Take a consistent MySQL backup and prove that it restores into an isolated database.
 - Keep the matching pre-release binary and backup together for recovery.
-- Review `docs/database-migrations.md`, including the V5, V6, and V7 rollback constraints.
+- Review `docs/database-migrations.md`, including the V5 through V8 rollback constraints.
 - Define the maintenance window, write freeze, deployment owner, rollback owner, and stop criteria.
 
 ## 2. Runtime configuration contract
@@ -19,6 +19,11 @@ present; never record its value in release evidence or command output.
 
 - Database: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`.
 - Email credential, when email is required: `SMTP_PASSWORD`.
+- Interview reminders, when explicitly enabled: `INTERVIEW_REMINDERS_ENABLED`, business zone, scan
+  interval, bounded batch/attempt settings, retry delay, and stale-claim timeout.
+- Set the stale-claim timeout comfortably above the total configured SMTP connection, read, and write
+  timeout budget plus expected processing margin. These settings are validated individually; the
+  application does not cross-validate their combined budget.
 - Password reset: `APP_BASE_URL`, `ACCOUNT_RESET_TOKEN_SECRET`.
 - Optional first administrator bootstrap: `ADMIN_EMAIL`, `ADMIN_PASSWORD`; remove both after the
   account is created and require credential rotation.
@@ -36,14 +41,16 @@ data.
 
 - Use an exact, isolated target that cannot route to a developer or production schema.
 - Restore representative pre-release data and verify application/database version compatibility.
-- Rehearse a fresh V1-to-V7 migration and, when upgrading an existing installation, V6-to-V7.
-- Confirm Flyway reports version 7 and every migration checksum validates.
+- Rehearse a fresh V1-to-V8 migration and, when upgrading an existing installation, V7-to-V8.
+- Confirm Flyway reports version 8 and every migration checksum validates.
 - Confirm `notification_settings.smtp_password` and `notification_settings.sms_api_key` are absent.
 - Confirm all `notification_settings.sms_enabled` values are false and non-secret settings remain.
 - Confirm SMTP provider/security backfills, sender-address backfills, and the settings audit table.
 - Confirm the runtime SMTP password is reported as present without displaying it, and verify the
   configured timeout values are appropriate for the environment.
 - Confirm every booking has `interview_stage`, the column is non-null, and no database default remains.
+- Confirm every booking has `reminder_generation`, the column is non-null with no database default,
+  and reminder delivery uniqueness, booking foreign key, and scan/retry indexes exist.
 - Confirm Hibernate schema validation succeeds with the release binary.
 - Run controlled smoke checks with email delivery disabled or replaced by a safe test double. Runtime
   SMS delivery does not exist.
@@ -57,13 +64,16 @@ H2 MySQL mode is useful automated coverage but is not evidence that the MySQL DD
 - Obtain explicit authorization for the exact production target and maintenance window.
 - Stop writes and all but one migration-owning application instance.
 - Reconfirm the restorable backup, matching rollback binary, and runtime secret presence.
-- Start the single approved instance and allow Flyway to migrate through V7.
-- Verify `flyway_schema_history` is successful at version 7 before scaling out.
+- Start the single approved instance and allow Flyway to migrate through V8.
+- Verify `flyway_schema_history` is successful at version 8 before scaling out.
 - Verify the two legacy notification secret columns are absent and SMS is disabled.
 - Verify historical bookings are readable with the conservative `INITIAL` stage backfill.
 - Verify SMTP provider/security metadata, sender addresses, settings audit persistence, and the
   administrator-only connection diagnostic. Send a test email only when that exact recipient and
   external delivery action are approved.
+- Keep interview reminders disabled until schedule timezone semantics, templates, SMTP readiness,
+  bounded retry settings, and the stale-claim-to-SMTP-timeout margin are verified. Enable them as a
+  separately controlled rollout step.
 - Verify Hibernate validation, application readiness, authentication, recruiter branch scope, booking,
   evaluation, hiring, password change, and password reset readiness.
 - Perform at most the specifically approved notification delivery check; do not send test messages to
@@ -73,7 +83,7 @@ H2 MySQL mode is useful automated coverage but is not evidence that the MySQL DD
 
 - If migration or schema state is uncertain, stop. Do not run Flyway clean or repair and do not
   manually recreate dropped columns.
-- A V5/V6/V7 rollback requires the matching pre-migration backup and old binary together. Restoring only one side
+- A V5/V6/V7/V8 rollback requires the matching pre-migration backup and old binary together. Restoring only one side
   leaves the schema and entity mappings incompatible.
 - After a successful rollout, rotate or revoke legacy SMTP/SMS credentials that may have existed in
   the removed columns and apply secret-level retention controls to historic backups.

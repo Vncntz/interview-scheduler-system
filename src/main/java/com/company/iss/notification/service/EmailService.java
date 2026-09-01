@@ -42,37 +42,39 @@ public class EmailService {
 
     @Async
     public void send(String to, String subject, String body) {
-        NotificationSettings settings = notificationSettingsService.getSettings();
         String recipient = maskRecipient(to);
-
-        if (!Boolean.TRUE.equals(settings.getEmailEnabled())) {
+        ReminderNotificationResult result = sendSynchronously(to, subject, body);
+        if (result.disposition() == ReminderNotificationResult.Disposition.SENT) {
+            log.info("[EMAIL] Email sent recipient={}", recipient);
+        } else if ("EMAIL_DISABLED".equals(result.reason())) {
             log.debug("[EMAIL] Email delivery skipped recipient={} reason=EMAIL_DISABLED", recipient);
-            return;
+        } else {
+            logKnownFailure(recipient, result.reason(), detail(result.detailCode()));
         }
+    }
 
+    ReminderNotificationResult sendSynchronously(String to, String subject, String body) {
+        NotificationSettings settings = notificationSettingsService.getSettings();
+        if (!Boolean.TRUE.equals(settings.getEmailEnabled())) {
+            return ReminderNotificationResult.skipped("EMAIL_DISABLED");
+        }
         try {
             validator.requireDeliveryReady(settings);
             validator.validateRecipient(to);
             sendMimeMessage(settings, to, subject, body);
-            log.info("[EMAIL] Email sent recipient={}", recipient);
+            return ReminderNotificationResult.sent();
         } catch (SmtpConfigurationException exception) {
-            logConfigurationFailure(recipient, exception);
+            return configurationResult(exception);
         } catch (MailAuthenticationException exception) {
-            logKnownFailure(
-                    recipient,
-                    "SMTP_AUTHENTICATION_FAILED",
-                    "SMTP credentials are missing or invalid"
-            );
+            return ReminderNotificationResult.retryable("SMTP_AUTHENTICATION_FAILED");
         } catch (MailParseException | MailPreparationException exception) {
-            logKnownFailure(recipient, "INVALID_MESSAGE", "Recipient address or message is invalid");
+            return ReminderNotificationResult.skipped("INVALID_MESSAGE");
         } catch (MailSendException exception) {
-            if (isConnectionFailure(exception)) {
-                logKnownFailure(recipient, "SMTP_CONNECTION_FAILED", "SMTP server is unavailable");
-            } else {
-                logKnownFailure(recipient, "SMTP_SEND_FAILED", "SMTP server could not deliver the message");
-            }
+            return ReminderNotificationResult.retryable(
+                    isConnectionFailure(exception) ? "SMTP_CONNECTION_FAILED" : "SMTP_SEND_FAILED"
+            );
         } catch (MailException exception) {
-            logKnownFailure(recipient, "EMAIL_DELIVERY_FAILED", "Email provider rejected the delivery request");
+            return ReminderNotificationResult.retryable("EMAIL_DELIVERY_FAILED");
         }
     }
 
@@ -131,26 +133,32 @@ public class EmailService {
         return localPart.substring(0, Math.min(2, localPart.length())) + "***@" + domain;
     }
 
-    private void logConfigurationFailure(String recipient, SmtpConfigurationException exception) {
-        String reason;
-        String detail;
-        switch (exception.getFailure()) {
-            case USERNAME_MISSING, PASSWORD_MISSING -> {
-                reason = "SMTP_AUTHENTICATION_FAILED";
-                detail = exception.getFailure() == SmtpConfigurationValidator.Failure.PASSWORD_MISSING
-                        ? "SMTP password is missing"
-                        : "SMTP username is missing";
-            }
-            case RECIPIENT_INVALID -> {
-                reason = "INVALID_RECIPIENT";
-                detail = "Recipient email is missing or invalid";
-            }
-            default -> {
-                reason = "SMTP_CONFIGURATION_INVALID";
-                detail = "SMTP configuration is incomplete or invalid";
-            }
-        }
-        logKnownFailure(recipient, reason, detail);
+    private ReminderNotificationResult configurationResult(SmtpConfigurationException exception) {
+        return switch (exception.getFailure()) {
+            case EMAIL_DISABLED -> ReminderNotificationResult.skipped("EMAIL_DISABLED");
+            case RECIPIENT_INVALID -> ReminderNotificationResult.skipped("INVALID_RECIPIENT");
+            case USERNAME_MISSING -> ReminderNotificationResult.retryable(
+                    "SMTP_AUTHENTICATION_FAILED", "SMTP_USERNAME_MISSING"
+            );
+            case PASSWORD_MISSING -> ReminderNotificationResult.retryable(
+                    "SMTP_AUTHENTICATION_FAILED", "SMTP_PASSWORD_MISSING"
+            );
+            default -> ReminderNotificationResult.retryable("SMTP_CONFIGURATION_INVALID");
+        };
+    }
+
+    private String detail(String reason) {
+        return switch (reason) {
+            case "SMTP_USERNAME_MISSING" -> "SMTP username is missing";
+            case "SMTP_PASSWORD_MISSING" -> "SMTP password is missing";
+            case "SMTP_AUTHENTICATION_FAILED" -> "SMTP credentials are missing or invalid";
+            case "SMTP_CONNECTION_FAILED" -> "SMTP server is unavailable";
+            case "SMTP_SEND_FAILED" -> "SMTP server could not deliver the message";
+            case "INVALID_RECIPIENT" -> "Recipient email is missing or invalid";
+            case "INVALID_MESSAGE" -> "Recipient address or message is invalid";
+            case "SMTP_CONFIGURATION_INVALID" -> "SMTP configuration is incomplete or invalid";
+            default -> "Email provider rejected the delivery request";
+        };
     }
 
     private boolean isConnectionFailure(Throwable exception) {

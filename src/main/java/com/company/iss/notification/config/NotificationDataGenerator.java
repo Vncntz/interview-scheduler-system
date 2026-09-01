@@ -107,6 +107,42 @@ public class NotificationDataGenerator {
                 Thank you.
                 """);
 
+        createTemplateIfMissing(NotificationEvent.INTERVIEW_REMINDER_24H, "Interview Reminder - {{date}} at {{time}}", """
+                Good day {{applicantName}},
+
+                This is a reminder that your {{interviewStage}} interview is scheduled within the next 24 hours.
+
+                Booking Reference: {{bookingReference}}
+                Position: {{position}}
+                Client: {{client}}
+                Interview Date: {{date}}
+                Interview Time: {{time}} ({{timeZone}})
+                Interview Mode: {{interviewMode}}
+                Recruiter: {{recruiter}}
+                Branch: {{branch}}
+                Work Location: {{workLocation}}
+
+                Please contact your recruiter if you need assistance.
+                """);
+
+        createTemplateIfMissing(NotificationEvent.INTERVIEW_REMINDER_2H, "Interview Reminder - Starting at {{time}}", """
+                Good day {{applicantName}},
+
+                Your {{interviewStage}} interview starts within the next 2 hours.
+
+                Booking Reference: {{bookingReference}}
+                Position: {{position}}
+                Client: {{client}}
+                Interview Date: {{date}}
+                Interview Time: {{time}} ({{timeZone}})
+                Interview Mode: {{interviewMode}}
+                Recruiter: {{recruiter}}
+                Branch: {{branch}}
+                Work Location: {{workLocation}}
+
+                Please be ready before the scheduled time.
+                """);
+
         createTemplateIfMissing(NotificationEvent.JOB_OFFERED, "Job Offer - {{position}}", """
                 Good day {{applicantName}},
 

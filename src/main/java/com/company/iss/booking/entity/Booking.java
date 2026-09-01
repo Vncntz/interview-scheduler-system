@@ -44,9 +44,17 @@ public class Booking extends BaseEntity {
     @Column(nullable = false)
     private LocalDateTime bookedDateTime = LocalDateTime.now();
 
+    @Setter(lombok.AccessLevel.NONE)
+    @Column(name = "reminder_generation", nullable = false)
+    private int reminderGeneration;
+
     public static Booking forInterviewStage(InterviewStage interviewStage) {
         Booking booking = new Booking();
         booking.interviewStage = Objects.requireNonNull(interviewStage, "Interview stage is required.");
         return booking;
+    }
+
+    public void advanceReminderGeneration() {
+        reminderGeneration = Math.addExact(reminderGeneration, 1);
     }
 }

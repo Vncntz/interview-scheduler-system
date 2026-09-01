@@ -7,23 +7,31 @@ import com.company.iss.notification.entity.NotificationSettings;
 import com.company.iss.notification.entity.NotificationTemplate;
 import com.company.iss.notification.dto.HiringNotificationContext;
 import com.company.iss.notification.dto.PasswordResetNotificationContext;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.company.iss.notification.dto.InterviewReminderContext;
 import org.springframework.stereotype.Service;
 
 @Service
 public class NotificationService {
 
-    @Autowired
-    private NotificationSettingsService notificationSettingsService;
+    private final NotificationSettingsService notificationSettingsService;
+    private final NotificationTemplateService notificationTemplateService;
+    private final TemplateRenderService templateRenderService;
+    private final EmailService emailService;
+    private final SmtpConfigurationValidator smtpConfigurationValidator;
 
-    @Autowired
-    private NotificationTemplateService notificationTemplateService;
-
-    @Autowired
-    private TemplateRenderService templateRenderService;
-
-    @Autowired
-    private EmailService emailService;
+    public NotificationService(
+            NotificationSettingsService notificationSettingsService,
+            NotificationTemplateService notificationTemplateService,
+            TemplateRenderService templateRenderService,
+            EmailService emailService,
+            SmtpConfigurationValidator smtpConfigurationValidator
+    ) {
+        this.notificationSettingsService = notificationSettingsService;
+        this.notificationTemplateService = notificationTemplateService;
+        this.templateRenderService = templateRenderService;
+        this.emailService = emailService;
+        this.smtpConfigurationValidator = smtpConfigurationValidator;
+    }
 
     public void send(NotificationEvent event, Booking booking) {
         NotificationSettings settings = notificationSettingsService.getSettings();
@@ -87,5 +95,37 @@ public class NotificationService {
                 templateRenderService.render(template.getSubject(), context),
                 templateRenderService.render(template.getBody(), context)
         );
+    }
+
+    public ReminderNotificationResult sendInterviewReminder(InterviewReminderContext context) {
+        NotificationSettings settings = notificationSettingsService.getSettings();
+        if (!Boolean.TRUE.equals(settings.getEmailEnabled())) {
+            return ReminderNotificationResult.skipped("EMAIL_DISABLED");
+        }
+
+        NotificationTemplate template = notificationTemplateService.findTemplate(
+                context.reminderType().notificationEvent(), NotificationChannel.EMAIL
+        );
+        if (template == null) {
+            return ReminderNotificationResult.skipped("TEMPLATE_MISSING");
+        }
+        if (!Boolean.TRUE.equals(template.getActive())) {
+            return ReminderNotificationResult.skipped("TEMPLATE_DISABLED");
+        }
+        try {
+            smtpConfigurationValidator.validateRecipient(context.recipientEmail());
+        } catch (SmtpConfigurationException exception) {
+            return ReminderNotificationResult.skipped("INVALID_RECIPIENT");
+        }
+
+        String subject;
+        String body;
+        try {
+            subject = templateRenderService.render(template.getSubject(), context);
+            body = templateRenderService.render(template.getBody(), context);
+        } catch (RuntimeException exception) {
+            return ReminderNotificationResult.skipped("TEMPLATE_RENDER_FAILED");
+        }
+        return emailService.sendSynchronously(context.recipientEmail(), subject, body);
     }
 }

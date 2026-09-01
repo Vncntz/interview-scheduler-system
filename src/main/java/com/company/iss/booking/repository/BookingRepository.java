@@ -35,6 +35,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     boolean existsByApplicantIdAndStatusIn(Long applicantId, List<BookingStatus> statuses);
 
+    boolean existsByScheduleId(Long scheduleId);
+
     Long countByStatus(BookingStatus status);
 
     Optional<Booking> findByApplicantAndSchedule(Applicant applicant, Schedule schedule);
@@ -106,9 +108,44 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @EntityGraph(attributePaths = {"applicant", "schedule", "schedule.branch", "schedule.recruiter"})
+    @EntityGraph(attributePaths = {
+            "applicant", "applicant.branch", "applicant.positionOpening", "applicant.positionOpening.client",
+            "schedule", "schedule.branch", "schedule.recruiter", "recruiter"
+    })
     @Query("select b from Booking b where b.id = :id")
     Optional<Booking> findByIdForUpdate(@Param("id") Long id);
+
+    @Query("""
+            select b.id
+            from Booking b
+            where b.status in :statuses
+              and b.applicant.active = true
+              and b.applicant.status = com.company.iss.applicant.entity.ApplicantStatus.SCHEDULED
+              and b.applicant.email is not null
+              and trim(b.applicant.email) <> ''
+              and b.schedule.active = true
+              and b.schedule.status <> com.company.iss.schedule.entity.ScheduleStatus.CANCELLED
+              and (b.schedule.scheduleDate > :lowerDate
+                   or (b.schedule.scheduleDate = :lowerDate and b.schedule.startTime > :lowerTime))
+              and (b.schedule.scheduleDate < :upperDate
+                   or (b.schedule.scheduleDate = :upperDate and b.schedule.startTime <= :upperTime))
+              and not exists (
+                  select d.id from InterviewReminderDelivery d
+                  where d.booking = b
+                    and d.reminderGeneration = b.reminderGeneration
+                    and d.reminderType = :reminderType
+              )
+            order by b.schedule.scheduleDate, b.schedule.startTime, b.id
+            """)
+    List<Long> findReminderCandidateIds(
+            @Param("statuses") List<BookingStatus> statuses,
+            @Param("reminderType") com.company.iss.notification.entity.InterviewReminderType reminderType,
+            @Param("lowerDate") LocalDate lowerDate,
+            @Param("lowerTime") LocalTime lowerTime,
+            @Param("upperDate") LocalDate upperDate,
+            @Param("upperTime") LocalTime upperTime,
+            Pageable pageable
+    );
 
     @EntityGraph(attributePaths = {"applicant", "applicant.positionOpening", "schedule", "schedule.branch", "schedule.recruiter"})
     List<Booking> findByScheduleRecruiterIdAndScheduleScheduleDateAndStatusInOrderByScheduleStartTime(

@@ -4,6 +4,7 @@ import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.auth.repository.UserRepository;
 import com.company.iss.auth.service.SecurityService;
+import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.branch.repository.BranchRepository;
 import com.company.iss.schedule.dto.ScheduleGridFilter;
 import com.company.iss.schedule.dto.ScheduleGridSort;
@@ -38,12 +39,15 @@ class ScheduleGridServiceTest {
     @Mock BranchRepository branchRepository;
     @Mock UserRepository userRepository;
     @Mock SecurityService securityService;
+    @Mock BookingRepository bookingRepository;
 
     private ScheduleService service;
 
     @BeforeEach
     void setUp() {
-        service = new ScheduleService(scheduleRepository, branchRepository, userRepository, securityService);
+        service = new ScheduleService(
+                scheduleRepository, branchRepository, userRepository, securityService, bookingRepository
+        );
     }
 
     @Test

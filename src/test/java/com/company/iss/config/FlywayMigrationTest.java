@@ -15,12 +15,12 @@ class FlywayMigrationTest {
     private static final String LOCATIONS = "classpath:db/migration/h2";
 
     @Test
-    void freshSchemaMigratesThroughV7WithoutPersistedNotificationSecrets() throws SQLException {
-        String url = databaseUrl("fresh_v7");
+    void freshSchemaMigratesThroughV8WithoutPersistedNotificationSecrets() throws SQLException {
+        String url = databaseUrl("fresh_v8");
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("7", flyway.info().current().getVersion().getVersion());
+        assertEquals("8", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement();
              var result = statement.executeQuery("""
@@ -55,7 +55,7 @@ class FlywayMigrationTest {
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("7", flyway.info().current().getVersion().getVersion());
+        assertEquals("8", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
             try (var result = statement.executeQuery("""
@@ -83,6 +83,92 @@ class FlywayMigrationTest {
                     """)) {
                 result.next();
                 assertEquals(1, result.getInt(1));
+            }
+        }
+    }
+
+    @Test
+    void v8BackfillsReminderGenerationAndEnforcesDeliveryIdentityAndForeignKey() throws SQLException {
+        String url = databaseUrl("v8_reminder_upgrade");
+        migrate(url, "7");
+
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+             var statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    INSERT INTO branches (
+                        id, active, created_at, updated_at, version, branch_code,
+                        city, province, branch_name, address
+                    ) VALUES (
+                        1, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'REM',
+                        'Manila', 'Metro Manila', 'Reminder Branch', 'Test Address'
+                    )
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO applicants (
+                        id, active, created_at, updated_at, version, mobile_number,
+                        first_name, last_name, email, status, branch_id
+                    ) VALUES (
+                        1, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, '09170000000',
+                        'Reminder', 'Applicant', 'v8-reminder@example.test', 'SCHEDULED', 1
+                    )
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO schedules (
+                        id, active, booked_count, end_time, schedule_date, slot_capacity,
+                        start_time, branch_id, created_at, updated_at, version,
+                        interview_mode, status
+                    ) VALUES (
+                        1, TRUE, 1, '10:00:00', '2026-09-02', 2,
+                        '09:00:00', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
+                        'ONLINE', 'OPEN'
+                    )
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO bookings (
+                        id, applicant_id, booked_date_time, created_at, schedule_id,
+                        updated_at, version, booking_reference, status, interview_stage
+                    ) VALUES (
+                        1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1,
+                        CURRENT_TIMESTAMP, 0, 'BK-V8-REMINDER', 'BOOKED', 'INITIAL'
+                    )
+                    """);
+        }
+
+        Flyway flyway = migrate(url, null);
+        assertEquals("8", flyway.info().current().getVersion().getVersion());
+
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+             var statement = connection.createStatement()) {
+            try (var result = statement.executeQuery("SELECT reminder_generation FROM bookings WHERE id = 1")) {
+                result.next();
+                assertEquals(0, result.getInt(1));
+            }
+            try (var result = statement.executeQuery("""
+                    SELECT IS_NULLABLE, COLUMN_DEFAULT
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = 'BOOKINGS' AND COLUMN_NAME = 'REMINDER_GENERATION'
+                    """)) {
+                result.next();
+                assertEquals("NO", result.getString("IS_NULLABLE"));
+                assertEquals(null, result.getString("COLUMN_DEFAULT"));
+            }
+            statement.executeUpdate(reminderDeliveryInsert(1));
+            assertThrows(SQLException.class, () -> statement.executeUpdate(reminderDeliveryInsert(2)));
+            assertThrows(SQLException.class, () -> statement.executeUpdate("DELETE FROM bookings WHERE id = 1"));
+            statement.executeUpdate("""
+                    INSERT INTO notification_templates (
+                        active, created_at, updated_at, version, subject, body, channel, event
+                    ) VALUES (
+                        TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'Reminder', 'Body',
+                        'EMAIL', 'INTERVIEW_REMINDER_24H'
+                    )
+                    """);
+            try (var result = statement.executeQuery("""
+                    SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES
+                    WHERE INDEX_NAME IN ('IDX_INTERVIEW_REMINDER_RETRY_CLAIM', 'IDX_SCHEDULES_REMINDER_SCAN')
+                    """)) {
+                result.next();
+                assertEquals(2, result.getInt(1));
             }
         }
     }
@@ -136,7 +222,7 @@ class FlywayMigrationTest {
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("7", flyway.info().current().getVersion().getVersion());
+        assertEquals("8", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
             try (var result = statement.executeQuery(
@@ -221,7 +307,7 @@ class FlywayMigrationTest {
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("7", flyway.info().current().getVersion().getVersion());
+        assertEquals("8", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
             try (var result = statement.executeQuery("""
@@ -278,5 +364,17 @@ class FlywayMigrationTest {
                     TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '09170000000', 'Legacy', 'Applicant', '%s', 'NEW', NULL
                 )
                 """.formatted(email);
+    }
+
+    private String reminderDeliveryInsert(long id) {
+        return """
+                INSERT INTO interview_reminder_deliveries (
+                    id, attempt_count, reminder_generation, booking_id, created_at,
+                    scheduled_start_at, updated_at, version, reminder_type, status
+                ) VALUES (
+                    %d, 1, 0, 1, CURRENT_TIMESTAMP,
+                    '2026-09-02 09:00:00', CURRENT_TIMESTAMP, 0, 'REMINDER_24H', 'SENT'
+                )
+                """.formatted(id);
     }
 }

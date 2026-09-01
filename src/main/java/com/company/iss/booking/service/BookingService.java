@@ -360,6 +360,7 @@ public class BookingService {
 
         booking.setSchedule(destinationSchedule);
         booking.setRecruiter(destinationSchedule.getRecruiter());
+        booking.advanceReminderGeneration();
 
         scheduleRepository.saveAll(List.of(sourceSchedule, destinationSchedule));
         Booking saved = bookingRepository.save(booking);

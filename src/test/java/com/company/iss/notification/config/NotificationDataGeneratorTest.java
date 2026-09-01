@@ -108,4 +108,34 @@ class NotificationDataGeneratorTest {
         assertTrue(template.getBody().contains("{{resetLink}}"));
         assertTrue(template.getBody().contains("{{expiresInMinutes}}"));
     }
+
+    @Test
+    void provisionsDistinctReminderTemplatesWithAppointmentContext() {
+        NotificationSettingsRepository settingsRepository = mock(NotificationSettingsRepository.class);
+        NotificationTemplateRepository templateRepository = mock(NotificationTemplateRepository.class);
+        when(settingsRepository.count()).thenReturn(1L);
+        when(templateRepository.existsByEventAndChannel(any(), any())).thenAnswer(invocation -> {
+            NotificationEvent event = invocation.getArgument(0);
+            return event != NotificationEvent.INTERVIEW_REMINDER_24H
+                    && event != NotificationEvent.INTERVIEW_REMINDER_2H;
+        });
+
+        new NotificationDataGenerator(settingsRepository, templateRepository).init();
+
+        ArgumentCaptor<NotificationTemplate> templateCaptor = ArgumentCaptor.forClass(NotificationTemplate.class);
+        verify(templateRepository, times(2)).save(templateCaptor.capture());
+        assertEquals(
+                java.util.List.of(
+                        NotificationEvent.INTERVIEW_REMINDER_24H,
+                        NotificationEvent.INTERVIEW_REMINDER_2H
+                ),
+                templateCaptor.getAllValues().stream().map(NotificationTemplate::getEvent).toList()
+        );
+        assertTrue(templateCaptor.getAllValues().stream().allMatch(template ->
+                template.getBody().contains("{{date}}")
+                        && template.getBody().contains("{{time}}")
+                        && template.getBody().contains("{{timeZone}}")
+                        && template.getBody().contains("{{interviewStage}}")
+        ));
+    }
 }
