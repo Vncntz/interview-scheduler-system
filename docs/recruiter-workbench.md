@@ -1,7 +1,15 @@
 # Secure Recruiter Workbench
 
-The recruiter workbench is available at `/workbench`. Recruiters can only list or mutate applicants,
-bookings, schedules, and evaluations owned by their assigned branch. Administrator access remains global.
+The recruiter workbench is available at `/workbench`. It shows the recruiter's interviews today,
+upcoming assigned interviews, branch-scoped pending confirmations, attendance actions, and overdue
+evaluations. Each row includes the explicit interview stage and a link to the authorized applicant
+profile. Recruiters can only list or mutate operational records within their assigned branch;
+administrator operational access remains global.
+
+The workbench does not yet provide a dedicated follow-up queue for applicants whose completed
+evaluation moved them to `FOR_FINAL_INTERVIEW` or `FOR_CLIENT_INTERVIEW` but who do not yet have the
+next booking. That guided queue is recommended next work; the existing booking service already
+enforces the eligible `FINAL` or `CLIENT` stage when a booking is created.
 
 ## Applicant branch ownership
 

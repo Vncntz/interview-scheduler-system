@@ -20,7 +20,8 @@ Administrator-initiated recruiter resets require all of the following:
 - `APP_BASE_URL`: trusted externally visible HTTPS origin, such as `https://iss.example.com`.
   Loopback HTTP is accepted only for local/test use.
 - `ACCOUNT_RESET_TOKEN_SECRET`: base64-encoded random data containing at least 32 bytes.
-- active email notification settings with complete SMTP host, port, and username.
+- active email notification settings with a provider, security mode, host, port, username, and valid
+  sender address.
 - `SMTP_PASSWORD` supplied to the application process from the approved secret source.
 - an active `PASSWORD_RESET` email template.
 
@@ -38,7 +39,9 @@ The database stores only non-secret notification metadata. The SMTP password is 
 `SMTP_PASSWORD` at runtime and is never displayed or persisted by the notification settings screen.
 Missing SMTP credentials do not prevent application startup, but email cannot be enabled and password
 reset initiation remains unavailable until the runtime secret and non-secret SMTP settings are both
-complete. SMS delivery is not implemented and remains disabled.
+complete. The administrator-only notification settings screen reports runtime-password presence and
+supports an explicit SMTP connection test and test-email action without persisting the credential.
+SMS controls are not exposed; delivery is not implemented and remains disabled.
 
 Rotate the SMTP credential in the external secret source and restart or redeploy every application
 instance that consumes it. Revoke the previous provider credential after the replacement is active
