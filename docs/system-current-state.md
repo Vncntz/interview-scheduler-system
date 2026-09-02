@@ -430,9 +430,12 @@ MySQL runtime migrations and logically equivalent H2 test migrations currently c
 Migration locations:
 
 - Runtime MySQL: `classpath:db/migration/mysql`
-- Automated tests: `classpath:db/migration/h2`
+- Fast/default H2 tests: `classpath:db/migration/h2`
+- Opt-in MySQL Testcontainers tests: `classpath:db/migration/mysql`
 
-Flyway clean is disabled. The production application requires migration version 8, and automated tests assert the expected migrated schema.
+Flyway clean is disabled. The production application requires migration version 8. Default tests assert
+the equivalent H2 schema, while the `mysql-it` Maven profile applies the complete production migration
+chain to a fresh `mysql:8.4.6` container and starts the full context with Hibernate schema validation.
 
 Audit/history state includes hiring decision audit, account security audit, notification settings audit, and booking reschedule history. Their repositories expose explicit append/query APIs, and immutable history records cannot be updated or deleted through generic repository operations.
 
@@ -469,7 +472,7 @@ Clients, positions, and applicants are demo data. Their loaders require both the
 
 ## 12. Testing and continuous integration
 
-At this snapshot, the clean Java 25 suite contains **409 tests** with:
+At this snapshot, the clean Java 25 default H2 suite contains **409 tests** with:
 
 - 0 failures
 - 0 errors
@@ -489,9 +492,15 @@ Coverage includes:
   ordering, relationship fetching, and applicable branch isolation
 - Notification templates/settings and user-safe UI boundaries
 
-GitHub Actions runs `./mvnw clean test` on Ubuntu using Temurin Java 25 and Maven dependency caching
-for every pull request and push to `main`. The workflow uses the isolated H2 configuration; it does
-not currently start MySQL or run a MySQL/Testcontainers migration rehearsal.
+The separate Java 25 MySQL integration gate runs with `./mvnw clean verify -Pmysql-it`. Its six focused
+tests cover fresh V1-through-V8 migration/checksum validation, full-context Hibernate validation, seeded
+V8 reminder enum values, repository mapping with `DATETIME(6)` precision, duplicate delivery identity,
+the booking foreign key, and the two ordered reminder-processing indexes. CI runs the H2 and MySQL gates
+as separate mandatory jobs.
+
+GitHub Actions runs separate Temurin Java 25 jobs for every pull request and push to `main`: the fast
+job executes `./mvnw clean test` against isolated H2, and the MySQL integration job executes
+`./mvnw clean verify -Pmysql-it` with Docker/Testcontainers.
 
 H2 in MySQL mode is a fast compatibility test; it is not proof that MySQL-specific DDL is production-safe. Production migration requires the backup, rehearsal, and authorization process described in [`database-migrations.md`](database-migrations.md) and [`production-release-checklist.md`](production-release-checklist.md).
 

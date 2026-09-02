@@ -1,8 +1,35 @@
 # Database migrations
 
 Flyway owns the application schema. Production uses the MySQL migrations under
-`db/migration/mysql`; automated tests use the equivalent H2 migrations under `db/migration/h2`.
+`db/migration/mysql`; fast/default tests use the equivalent H2 migrations under `db/migration/h2`.
 Hibernate runs with `ddl-auto=validate` and must never be used to repair a production schema.
+
+## Automated database validation
+
+The default Java 25 suite remains Docker-free and uses isolated H2 in MySQL compatibility mode:
+
+```powershell
+.\mvnw.cmd clean test
+```
+
+The opt-in integration profile requires Docker and starts an isolated `mysql:8.4.6` Testcontainer.
+Spring Boot supplies the container JDBC connection through a service connection; the suite never uses
+developer datasource variables or a fixed host port. It applies the production MySQL V1-through-V8
+migrations to an empty schema, validates their checksums and current version, starts the complete Spring
+context with Hibernate `ddl-auto=validate`, and exercises V8's critical reminder mappings, uniqueness,
+foreign key, enum values, microsecond timestamps, and processing indexes:
+
+```powershell
+.\mvnw.cmd clean verify -Pmysql-it
+```
+
+On Unix-like systems, use `./mvnw` in the same commands. The `verify` command runs the fast H2 tests
+before the MySQL Failsafe tests, so it is the complete local database verification gate. Docker being
+unavailable is a test-environment failure; the MySQL suite is not silently skipped.
+
+This fresh-schema Testcontainers gate proves MySQL syntax and schema/mapping compatibility. It does not
+replace an isolated production-sized restoration rehearsal for upgrade-path data, metadata-lock duration,
+disk use, query plans, backup restoration, or rollback evidence.
 
 ## Before rollout
 
