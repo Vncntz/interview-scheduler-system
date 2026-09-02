@@ -15,7 +15,8 @@ Preserve the current package-by-feature modular-monolith design. Prefer focused 
 - Spring Security with Vaadin security integration
 - MySQL in normal runtime environments
 - Flyway for schema migrations, with separate MySQL and H2 dialect migrations
-- H2 in MySQL compatibility mode for automated tests only
+- H2 in MySQL compatibility mode for the fast/default automated tests
+- MySQL 8.4.6 Testcontainers for the opt-in production-migration integration suite
 - Spring Mail for email delivery
 - Spring Boot Actuator and Thymeleaf as present dependencies; neither is a separate application entry point
 - Maven Wrapper (`mvnw` / `mvnw.cmd`)
@@ -98,6 +99,8 @@ Rules:
 - Put cross-cutting Spring configuration in `com.company.iss.config`; feature-specific startup/configuration belongs in the feature's `config` package.
 - `src/main/resources/application.properties` is tracked and defines the runtime MySQL/Flyway contract through environment placeholders.
 - `src/test/resources/application.properties` is tracked and owns the isolated H2/Flyway test configuration.
+- `src/test/resources/application-mysql-it.properties` is tracked and owns the isolated Testcontainers
+  MySQL/Flyway integration-test configuration; it must use container service-connection details.
 - Runtime datasource values come from `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD`. Do not commit real credentials or machine-specific datasource settings.
 - Local `.env` is ignored and may contain real credentials. Never commit, print, quote, or copy its values into reports.
 - Spring Boot does not automatically parse this repository's `.env`. Source it explicitly only for a local runtime launch, and never source it for automated tests.
@@ -162,7 +165,10 @@ Rules:
 ## Database rules
 
 - Flyway is the only schema migration tool for this repository.
-- MySQL runtime migrations belong in `src/main/resources/db/migration/mysql`; tests use logically equivalent migrations from `src/main/resources/db/migration/h2` against isolated H2 in MySQL mode. Never point automated tests at a developer or production database.
+- MySQL runtime migrations belong in `src/main/resources/db/migration/mysql`; default tests use logically
+  equivalent migrations from `src/main/resources/db/migration/h2` against isolated H2 in MySQL mode. The
+  opt-in `mysql-it` profile validates the production migrations against an isolated MySQL Testcontainer.
+  Never point automated tests at a developer or production database.
 - Hibernate uses `spring.jpa.hibernate.ddl-auto=validate` in both environments. It must never create, update, or repair the schema.
 - Never edit an applied migration. Add the next version to both dialect directories and keep constraints, defaults, enum values, indexes, and nullability logically equivalent.
 - The current latest migration is V8, and `contextLoads()` asserts that version.
@@ -259,6 +265,7 @@ The test suite includes service, repository, security, migration, asynchronous-n
 - Tests must be deterministic and must not depend on random seed data, local credentials, or an existing developer database.
 - Bug fixes require a regression test that fails before the fix and passes afterward.
 - Before handing off application changes, run the clean wrapper suite: `./mvnw clean test`.
+- For migration or MySQL-schema compatibility changes, also run `./mvnw clean verify -Pmysql-it` with Docker available.
 - On Windows, confirm the Maven process uses Java 25. Set `JAVA_HOME` and prepend its `bin` to `PATH` for that process only; do not change the POM or global Java installation to work around a local launcher problem.
 - Prefer the normal wrapper when it works. If the PowerShell or Windows wrapper bootstrap fails, invoke `./mvnw clean test` through the installed Git Bash environment.
 - Never source `.env` for tests. Verify that H2 and the H2 Flyway migration location were used without requiring `DB_URL`, `DB_USERNAME`, or `DB_PASSWORD`.

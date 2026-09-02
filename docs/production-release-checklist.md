@@ -6,6 +6,7 @@ not authorize application startup, database migration, credential changes, or no
 ## 1. Release and recovery readiness
 
 - Identify the exact reviewed application commit and confirm the Java 25 clean test suite passed.
+- Confirm the Java 25 `mysql-it` CI job passed against the pinned MySQL Testcontainers image.
 - Review the final diff for secrets, debug code, generated frontend noise, and unrelated changes.
 - Take a consistent MySQL backup and prove that it restores into an isolated database.
 - Keep the matching pre-release binary and backup together for recovery.
@@ -57,7 +58,9 @@ data.
 - Record duration, locks, disk use, errors, and recovery evidence without recording credentials or
   applicant contact data.
 
-H2 MySQL mode is useful automated coverage but is not evidence that the MySQL DDL is production-safe.
+The automated MySQL Testcontainers gate is fresh-schema compatibility evidence. It does not replace this
+production-sized restoration rehearsal, which is still required to assess representative data upgrades,
+metadata locks, duration, disk use, query plans, backup restoration, and rollback readiness.
 
 ## 4. Controlled production migration
 
