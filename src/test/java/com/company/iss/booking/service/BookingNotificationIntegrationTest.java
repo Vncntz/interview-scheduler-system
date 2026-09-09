@@ -10,6 +10,8 @@ import com.company.iss.auth.repository.UserRepository;
 import com.company.iss.auth.service.SecurityService;
 import com.company.iss.booking.entity.Booking;
 import com.company.iss.booking.entity.BookingStatus;
+import com.company.iss.booking.entity.BookingLifecycleAction;
+import com.company.iss.booking.repository.BookingLifecycleHistoryRepository;
 import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.branch.repository.BranchRepository;
@@ -28,7 +30,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +45,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -81,6 +86,9 @@ class BookingNotificationIntegrationTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @MockitoBean
     private NotificationService notificationService;
 
@@ -89,6 +97,9 @@ class BookingNotificationIntegrationTest {
 
     @MockitoBean
     private SecurityService securityService;
+
+    @MockitoSpyBean
+    private BookingLifecycleHistoryRepository lifecycleHistoryRepository;
 
     private User admin;
 
@@ -108,6 +119,7 @@ class BookingNotificationIntegrationTest {
 
     @AfterEach
     void cleanDatabase() {
+        jdbcTemplate.update("delete from booking_lifecycle_history");
         bookingRepository.deleteAll();
         applicantRepository.deleteAll();
         scheduleRepository.deleteAll();
@@ -129,6 +141,7 @@ class BookingNotificationIntegrationTest {
 
         assertTrue(notificationLatch.await(5, TimeUnit.SECONDS));
         assertEquals(BookingStatus.BOOKED, bookingRepository.findById(bookingId).orElseThrow().getStatus());
+        assertEquals(1, lifecycleCount(bookingId, BookingLifecycleAction.BOOKING_CREATED));
         verify(notificationService).send(eq(NotificationEvent.BOOKING_CREATED), any(Booking.class));
     }
 
@@ -144,6 +157,7 @@ class BookingNotificationIntegrationTest {
         });
 
         assertEquals(BookingStatus.BOOKED, bookingRepository.findById(bookingId).orElseThrow().getStatus());
+        assertEquals(0, lifecycleCount(bookingId, BookingLifecycleAction.BOOKING_CONFIRMED));
         verify(notificationService, after(500).never())
                 .send(eq(NotificationEvent.BOOKING_CONFIRMED), any(Booking.class));
     }
@@ -161,6 +175,30 @@ class BookingNotificationIntegrationTest {
 
         assertTrue(attemptedDelivery.await(5, TimeUnit.SECONDS));
         assertEquals(BookingStatus.CONFIRMED, bookingRepository.findById(bookingId).orElseThrow().getStatus());
+        assertEquals(1, lifecycleCount(bookingId, BookingLifecycleAction.BOOKING_CONFIRMED));
+    }
+
+    @Test
+    void lifecyclePersistenceFailureRollsBackConfirmationAndDiscardsNotification() {
+        Long bookingId = createBookedFixture("HISTORY-FAILURE");
+        org.mockito.Mockito.doThrow(new IllegalStateException("forced lifecycle history failure"))
+                .when(lifecycleHistoryRepository).append(any());
+
+        assertThrows(IllegalStateException.class, () -> bookingService.confirm(bookingId));
+
+        assertEquals(BookingStatus.BOOKED, bookingRepository.findById(bookingId).orElseThrow().getStatus());
+        assertEquals(0, lifecycleCount(bookingId, BookingLifecycleAction.BOOKING_CONFIRMED));
+        verify(notificationService, after(500).never())
+                .send(eq(NotificationEvent.BOOKING_CONFIRMED), any(Booking.class));
+    }
+
+    private int lifecycleCount(Long bookingId, BookingLifecycleAction action) {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from booking_lifecycle_history where booking_id = ? and action = ?",
+                Integer.class,
+                bookingId,
+                action.name()
+        );
     }
 
     private CountDownLatch notificationLatch(NotificationEvent event) {

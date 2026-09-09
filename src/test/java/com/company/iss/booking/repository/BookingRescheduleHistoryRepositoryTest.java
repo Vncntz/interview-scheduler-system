@@ -98,6 +98,9 @@ class BookingRescheduleHistoryRepositoryTest {
                 LocalDateTime.now().minusMinutes(5),
                 "Candidate requested another time"
         );
+        LocalDate originalDate = fixture.source().getScheduleDate();
+        fixture.source().setScheduleDate(originalDate.plusDays(10));
+        fixture.destination().setStartTime(LocalTime.of(15, 0));
 
         BookingRescheduleHistory appended = historyRepository.append(history);
         entityManager.flush();
@@ -108,6 +111,13 @@ class BookingRescheduleHistoryRepositoryTest {
         assertNotNull(appended.getCreatedAt());
         assertNotNull(appended.getUpdatedAt());
         assertEquals(appended.getCreatedAt(), appended.getUpdatedAt());
+        assertEquals((short) 1, appended.getSnapshotVersion());
+        assertEquals(originalDate, appended.getSourceAppointmentDate());
+        assertEquals(LocalTime.of(9, 0), appended.getSourceStartTime());
+        assertEquals(LocalTime.of(11, 0), appended.getDestinationStartTime());
+        assertEquals(InterviewMode.ONLINE, appended.getSourceInterviewMode());
+        assertEquals("History Recruiter", appended.getDestinationRecruiterDisplayName());
+        assertEquals("History lifecycle", appended.getSourceBranchDisplayName());
     }
 
     @Test

@@ -9,6 +9,8 @@ import com.company.iss.auth.service.SecurityService;
 import com.company.iss.booking.dto.BookingRescheduleCommand;
 import com.company.iss.booking.dto.CreateBookingCommand;
 import com.company.iss.booking.entity.Booking;
+import com.company.iss.booking.entity.BookingLifecycleAction;
+import com.company.iss.booking.entity.BookingLifecycleHistory;
 import com.company.iss.booking.entity.BookingRescheduleHistory;
 import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.entity.InterviewStage;
@@ -19,6 +21,7 @@ import com.company.iss.booking.event.BookingRescheduledEvent;
 import com.company.iss.booking.exception.BookingCancellationException;
 import com.company.iss.booking.exception.BookingRescheduleException;
 import com.company.iss.booking.repository.BookingRepository;
+import com.company.iss.booking.repository.BookingLifecycleHistoryRepository;
 import com.company.iss.booking.repository.BookingRescheduleHistoryRepository;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
@@ -64,6 +67,8 @@ class BookingServiceTest {
     @Mock
     private BookingRepository bookingRepository;
     @Mock
+    private BookingLifecycleHistoryRepository lifecycleHistoryRepository;
+    @Mock
     private BookingRescheduleHistoryRepository historyRepository;
     @Mock
     private InterviewEvaluationRepository interviewEvaluationRepository;
@@ -85,6 +90,7 @@ class BookingServiceTest {
                 .thenAnswer(invocation -> securityService.getCurrentUser());
         bookingService = new BookingService(
                 bookingRepository,
+                lifecycleHistoryRepository,
                 historyRepository,
                 interviewEvaluationRepository,
                 scheduleRepository,
@@ -121,6 +127,10 @@ class BookingServiceTest {
         Booking created = bookingService.createBooking(300L, 20L, "Remarks");
 
         assertEquals(42L, created.getId());
+        ArgumentCaptor<BookingLifecycleHistory> history = ArgumentCaptor.forClass(BookingLifecycleHistory.class);
+        verify(lifecycleHistoryRepository).append(history.capture());
+        assertEquals(BookingLifecycleAction.BOOKING_CREATED, history.getValue().getAction());
+        assertEquals(BookingStatus.BOOKED, history.getValue().getNewStatus());
         verify(eventPublisher).publishEvent(new BookingCreatedEvent(42L));
     }
 
@@ -338,6 +348,11 @@ class BookingServiceTest {
         bookingService.confirm(42L);
 
         assertEquals(BookingStatus.CONFIRMED, booking.getStatus());
+        ArgumentCaptor<BookingLifecycleHistory> history = ArgumentCaptor.forClass(BookingLifecycleHistory.class);
+        verify(lifecycleHistoryRepository).append(history.capture());
+        assertEquals(BookingLifecycleAction.BOOKING_CONFIRMED, history.getValue().getAction());
+        assertEquals(BookingStatus.BOOKED, history.getValue().getPreviousStatus());
+        assertEquals(BookingStatus.CONFIRMED, history.getValue().getNewStatus());
         verify(eventPublisher).publishEvent(new BookingConfirmedEvent(42L));
     }
 
@@ -826,6 +841,11 @@ class BookingServiceTest {
         assertEquals(ApplicantStatus.SCHEDULED, booking.getApplicant().getStatus());
         verify(scheduleRepository).save(lockedSchedule);
         verify(bookingRepository).save(booking);
+        ArgumentCaptor<BookingLifecycleHistory> history = ArgumentCaptor.forClass(BookingLifecycleHistory.class);
+        verify(lifecycleHistoryRepository).append(history.capture());
+        assertEquals(BookingLifecycleAction.BOOKING_CANCELLED, history.getValue().getAction());
+        assertEquals(BookingStatus.CONFIRMED, history.getValue().getPreviousStatus());
+        assertEquals(BookingStatus.CANCELLED, history.getValue().getNewStatus());
         verify(eventPublisher).publishEvent(new BookingCancelledEvent(10L));
     }
 
@@ -844,6 +864,7 @@ class BookingServiceTest {
         verify(scheduleRepository, never()).findByIdForUpdate(any());
         verify(scheduleRepository, never()).save(any());
         verify(bookingRepository, never()).save(any(Booking.class));
+        verifyNoInteractions(lifecycleHistoryRepository);
         verify(eventPublisher, never()).publishEvent(any());
     }
 

@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +52,7 @@ class BookingCreationConcurrencyIntegrationTest {
     @Autowired ScheduleRepository scheduleRepository;
     @Autowired UserRepository userRepository;
     @Autowired BranchRepository branchRepository;
+    @Autowired JdbcTemplate jdbcTemplate;
 
     @MockitoBean SecurityService securityService;
     @MockitoBean ApplicantAssignmentGuard applicantAssignmentGuard;
@@ -66,6 +68,7 @@ class BookingCreationConcurrencyIntegrationTest {
 
     @AfterEach
     void cleanDatabase() {
+        jdbcTemplate.update("delete from booking_lifecycle_history");
         bookingRepository.deleteAll();
         applicantRepository.deleteAll();
         scheduleRepository.deleteAll();
@@ -96,6 +99,10 @@ class BookingCreationConcurrencyIntegrationTest {
         }
 
         assertEquals(1, bookingRepository.count());
+        assertEquals(1, jdbcTemplate.queryForObject(
+                "select count(*) from booking_lifecycle_history where action = 'BOOKING_CREATED'",
+                Integer.class
+        ));
         assertEquals(ApplicantStatus.SCHEDULED,
                 applicantRepository.findById(applicant.getId()).orElseThrow().getStatus());
         int allocatedCapacity = scheduleRepository.findById(firstSchedule.getId()).orElseThrow().getBookedCount()

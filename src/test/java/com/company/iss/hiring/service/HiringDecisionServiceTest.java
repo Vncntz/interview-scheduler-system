@@ -404,12 +404,10 @@ class HiringDecisionServiceTest {
         booking.setId(40L);
         booking.setApplicant(applicant);
         booking.setStatus(BookingStatus.PASSED);
-        InterviewEvaluation evaluation = new InterviewEvaluation();
+        InterviewEvaluation evaluation = InterviewEvaluation.record(
+                booking, applicant, null, 8, 8, 8, InterviewResult.PASS, null, LocalDateTime.now()
+        );
         evaluation.setId(id);
-        evaluation.setApplicant(applicant);
-        evaluation.setBooking(booking);
-        evaluation.setResult(InterviewResult.PASS);
-        evaluation.setEvaluationDate(LocalDateTime.now());
         return evaluation;
     }
 

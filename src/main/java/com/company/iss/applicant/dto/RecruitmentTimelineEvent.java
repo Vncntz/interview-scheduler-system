@@ -3,6 +3,10 @@ package com.company.iss.applicant.dto;
 public enum RecruitmentTimelineEvent {
     APPLICATION_CREATED,
     INTERVIEW_BOOKED,
+    INTERVIEW_CONFIRMED,
+    INTERVIEW_ATTENDED,
+    INTERVIEW_NO_SHOW,
+    INTERVIEW_CANCELLED,
     INTERVIEW_RESCHEDULED,
     INTERVIEW_EVALUATED,
     JOB_OFFERED,

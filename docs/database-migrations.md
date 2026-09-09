@@ -14,10 +14,11 @@ The default Java 25 suite remains Docker-free and uses isolated H2 in MySQL comp
 
 The opt-in integration profile requires Docker and starts an isolated `mysql:8.4.6` Testcontainer.
 Spring Boot supplies the container JDBC connection through a service connection; the suite never uses
-developer datasource variables or a fixed host port. It applies the production MySQL V1-through-V8
+developer datasource variables or a fixed host port. It applies the production MySQL V1-through-V9
 migrations to an empty schema, validates their checksums and current version, starts the complete Spring
-context with Hibernate `ddl-auto=validate`, and exercises V8's critical reminder mappings, uniqueness,
-foreign key, enum values, microsecond timestamps, and processing indexes:
+context with Hibernate `ddl-auto=validate`, and exercises V8's critical reminder mappings plus V9's
+lifecycle-history mappings, uniqueness, foreign keys, snapshots, enum values, microsecond timestamps,
+and processing indexes:
 
 ```powershell
 .\mvnw.cmd clean verify -Pmysql-it
@@ -81,7 +82,7 @@ return zero rows/counts before V2 is allowed to run.
 ## Fresh database rollout
 
 For an empty database, keep `FLYWAY_BASELINE_ON_MIGRATE` unset (its default is `false`). Start the
-application with normal datasource credentials. Flyway applies V1 through V8 in order, after which
+application with normal datasource credentials. Flyway applies V1 through V9 in order, after which
 Hibernate validates the resulting schema. The fresh schema has `applicants.branch_id NOT NULL`, the
 final hiring decision workflow tables, secure account lifecycle tables, and no persisted notification
 credential columns.
@@ -94,8 +95,8 @@ and has no Flyway history table.
 1. Complete backup, structural comparison, and applicant reconciliation.
 2. For one controlled deployment only, set `FLYWAY_BASELINE_ON_MIGRATE=true` and
    `FLYWAY_BASELINE_VERSION=1`.
-3. Start one application instance. Flyway records version 1 as the baseline and then runs V2 through V8.
-4. Verify `flyway_schema_history` contains the version 1 baseline and successful version 2 through 8 migrations.
+3. Start one application instance. Flyway records version 1 as the baseline and then runs V2 through V9.
+4. Verify `flyway_schema_history` contains the version 1 baseline and successful version 2 through 9 migrations.
 5. Stop the instance, remove the baseline override, and restart with
    `FLYWAY_BASELINE_ON_MIGRATE=false` (or the variable unset) before scaling out.
 
@@ -232,6 +233,33 @@ The MySQL enum alteration, booking backfill/nullability change, and new schedule
 locks or rebuild structures depending on server version and data volume. Record lock time and query-plan
 behavior during rehearsal before enabling the scheduler. Rollback requires restoring the matching pre-V8
 backup and binary; do not drop delivery history while V8 code is running.
+
+## V9 recruitment lifecycle history rollout
+
+V9 creates append-only `booking_lifecycle_history` records for booking creation, confirmation,
+attendance, no-show, and cancellation. Each record stores the actor, status transition, timestamp,
+booking reference, interview stage, and an immutable appointment snapshot. A database unique constraint
+allows each lifecycle action only once per booking, and the booking/timestamp/identity index supports
+deterministic timeline reads.
+
+V9 also adds nullable snapshot columns to `booking_reschedule_history`. New reschedules populate
+`snapshot_version = 1` and both source and destination appointment snapshots. Existing reschedule rows
+remain unchanged with a null snapshot version because their historical appointment details cannot be
+reconstructed reliably from mutable schedules. The application labels those legacy details as unavailable
+instead of presenting current schedule data as historical fact. Existing evaluation rows are preserved;
+the V9 application treats evaluations as append-only without rewriting their schema or data.
+
+Before rollout, rehearse both a fresh V1-to-V9 migration and a V8-to-V9 upgrade against an isolated,
+representative MySQL restoration. Confirm legacy reschedule snapshot columns remain null, new lifecycle
+and reschedule records contain complete snapshots, duplicate lifecycle actions are rejected, foreign keys
+prevent orphan history, Hibernate validation succeeds, and applicant timeline queries use the lifecycle
+index. Table creation and adding the reschedule columns may take metadata locks or rebuild the history
+table depending on its size and MySQL behavior; record lock duration and disk use during rehearsal.
+
+V9 is forward-only. Rolling back to pre-V9 binaries requires restoring the matching pre-V9 backup with
+those binaries. Do not delete lifecycle records, backfill legacy snapshots from current schedules, drop
+the new table or columns while V9 code is running, edit the applied migration, or use Flyway repair to
+hide a mismatch.
 
 ## Failure, rollback, and recovery
 

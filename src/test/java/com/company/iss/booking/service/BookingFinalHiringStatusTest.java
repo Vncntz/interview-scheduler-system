@@ -7,6 +7,7 @@ import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.auth.service.SecurityService;
 import com.company.iss.booking.repository.BookingRepository;
+import com.company.iss.booking.repository.BookingLifecycleHistoryRepository;
 import com.company.iss.booking.repository.BookingRescheduleHistoryRepository;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
@@ -34,6 +35,7 @@ import static org.mockito.Mockito.when;
 class BookingFinalHiringStatusTest {
 
     @Mock BookingRepository bookingRepository;
+    @Mock BookingLifecycleHistoryRepository lifecycleHistoryRepository;
     @Mock BookingRescheduleHistoryRepository historyRepository;
     @Mock InterviewEvaluationRepository evaluationRepository;
     @Mock ScheduleRepository scheduleRepository;
@@ -50,6 +52,7 @@ class BookingFinalHiringStatusTest {
                 .thenAnswer(invocation -> securityService.getCurrentUser());
         service = new BookingService(
                 bookingRepository,
+                lifecycleHistoryRepository,
                 historyRepository,
                 evaluationRepository,
                 scheduleRepository,

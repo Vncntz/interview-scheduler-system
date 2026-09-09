@@ -39,6 +39,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -82,7 +83,7 @@ class HiringDecisionIntegrationTest {
     void cleanDatabase() {
         jdbcTemplate.update("delete from hiring_decision_audits");
         decisionRepository.deleteAll();
-        evaluationRepository.deleteAll();
+        jdbcTemplate.update("delete from interview_evaluations");
         bookingRepository.deleteAll();
         applicantRepository.deleteAll();
         positionRepository.deleteAll();
@@ -244,14 +245,10 @@ class HiringDecisionIntegrationTest {
         booking.setStatus(BookingStatus.PASSED);
         booking = bookingRepository.saveAndFlush(booking);
 
-        InterviewEvaluation evaluation = new InterviewEvaluation();
-        evaluation.setApplicant(applicant);
-        evaluation.setBooking(booking);
-        evaluation.setCommunicationScore(8);
-        evaluation.setTechnicalScore(8);
-        evaluation.setAttitudeScore(8);
-        evaluation.setResult(InterviewResult.PASS);
-        evaluation = evaluationRepository.saveAndFlush(evaluation);
+        InterviewEvaluation evaluation = InterviewEvaluation.record(
+                booking, applicant, null, 8, 8, 8, InterviewResult.PASS, null, LocalDateTime.now()
+        );
+        evaluationRepository.append(evaluation);
         return new CandidateFixture(applicant.getId(), evaluation.getId());
     }
 

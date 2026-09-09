@@ -8,10 +8,13 @@ import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.auth.service.SecurityService;
 import com.company.iss.booking.entity.Booking;
+import com.company.iss.booking.entity.BookingLifecycleAction;
+import com.company.iss.booking.entity.BookingLifecycleHistory;
 import com.company.iss.booking.entity.BookingRescheduleHistory;
 import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.booking.repository.BookingRepository;
+import com.company.iss.booking.repository.BookingLifecycleHistoryRepository;
 import com.company.iss.booking.repository.BookingRescheduleHistoryRepository;
 import com.company.iss.booking.service.BookingStageEligibilityPolicy;
 import com.company.iss.evaluation.entity.InterviewEvaluation;
@@ -24,6 +27,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -41,6 +46,7 @@ public class ApplicantJourneyService {
 
     private final ApplicantRepository applicantRepository;
     private final BookingRepository bookingRepository;
+    private final BookingLifecycleHistoryRepository lifecycleRepository;
     private final BookingRescheduleHistoryRepository rescheduleRepository;
     private final InterviewEvaluationRepository evaluationRepository;
     private final ApplicantHiringJourneyReader hiringJourneyReader;
@@ -50,6 +56,7 @@ public class ApplicantJourneyService {
     public ApplicantJourneyService(
             ApplicantRepository applicantRepository,
             BookingRepository bookingRepository,
+            BookingLifecycleHistoryRepository lifecycleRepository,
             BookingRescheduleHistoryRepository rescheduleRepository,
             InterviewEvaluationRepository evaluationRepository,
             ApplicantHiringJourneyReader hiringJourneyReader,
@@ -57,6 +64,7 @@ public class ApplicantJourneyService {
     ) {
         this.applicantRepository = applicantRepository;
         this.bookingRepository = bookingRepository;
+        this.lifecycleRepository = lifecycleRepository;
         this.rescheduleRepository = rescheduleRepository;
         this.evaluationRepository = evaluationRepository;
         this.hiringJourneyReader = hiringJourneyReader;
@@ -69,6 +77,8 @@ public class ApplicantJourneyService {
         Applicant applicant = requireAuthorizedApplicant(applicantId, actor);
 
         List<Booking> bookings = bookingRepository.findByApplicantIdOrderByBookedDateTimeAscIdAsc(applicantId);
+        List<BookingLifecycleHistory> lifecycleHistory =
+                lifecycleRepository.findByBookingApplicantIdOrderByOccurredAtAscIdAsc(applicantId);
         List<BookingRescheduleHistory> reschedules =
                 rescheduleRepository.findByBookingApplicantIdOrderByRescheduledAtAscIdAsc(applicantId);
         List<InterviewEvaluation> evaluations =
@@ -81,7 +91,7 @@ public class ApplicantJourneyService {
                 summary,
                 state,
                 actions(applicant, state, bookings),
-                timeline(applicant, bookings, reschedules, evaluations, hiring)
+                timeline(applicant, bookings, lifecycleHistory, reschedules, evaluations, hiring)
         );
     }
 
@@ -254,6 +264,7 @@ public class ApplicantJourneyService {
     private List<RecruitmentTimelineItem> timeline(
             Applicant applicant,
             List<Booking> bookings,
+            List<BookingLifecycleHistory> lifecycleHistory,
             List<BookingRescheduleHistory> reschedules,
             List<InterviewEvaluation> evaluations,
             ApplicantHiringJourneyContribution hiring
@@ -262,10 +273,24 @@ public class ApplicantJourneyService {
         add(entries, applicant.getCreatedAt(), 0, applicant.getId(), RecruitmentTimelineEvent.APPLICATION_CREATED,
                 "Application created", applicationDescription(applicant), null);
 
+        Set<Long> bookingsWithCreationHistory = lifecycleHistory.stream()
+                .filter(history -> history.getAction() == BookingLifecycleAction.BOOKING_CREATED)
+                .map(BookingLifecycleHistory::getBooking)
+                .filter(java.util.Objects::nonNull)
+                .map(Booking::getId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
         for (Booking booking : bookings) {
-            add(entries, booking.getBookedDateTime(), 1, booking.getId(), RecruitmentTimelineEvent.INTERVIEW_BOOKED,
-                    booking.getInterviewStage().name() + " interview booked",
-                    bookingDescription(booking), booking.getInterviewStage());
+            if (!bookingsWithCreationHistory.contains(booking.getId())) {
+                add(entries, booking.getBookedDateTime(), 1, booking.getId(), RecruitmentTimelineEvent.INTERVIEW_BOOKED,
+                        booking.getInterviewStage().name() + " interview booked",
+                        bookingDescription(booking), booking.getInterviewStage());
+            }
+        }
+        for (BookingLifecycleHistory history : lifecycleHistory) {
+            RecruitmentTimelineEvent event = lifecycleEvent(history.getAction());
+            add(entries, history.getOccurredAt(), 1, history.getId(), event,
+                    lifecycleTitle(history), lifecycleDescription(history), history.getInterviewStage());
         }
         for (BookingRescheduleHistory history : reschedules) {
             Booking booking = history.getBooking();
@@ -314,10 +339,50 @@ public class ApplicantJourneyService {
     }
 
     private String rescheduleDescription(BookingRescheduleHistory history) {
-        String previous = history.getSourceSchedule() == null ? "Unavailable" : formatSlot(history.getSourceSchedule());
-        String next = history.getDestinationSchedule() == null ? "Unavailable" : formatSlot(history.getDestinationSchedule());
+        if (history.getSnapshotVersion() == null) {
+            return "Appointment details unavailable for legacy reschedule"
+                    + (blank(history.getReason()) ? "" : " · Reason: " + history.getReason());
+        }
+        String previous = formatSnapshot(
+                history.getSourceAppointmentDate(), history.getSourceStartTime(), history.getSourceEndTime(),
+                history.getSourceInterviewMode(), history.getSourceRecruiterDisplayName(),
+                history.getSourceBranchDisplayName()
+        );
+        String next = formatSnapshot(
+                history.getDestinationAppointmentDate(), history.getDestinationStartTime(),
+                history.getDestinationEndTime(), history.getDestinationInterviewMode(),
+                history.getDestinationRecruiterDisplayName(), history.getDestinationBranchDisplayName()
+        );
         return "Previous: " + previous + " · New: " + next
                 + (blank(history.getReason()) ? "" : " · Reason: " + history.getReason());
+    }
+
+    private RecruitmentTimelineEvent lifecycleEvent(BookingLifecycleAction action) {
+        return switch (action) {
+            case BOOKING_CREATED -> RecruitmentTimelineEvent.INTERVIEW_BOOKED;
+            case BOOKING_CONFIRMED -> RecruitmentTimelineEvent.INTERVIEW_CONFIRMED;
+            case ATTENDANCE_RECORDED -> RecruitmentTimelineEvent.INTERVIEW_ATTENDED;
+            case NO_SHOW_RECORDED -> RecruitmentTimelineEvent.INTERVIEW_NO_SHOW;
+            case BOOKING_CANCELLED -> RecruitmentTimelineEvent.INTERVIEW_CANCELLED;
+        };
+    }
+
+    private String lifecycleTitle(BookingLifecycleHistory history) {
+        String subject = history.getInterviewStage() == null ? "Interview" : history.getInterviewStage().name() + " interview";
+        return subject + switch (history.getAction()) {
+            case BOOKING_CREATED -> " booked";
+            case BOOKING_CONFIRMED -> " confirmed";
+            case ATTENDANCE_RECORDED -> " attended";
+            case NO_SHOW_RECORDED -> " marked no-show";
+            case BOOKING_CANCELLED -> " cancelled";
+        };
+    }
+
+    private String lifecycleDescription(BookingLifecycleHistory history) {
+        return "Reference: " + safe(history.getBookingReference()) + " · Appointment: " + formatSnapshot(
+                history.getAppointmentDate(), history.getStartTime(), history.getEndTime(),
+                history.getInterviewMode(), history.getRecruiterDisplayName(), history.getBranchDisplayName()
+        );
     }
 
     private String evaluationDescription(InterviewEvaluation evaluation) {
@@ -344,8 +409,22 @@ public class ApplicantJourneyService {
                 + (blank(event.remarks()) ? "" : (blank(event.actor()) ? "" : " · ") + "Remarks: " + event.remarks());
     }
 
-    private String formatSlot(Schedule schedule) {
-        return LocalDateTime.of(schedule.getScheduleDate(), schedule.getStartTime()).format(SLOT);
+    private String formatSnapshot(
+            LocalDate date,
+            LocalTime startTime,
+            LocalTime endTime,
+            com.company.iss.schedule.entity.InterviewMode mode,
+            String recruiter,
+            String branch
+    ) {
+        if (date == null || startTime == null || endTime == null || mode == null) {
+            return "Unavailable";
+        }
+        String slot = LocalDateTime.of(date, startTime).format(SLOT)
+                + "–" + endTime.format(DateTimeFormatter.ofPattern("h:mm a"));
+        return slot + " · " + mode.name()
+                + (blank(recruiter) ? "" : " · Recruiter: " + recruiter)
+                + (blank(branch) ? "" : " · Branch: " + branch);
     }
 
     private String safe(String value) {

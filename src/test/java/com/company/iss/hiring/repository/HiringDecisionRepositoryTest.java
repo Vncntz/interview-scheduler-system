@@ -63,7 +63,7 @@ class HiringDecisionRepositoryTest {
                 data.applicant(),
                 bookingRepository.save(booking(data.applicant(), "BK-SECOND-DECISION"))
         );
-        secondEvaluation = evaluationRepository.saveAndFlush(secondEvaluation);
+        secondEvaluation = appendAndFlush(secondEvaluation);
         decisionRepository.saveAndFlush(decision(data, data.evaluation()));
 
         InterviewEvaluation persistedSecondEvaluation = secondEvaluation;
@@ -199,7 +199,7 @@ class HiringDecisionRepositoryTest {
         actor = userRepository.save(actor);
 
         Booking booking = bookingRepository.save(booking(applicant, "BK-" + suffix));
-        InterviewEvaluation evaluation = evaluationRepository.saveAndFlush(evaluation(applicant, booking));
+        InterviewEvaluation evaluation = appendAndFlush(evaluation(applicant, booking));
         return new TestData(branch, applicant, position, actor, evaluation);
     }
 
@@ -212,13 +212,14 @@ class HiringDecisionRepositoryTest {
     }
 
     private InterviewEvaluation evaluation(Applicant applicant, Booking booking) {
-        InterviewEvaluation evaluation = new InterviewEvaluation();
-        evaluation.setApplicant(applicant);
-        evaluation.setBooking(booking);
-        evaluation.setCommunicationScore(8);
-        evaluation.setTechnicalScore(9);
-        evaluation.setAttitudeScore(8);
-        evaluation.setResult(InterviewResult.PASS);
+        return InterviewEvaluation.record(
+                booking, applicant, null, 8, 9, 8, InterviewResult.PASS, null, LocalDateTime.now()
+        );
+    }
+
+    private InterviewEvaluation appendAndFlush(InterviewEvaluation evaluation) {
+        evaluationRepository.append(evaluation);
+        entityManager.flush();
         return evaluation;
     }
 

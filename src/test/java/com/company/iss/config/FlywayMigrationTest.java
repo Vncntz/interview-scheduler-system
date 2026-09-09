@@ -15,12 +15,12 @@ class FlywayMigrationTest {
     private static final String LOCATIONS = "classpath:db/migration/h2";
 
     @Test
-    void freshSchemaMigratesThroughV8WithoutPersistedNotificationSecrets() throws SQLException {
-        String url = databaseUrl("fresh_v8");
+    void freshSchemaMigratesThroughV9WithoutPersistedNotificationSecrets() throws SQLException {
+        String url = databaseUrl("fresh_v9");
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("8", flyway.info().current().getVersion().getVersion());
+        assertEquals("9", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement();
              var result = statement.executeQuery("""
@@ -31,6 +31,96 @@ class FlywayMigrationTest {
                      """)) {
             result.next();
             assertEquals(0, result.getInt(1));
+        }
+    }
+
+    @Test
+    void v9AddsLifecycleHistoryAndPreservesLegacyReschedulesWithoutInventedSnapshots() throws SQLException {
+        String url = databaseUrl("v9_lifecycle_upgrade");
+        migrate(url, "8");
+
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+             var statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    INSERT INTO branches (
+                        id, active, created_at, updated_at, version, branch_code,
+                        city, province, branch_name, address
+                    ) VALUES (
+                        1, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'LIFE',
+                        'Manila', 'Metro Manila', 'Lifecycle Branch', 'Test Address'
+                    )
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO users (
+                        id, active, failed_login_attempts, must_change_password, created_at,
+                        updated_at, version, email, full_name, password_hash, role, branch_id
+                    ) VALUES (
+                        1, TRUE, 0, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
+                        'lifecycle-actor@example.test', 'Lifecycle Actor', 'test-only-hash', 'RECRUITER', 1
+                    )
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO applicants (
+                        id, active, created_at, updated_at, version, mobile_number,
+                        first_name, last_name, email, status, branch_id
+                    ) VALUES (
+                        1, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, '09170000000',
+                        'Lifecycle', 'Applicant', 'lifecycle-applicant@example.test', 'SCHEDULED', 1
+                    )
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO schedules (
+                        id, active, booked_count, end_time, schedule_date, slot_capacity,
+                        start_time, branch_id, recruiter_id, created_at, updated_at, version,
+                        interview_mode, status
+                    ) VALUES
+                        (1, TRUE, 0, '10:00:00', '2026-09-10', 2, '09:00:00', 1, 1,
+                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'ONLINE', 'OPEN'),
+                        (2, TRUE, 1, '12:00:00', '2026-09-11', 2, '11:00:00', 1, 1,
+                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'ONSITE', 'OPEN')
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO bookings (
+                        id, applicant_id, booked_date_time, created_at, recruiter_id, schedule_id,
+                        updated_at, version, booking_reference, status, interview_stage, reminder_generation
+                    ) VALUES (
+                        1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 2,
+                        CURRENT_TIMESTAMP, 0, 'BK-V9-LIFECYCLE', 'BOOKED', 'INITIAL', 0
+                    )
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO booking_reschedule_history (
+                        id, actor_id, booking_id, created_at, destination_schedule_id,
+                        rescheduled_at, source_schedule_id, updated_at, version, reason
+                    ) VALUES (
+                        1, 1, 1, CURRENT_TIMESTAMP, 2, CURRENT_TIMESTAMP, 1,
+                        CURRENT_TIMESTAMP, 0, 'Legacy reason'
+                    )
+                    """);
+        }
+
+        Flyway flyway = migrate(url, null);
+
+        assertEquals("9", flyway.info().current().getVersion().getVersion());
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+             var statement = connection.createStatement()) {
+            try (var result = statement.executeQuery("""
+                    SELECT snapshot_version, source_appointment_date, destination_appointment_date
+                    FROM booking_reschedule_history WHERE id = 1
+                    """)) {
+                result.next();
+                assertEquals(null, result.getObject("snapshot_version"));
+                assertEquals(null, result.getObject("source_appointment_date"));
+                assertEquals(null, result.getObject("destination_appointment_date"));
+            }
+            statement.executeUpdate(lifecycleHistoryInsert(1, "BOOKING_CREATED", "BOOKED", null));
+            assertThrows(SQLException.class,
+                    () -> statement.executeUpdate(lifecycleHistoryInsert(2, "BOOKING_CREATED", "BOOKED", null)));
+            assertThrows(SQLException.class,
+                    () -> statement.executeUpdate(lifecycleHistoryInsert(3, "BOOKING_CONFIRMED", "CONFIRMED", null)));
+            assertThrows(SQLException.class,
+                    () -> statement.executeUpdate(lifecycleHistoryInsert(4, "UNKNOWN_ACTION", "BOOKED", null)));
+            assertThrows(SQLException.class, () -> statement.executeUpdate("DELETE FROM bookings WHERE id = 1"));
         }
     }
 
@@ -55,7 +145,7 @@ class FlywayMigrationTest {
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("8", flyway.info().current().getVersion().getVersion());
+        assertEquals("9", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
             try (var result = statement.executeQuery("""
@@ -135,7 +225,7 @@ class FlywayMigrationTest {
         }
 
         Flyway flyway = migrate(url, null);
-        assertEquals("8", flyway.info().current().getVersion().getVersion());
+        assertEquals("9", flyway.info().current().getVersion().getVersion());
 
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
@@ -222,7 +312,7 @@ class FlywayMigrationTest {
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("8", flyway.info().current().getVersion().getVersion());
+        assertEquals("9", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
             try (var result = statement.executeQuery(
@@ -307,7 +397,7 @@ class FlywayMigrationTest {
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("8", flyway.info().current().getVersion().getVersion());
+        assertEquals("9", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
             try (var result = statement.executeQuery("""
@@ -376,5 +466,20 @@ class FlywayMigrationTest {
                     '2026-09-02 09:00:00', CURRENT_TIMESTAMP, 0, 'REMINDER_24H', 'SENT'
                 )
                 """.formatted(id);
+    }
+
+    private String lifecycleHistoryInsert(long id, String action, String newStatus, String previousStatus) {
+        String previousStatusValue = previousStatus == null ? "NULL" : "'" + previousStatus + "'";
+        return """
+                INSERT INTO booking_lifecycle_history (
+                    id, action, appointment_date, end_time, actor_id, booking_id, created_at,
+                    occurred_at, schedule_id, start_time, updated_at, version, booking_reference,
+                    interview_mode, interview_stage, new_status, previous_status
+                ) VALUES (
+                    %d, '%s', '2026-09-11', '12:00:00', 1, 1, CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP, 2, '11:00:00', CURRENT_TIMESTAMP, 0, 'BK-V9-LIFECYCLE',
+                    'ONSITE', 'INITIAL', '%s', %s
+                )
+                """.formatted(id, action, newStatus, previousStatusValue);
     }
 }

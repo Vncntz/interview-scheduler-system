@@ -161,6 +161,8 @@ Rules:
 - Test both dirty-checking immutability and the repository's exposed API.
 - Use `HiringDecisionAudit` and its explicit appender as the current pattern.
 - `BookingRescheduleHistory` follows the explicit append/query repository pattern and must remain free of generic mutation and deletion APIs.
+- `BookingLifecycleHistory` records immutable booking transition and appointment snapshots and follows the same explicit append/query pattern.
+- `InterviewEvaluation` is an append-only business record; create it through its controlled factory and appender rather than exposing generic repository mutation APIs.
 
 ## Database rules
 
@@ -171,7 +173,7 @@ Rules:
   Never point automated tests at a developer or production database.
 - Hibernate uses `spring.jpa.hibernate.ddl-auto=validate` in both environments. It must never create, update, or repair the schema.
 - Never edit an applied migration. Add the next version to both dialect directories and keep constraints, defaults, enum values, indexes, and nullability logically equivalent.
-- The current latest migration is V8, and `contextLoads()` asserts that version.
+- The current latest migration is V9, and `contextLoads()` asserts that version.
 - H2 MySQL mode is a fast compatibility check, not proof that MySQL-specific DDL is safe.
 - Keep `spring.flyway.clean-disabled=true`; never run Flyway clean against a developer, rehearsal, or real database.
 - `baseline-on-migrate` is a one-time controlled rollout option only. Follow `docs/database-migrations.md`; never enable it by default.
