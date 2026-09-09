@@ -9,10 +9,13 @@ import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.auth.service.SecurityService;
 import com.company.iss.booking.entity.Booking;
+import com.company.iss.booking.entity.BookingLifecycleAction;
+import com.company.iss.booking.entity.BookingLifecycleHistory;
 import com.company.iss.booking.entity.BookingRescheduleHistory;
 import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.booking.repository.BookingRepository;
+import com.company.iss.booking.repository.BookingLifecycleHistoryRepository;
 import com.company.iss.booking.repository.BookingRescheduleHistoryRepository;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.client.entity.Client;
@@ -45,6 +48,7 @@ class ApplicantJourneyServiceTest {
 
     @Mock ApplicantRepository applicantRepository;
     @Mock BookingRepository bookingRepository;
+    @Mock BookingLifecycleHistoryRepository lifecycleRepository;
     @Mock BookingRescheduleHistoryRepository rescheduleRepository;
     @Mock InterviewEvaluationRepository evaluationRepository;
     @Mock ApplicantHiringJourneyReader hiringReader;
@@ -55,10 +59,12 @@ class ApplicantJourneyServiceTest {
     @BeforeEach
     void setUp() {
         service = new ApplicantJourneyService(
-                applicantRepository, bookingRepository, rescheduleRepository,
+                applicantRepository, bookingRepository, lifecycleRepository, rescheduleRepository,
                 evaluationRepository, hiringReader, securityService
         );
         lenient().when(bookingRepository.findByApplicantIdOrderByBookedDateTimeAscIdAsc(anyLong()))
+                .thenReturn(List.of());
+        lenient().when(lifecycleRepository.findByBookingApplicantIdOrderByOccurredAtAscIdAsc(anyLong()))
                 .thenReturn(List.of());
         lenient().when(rescheduleRepository.findByBookingApplicantIdOrderByRescheduledAtAscIdAsc(anyLong()))
                 .thenReturn(List.of());
@@ -103,7 +109,7 @@ class ApplicantJourneyServiceTest {
 
         assertThrows(AccessDeniedException.class, () -> service.load(99L));
 
-        verifyNoInteractions(bookingRepository, rescheduleRepository, evaluationRepository, hiringReader);
+        verifyNoInteractions(bookingRepository, lifecycleRepository, rescheduleRepository, evaluationRepository, hiringReader);
     }
 
     @Test
@@ -202,8 +208,6 @@ class ApplicantJourneyServiceTest {
         BookingRescheduleHistory reschedule = mock(BookingRescheduleHistory.class);
         when(reschedule.getId()).thenReturn(25L);
         when(reschedule.getBooking()).thenReturn(finalBooking);
-        when(reschedule.getSourceSchedule()).thenReturn(finalBooking.getSchedule());
-        when(reschedule.getDestinationSchedule()).thenReturn(clientBooking.getSchedule());
         when(reschedule.getRescheduledAt()).thenReturn(sameTime.plusDays(1));
         when(reschedule.getReason()).thenReturn("Interviewer unavailable");
         ApplicantHiringJourneyEvent offered = new ApplicantHiringJourneyEvent(
@@ -257,15 +261,13 @@ class ApplicantJourneyServiceTest {
         Applicant applicant = applicant(ApplicantStatus.SCHEDULED);
         LocalDateTime bookedAt = LocalDateTime.of(2026, 8, 20, 9, 0);
         Booking booking = booking(50L, applicant, InterviewStage.FINAL, BookingStatus.RESCHEDULED, bookedAt);
-        Schedule source = schedule(150L, LocalDate.of(2026, 8, 25), LocalTime.of(10, 0));
         Schedule destination = schedule(151L, LocalDate.of(2026, 8, 27), LocalTime.of(14, 0));
         booking.setSchedule(destination);
 
         BookingRescheduleHistory reschedule = mock(BookingRescheduleHistory.class);
         when(reschedule.getId()).thenReturn(51L);
         when(reschedule.getBooking()).thenReturn(booking);
-        when(reschedule.getSourceSchedule()).thenReturn(source);
-        when(reschedule.getDestinationSchedule()).thenReturn(destination);
+        when(reschedule.getSnapshotVersion()).thenReturn(null);
         when(reschedule.getRescheduledAt()).thenReturn(LocalDateTime.of(2026, 8, 22, 11, 0));
         when(reschedule.getReason()).thenReturn("Interviewer unavailable");
         whenAdmin(applicant);
@@ -286,9 +288,64 @@ class ApplicantJourneyServiceTest {
         var rescheduled = timeline.stream()
                 .filter(item -> item.event() == RecruitmentTimelineEvent.INTERVIEW_RESCHEDULED)
                 .findFirst().orElseThrow();
-        assertTrue(rescheduled.description().contains("Previous: Aug 25, 2026 10:00 AM"));
-        assertTrue(rescheduled.description().contains("New: Aug 27, 2026 2:00 PM"));
+        assertTrue(rescheduled.description().contains("Appointment details unavailable for legacy reschedule"));
+        assertFalse(rescheduled.description().contains("Aug 25, 2026 10:00 AM"));
+        assertFalse(rescheduled.description().contains("Aug 27, 2026 2:00 PM"));
         assertTrue(rescheduled.description().contains("Reason: Interviewer unavailable"));
+    }
+
+    @Test
+    void lifecycleHistorySuppliesCompleteTimelineFromImmutableAppointmentSnapshots() {
+        Applicant applicant = applicant(ApplicantStatus.FAILED);
+        LocalDateTime createdAt = LocalDateTime.of(2026, 8, 20, 8, 0);
+        Booking booking = booking(60L, applicant, InterviewStage.INITIAL, BookingStatus.CANCELLED, createdAt);
+        Schedule schedule = booking.getSchedule();
+        schedule.setScheduleDate(LocalDate.of(2026, 9, 5));
+        schedule.setStartTime(LocalTime.of(14, 0));
+        schedule.setEndTime(LocalTime.of(15, 0));
+        User operationsUser = actor(Role.ADMIN, applicant.getBranch());
+        List<BookingLifecycleHistory> history = List.of(
+                BookingLifecycleHistory.record(booking, schedule, operationsUser,
+                        BookingLifecycleAction.BOOKING_CREATED, null, BookingStatus.BOOKED,
+                        createdAt.plusMinutes(1)),
+                BookingLifecycleHistory.record(booking, schedule, operationsUser,
+                        BookingLifecycleAction.BOOKING_CONFIRMED, BookingStatus.BOOKED,
+                        BookingStatus.CONFIRMED, createdAt.plusMinutes(2)),
+                BookingLifecycleHistory.record(booking, schedule, operationsUser,
+                        BookingLifecycleAction.ATTENDANCE_RECORDED, BookingStatus.CONFIRMED,
+                        BookingStatus.ATTENDED, createdAt.plusMinutes(3)),
+                BookingLifecycleHistory.record(booking, schedule, operationsUser,
+                        BookingLifecycleAction.NO_SHOW_RECORDED, BookingStatus.CONFIRMED,
+                        BookingStatus.NO_SHOW, createdAt.plusMinutes(4)),
+                BookingLifecycleHistory.record(booking, schedule, operationsUser,
+                        BookingLifecycleAction.BOOKING_CANCELLED, BookingStatus.CONFIRMED,
+                        BookingStatus.CANCELLED, createdAt.plusMinutes(5))
+        );
+        schedule.setScheduleDate(LocalDate.of(2027, 1, 1));
+        schedule.setStartTime(LocalTime.of(9, 0));
+        schedule.getRecruiter().setFullName("Changed Recruiter");
+        whenAdmin(applicant);
+        when(bookingRepository.findByApplicantIdOrderByBookedDateTimeAscIdAsc(42L)).thenReturn(List.of(booking));
+        when(lifecycleRepository.findByBookingApplicantIdOrderByOccurredAtAscIdAsc(42L)).thenReturn(history);
+
+        var timeline = service.load(42L).timeline();
+
+        assertEquals(List.of(
+                RecruitmentTimelineEvent.APPLICATION_CREATED,
+                RecruitmentTimelineEvent.INTERVIEW_BOOKED,
+                RecruitmentTimelineEvent.INTERVIEW_CONFIRMED,
+                RecruitmentTimelineEvent.INTERVIEW_ATTENDED,
+                RecruitmentTimelineEvent.INTERVIEW_NO_SHOW,
+                RecruitmentTimelineEvent.INTERVIEW_CANCELLED
+        ), timeline.stream().map(item -> item.event()).toList());
+        assertEquals(1, timeline.stream()
+                .filter(item -> item.event() == RecruitmentTimelineEvent.INTERVIEW_BOOKED)
+                .count());
+        String bookedDescription = timeline.get(1).description();
+        assertTrue(bookedDescription.contains("Sep 5, 2026 2:00 PM"));
+        assertTrue(bookedDescription.contains("Recruiter: Maria Santos"));
+        assertFalse(bookedDescription.contains("Jan 1, 2027"));
+        assertFalse(bookedDescription.contains("Changed Recruiter"));
     }
 
     private void whenAdmin(Applicant applicant) {
@@ -371,18 +428,12 @@ class ApplicantJourneyServiceTest {
     private InterviewEvaluation evaluation(
             Long id, Applicant applicant, Booking booking, LocalDateTime at
     ) {
-        InterviewEvaluation evaluation = new InterviewEvaluation();
-        evaluation.setId(id);
-        evaluation.setApplicant(applicant);
-        evaluation.setBooking(booking);
-        evaluation.setEvaluationDate(at);
-        evaluation.setResult(InterviewResult.PASS);
-        evaluation.setCommunicationScore(8);
-        evaluation.setTechnicalScore(9);
-        evaluation.setAttitudeScore(8);
         User evaluator = new User();
         evaluator.setFullName("Maria Santos");
-        evaluation.setEvaluator(evaluator);
+        InterviewEvaluation evaluation = InterviewEvaluation.record(
+                booking, applicant, evaluator, 8, 9, 8, InterviewResult.PASS, null, at
+        );
+        evaluation.setId(id);
         return evaluation;
     }
 }

@@ -9,6 +9,8 @@ import com.company.iss.auth.service.SecurityService;
 import com.company.iss.booking.dto.BookingRescheduleCommand;
 import com.company.iss.booking.dto.CreateBookingCommand;
 import com.company.iss.booking.entity.Booking;
+import com.company.iss.booking.entity.BookingLifecycleAction;
+import com.company.iss.booking.entity.BookingLifecycleHistory;
 import com.company.iss.booking.entity.BookingRescheduleHistory;
 import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.entity.InterviewStage;
@@ -20,6 +22,7 @@ import com.company.iss.booking.event.BookingRescheduledEvent;
 import com.company.iss.booking.exception.BookingCancellationException;
 import com.company.iss.booking.exception.BookingRescheduleException;
 import com.company.iss.booking.repository.BookingRepository;
+import com.company.iss.booking.repository.BookingLifecycleHistoryRepository;
 import com.company.iss.booking.repository.BookingRescheduleHistoryRepository;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
 import com.company.iss.schedule.entity.Schedule;
@@ -53,6 +56,7 @@ public class BookingService {
     private static final int MAX_GRID_PAGE_SIZE = 100;
 
     private final BookingRepository bookingRepository;
+    private final BookingLifecycleHistoryRepository bookingLifecycleHistoryRepository;
     private final BookingRescheduleHistoryRepository bookingRescheduleHistoryRepository;
     private final InterviewEvaluationRepository interviewEvaluationRepository;
     private final ScheduleRepository scheduleRepository;
@@ -63,6 +67,7 @@ public class BookingService {
 
     public BookingService(
             BookingRepository bookingRepository,
+            BookingLifecycleHistoryRepository bookingLifecycleHistoryRepository,
             BookingRescheduleHistoryRepository bookingRescheduleHistoryRepository,
             InterviewEvaluationRepository interviewEvaluationRepository,
             ScheduleRepository scheduleRepository,
@@ -71,6 +76,7 @@ public class BookingService {
             ApplicationEventPublisher applicationEventPublisher
     ) {
         this.bookingRepository = bookingRepository;
+        this.bookingLifecycleHistoryRepository = bookingLifecycleHistoryRepository;
         this.bookingRescheduleHistoryRepository = bookingRescheduleHistoryRepository;
         this.interviewEvaluationRepository = interviewEvaluationRepository;
         this.scheduleRepository = scheduleRepository;
@@ -165,7 +171,7 @@ public class BookingService {
                 : bookingStageEligibilityPolicy.validateRequestedStage(
                         applicant.getStatus(), mostRecentBooking, requestedStage
                 );
-        return createBookingInternal(applicant, schedule, interviewStage, remarks);
+        return createBookingInternal(applicant, schedule, interviewStage, remarks, actor);
     }
 
     @Deprecated(forRemoval = false)
@@ -194,9 +200,11 @@ public class BookingService {
             Applicant applicant,
             Schedule schedule,
             InterviewStage interviewStage,
-            String remarks
+            String remarks,
+            User actor
     ) {
         validateBooking(applicant, schedule);
+        LocalDateTime occurredAt = LocalDateTime.now();
 
         Booking booking = Booking.forInterviewStage(interviewStage);
 
@@ -205,7 +213,7 @@ public class BookingService {
         booking.setRecruiter(schedule.getRecruiter());
         booking.setRemarks(remarks);
         booking.setStatus(BookingStatus.BOOKED);
-        booking.setBookedDateTime(LocalDateTime.now());
+        booking.setBookedDateTime(occurredAt);
         booking.setBookingReference(generateBookingReference());
 
         schedule.setBookedCount(schedule.getBookedCount() + 1);
@@ -219,6 +227,15 @@ public class BookingService {
         applicantService.updateStatus(applicant, ApplicantStatus.SCHEDULED);
 
         Booking saved = bookingRepository.save(booking);
+        bookingLifecycleHistoryRepository.append(BookingLifecycleHistory.record(
+                saved,
+                schedule,
+                actor,
+                BookingLifecycleAction.BOOKING_CREATED,
+                null,
+                BookingStatus.BOOKED,
+                occurredAt
+        ));
 
         log.info(
                 "[BOOKING] Booking created bookingId={} applicantId={} scheduleId={} interviewStage={}",
@@ -243,6 +260,15 @@ public class BookingService {
         booking.setStatus(BookingStatus.ATTENDED);
         booking.getApplicant().setStatus(ApplicantStatus.INTERVIEWED);
         bookingRepository.save(booking);
+        bookingLifecycleHistoryRepository.append(BookingLifecycleHistory.record(
+                booking,
+                booking.getSchedule(),
+                actor,
+                BookingLifecycleAction.ATTENDANCE_RECORDED,
+                BookingStatus.CONFIRMED,
+                BookingStatus.ATTENDED,
+                LocalDateTime.now()
+        ));
         log.info("[BOOKING] Booking marked attended bookingId={}", booking.getId());
     }
 
@@ -255,6 +281,15 @@ public class BookingService {
         }
         booking.setStatus(BookingStatus.NO_SHOW);
         bookingRepository.save(booking);
+        bookingLifecycleHistoryRepository.append(BookingLifecycleHistory.record(
+                booking,
+                booking.getSchedule(),
+                actor,
+                BookingLifecycleAction.NO_SHOW_RECORDED,
+                BookingStatus.CONFIRMED,
+                BookingStatus.NO_SHOW,
+                LocalDateTime.now()
+        ));
         log.info("[BOOKING] Booking marked no-show bookingId={}", booking.getId());
     }
 
@@ -345,7 +380,8 @@ public class BookingService {
         authorizeSchedule(actor, sourceSchedule);
         authorizeSchedule(actor, destinationSchedule);
         validateApplicantScheduleBranch(booking.getApplicant(), destinationSchedule);
-        validateDestination(destinationSchedule, LocalDateTime.now());
+        LocalDateTime occurredAt = LocalDateTime.now();
+        validateDestination(destinationSchedule, occurredAt);
         validateSourceCapacity(sourceSchedule);
 
         sourceSchedule.setBookedCount(sourceSchedule.getBookedCount() - 1);
@@ -369,7 +405,7 @@ public class BookingService {
                 sourceSchedule,
                 destinationSchedule,
                 actor,
-                LocalDateTime.now(),
+                occurredAt,
                 command.reason().trim()
         ));
 
@@ -426,10 +462,20 @@ public class BookingService {
             schedule.setStatus(ScheduleStatus.OPEN);
         }
 
+        BookingStatus previousStatus = booking.getStatus();
         booking.setStatus(BookingStatus.CANCELLED);
 
         scheduleRepository.save(schedule);
         Booking saved = bookingRepository.save(booking);
+        bookingLifecycleHistoryRepository.append(BookingLifecycleHistory.record(
+                saved,
+                schedule,
+                actor,
+                BookingLifecycleAction.BOOKING_CANCELLED,
+                previousStatus,
+                BookingStatus.CANCELLED,
+                LocalDateTime.now()
+        ));
         applicationEventPublisher.publishEvent(new BookingCancelledEvent(saved.getId()));
 
         log.info(
@@ -601,6 +647,15 @@ public class BookingService {
         booking.setStatus(BookingStatus.CONFIRMED);
 
         Booking saved = bookingRepository.save(booking);
+        bookingLifecycleHistoryRepository.append(BookingLifecycleHistory.record(
+                saved,
+                saved.getSchedule(),
+                actor,
+                BookingLifecycleAction.BOOKING_CONFIRMED,
+                BookingStatus.BOOKED,
+                BookingStatus.CONFIRMED,
+                LocalDateTime.now()
+        ));
 
         log.info("[BOOKING] Booking confirmed bookingId={}", saved.getId());
 

@@ -1,6 +1,6 @@
 # Interview Scheduler System — Current State
 
-> Snapshot date: 2026-09-01
+> Snapshot date: 2026-09-07
 >
 > Repository reference: the commit containing this document
 >
@@ -21,11 +21,14 @@ The system currently provides:
 - Cancellation and rescheduling with history records.
 - Attendance, no-show, evaluation, offer, hire, decline, and withdrawal transitions.
 - Account lockout, mandatory password changes, administrator-initiated password resets, session invalidation, and security audit records.
-- Best-effort email notifications delivered after successful business transactions.
-- Flyway-managed MySQL schema migrations and an isolated H2 test environment.
-- GitHub Actions continuous integration running the clean Maven test suite on Java 25.
+- Best-effort email notifications delivered after successful business transactions, plus scheduled,
+  generation-aware 24-hour and 2-hour interview reminders with bounded retry tracking.
+- Flyway-managed MySQL schema migrations, an isolated H2 fast-test environment, and real MySQL 8.4.6
+  Testcontainers migration and Hibernate-validation coverage.
+- GitHub Actions continuous integration running separate Java 25 H2 and MySQL validation jobs.
 
-The application does not currently provide applicant self-service, scheduled interview reminders, SMS delivery, durable notification retries, or a remote REST API.
+The application does not currently provide applicant self-service, SMS delivery, a general durable
+notification outbox for all event types, or a remote REST API.
 
 ## 2. Technology baseline
 
@@ -36,10 +39,10 @@ The application does not currently provide applicant self-service, scheduled int
 | UI | Vaadin Flow 25.1.5, Aura theme |
 | Persistence | Spring Data JPA and Hibernate |
 | Runtime database | MySQL |
-| Test database | H2 in MySQL compatibility mode |
+| Test databases | H2 in MySQL compatibility mode; opt-in MySQL 8.4.6 Testcontainers |
 | Schema management | Flyway, with separate MySQL and H2 migration sets |
 | Security | Spring Security with Vaadin security integration |
-| Notifications | Spring Mail with asynchronous in-process delivery |
+| Notifications | Spring Mail with asynchronous event delivery and scheduled interview reminders |
 | Build | Maven Wrapper |
 | CI | GitHub Actions on pull requests and pushes to `main` |
 | Supporting dependencies | Spring Validation, Actuator, Thymeleaf, Lombok |
@@ -157,7 +160,13 @@ The applicant grid links to a dedicated profile that combines an applicant summa
 
 The current/next interview stage is derived from the applicant status, the current booking, and the central booking-stage eligibility policy. The booking's immutable `interviewStage` remains the historical source. Current appointments include active `BOOKED`, `CONFIRMED`, or legacy `RESCHEDULED` bookings on an active, non-cancelled schedule; cancelled and no-show bookings are never displayed as current appointments. Hiring quick actions use the same passed applicant/booking/evaluation eligibility predicate as the hiring workflow. Mutation actions reuse the existing booking and evaluation dialogs or navigate to the booking/hiring workspaces, whose services reauthorize and revalidate every operation.
 
-The timeline uses only timestamps already reliable in the domain: `Applicant.createdAt`, `Booking.bookedDateTime`, `BookingRescheduleHistory.rescheduledAt`, `InterviewEvaluation.evaluationDate`, and immutable `HiringDecisionAudit.occurredAt`. It does not fabricate dated confirmation, cancellation, attendance, or no-show events because those transitions currently have no dedicated persisted timestamp. Booking-created events show only their immutable stage and booking reference rather than treating the mutable current `Booking.schedule` as the original slot. Reschedule history identifies the source and destination schedule records, but schedule slot fields are mutable and are therefore not immutable historical snapshots.
+The timeline uses reliable persisted timestamps from the applicant, append-only booking lifecycle and
+reschedule histories, evaluations, and immutable hiring decision audits. New booking creation,
+confirmation, attendance, no-show, and cancellation records preserve the status transition, actor,
+interview stage, booking reference, and appointment snapshot. New reschedules preserve immutable source
+and destination appointment snapshots. Pre-V9 bookings fall back to their booking timestamp, while
+legacy reschedules are explicitly shown with unavailable appointment details rather than presenting
+mutable current schedule data as historical fact.
 
 The recruiter workbench includes the explicit interview stage and a link to the same authorized applicant profile.
 
@@ -426,6 +435,7 @@ MySQL runtime migrations and logically equivalent H2 test migrations currently c
 | V6 | Add and backfill the required booking interview stage |
 | V7 | Add SMTP provider/security/sender metadata and notification-settings audit history |
 | V8 | Add generation-aware, duplicate-safe scheduled interview reminder delivery tracking |
+| V9 | Add immutable booking lifecycle history and reschedule appointment snapshots |
 
 Migration locations:
 
@@ -433,11 +443,14 @@ Migration locations:
 - Fast/default H2 tests: `classpath:db/migration/h2`
 - Opt-in MySQL Testcontainers tests: `classpath:db/migration/mysql`
 
-Flyway clean is disabled. The production application requires migration version 8. Default tests assert
+Flyway clean is disabled. The production application requires migration version 9. Default tests assert
 the equivalent H2 schema, while the `mysql-it` Maven profile applies the complete production migration
 chain to a fresh `mysql:8.4.6` container and starts the full context with Hibernate schema validation.
 
-Audit/history state includes hiring decision audit, account security audit, notification settings audit, and booking reschedule history. Their repositories expose explicit append/query APIs, and immutable history records cannot be updated or deleted through generic repository operations.
+Audit/history state includes booking lifecycle and reschedule history, append-only interview evaluations,
+hiring decision audit, account security audit, and notification settings audit. Their repositories expose
+explicit append/query APIs, and immutable business records cannot be updated or deleted through generic
+repository operations.
 
 ## 10. Runtime configuration
 
@@ -492,11 +505,11 @@ Coverage includes:
   ordering, relationship fetching, and applicable branch isolation
 - Notification templates/settings and user-safe UI boundaries
 
-The separate Java 25 MySQL integration gate runs with `./mvnw clean verify -Pmysql-it`. Its six focused
-tests cover fresh V1-through-V8 migration/checksum validation, full-context Hibernate validation, seeded
+The separate Java 25 MySQL integration gate runs with `./mvnw clean verify -Pmysql-it`. Its seven focused
+tests cover fresh V1-through-V9 migration/checksum validation, full-context Hibernate validation, seeded
 V8 reminder enum values, repository mapping with `DATETIME(6)` precision, duplicate delivery identity,
-the booking foreign key, and the two ordered reminder-processing indexes. CI runs the H2 and MySQL gates
-as separate mandatory jobs.
+foreign keys, ordered reminder-processing indexes, and V9 lifecycle identity, transition, snapshot, and
+timeline-index constraints. CI runs the H2 and MySQL gates as separate mandatory jobs.
 
 GitHub Actions runs separate Temurin Java 25 jobs for every pull request and push to `main`: the fast
 job executes `./mvnw clean test` against isolated H2, and the MySQL integration job executes
@@ -535,29 +548,31 @@ H2 in MySQL mode is a fast compatibility test; it is not proof that MySQL-specif
 
 ## 14. Current development priorities
 
-The P0 documentation/state alignment is complete in this snapshot. Booking reschedule history is
-already protected by its explicit append/query repository API, and interview-stage eligibility and
-progression rules are already implemented. Based on the remaining gaps, the next priorities are:
+Booking and reschedule lifecycle history, interview-stage eligibility and progression, scheduled
+interview reminders, and real MySQL migration validation are implemented. Based on the remaining
+operational gaps, the next priorities are:
 
 ### P1
 
-1. Continue server-side pagination and database filtering for the remaining high-volume hiring,
-   administration, dashboard, and recruiter-workbench grids, prioritized by measured usage.
+1. Build SLA-aware final/client follow-up on reliable lifecycle timestamps, including configurable
+   targets, overdue prioritization, branch-scoped workload counts, and pagination.
+2. Define the HR/privacy policy for interview-result communications before adding a seeded
+   `INTERVIEW_RESULT` template or automated delivery workflow.
 
 ### P2
 
-2. Add isolated MySQL Testcontainers/Flyway migration validation to CI; keep the H2 suite as the fast
-   compatibility layer.
+3. Continue server-side pagination and database filtering for remaining high-volume hiring,
+   recruiter-workbench, dashboard, and administration grids, prioritized by measured usage.
+4. Add an administrator-facing reminder-delivery health view only after defining safe diagnostics and
+   permitted retry or remediation actions.
 
-### P3
+### Later or conditional
 
-3. Introduce a durable notification outbox and retry mechanism only if the business requires delivery
-   guarantees beyond the current best-effort model.
-
-### Later
-
-4. Design applicant identity, provisioning, authorization, and record-ownership rules before enabling
-   any applicant-facing portal or self-service workflow.
+5. Design applicant identity, provisioning, authorization, privacy, recovery, and record ownership
+   before enabling a narrowly scoped applicant-facing appointment workflow.
+6. Introduce a general durable notification outbox only if the business requires delivery guarantees
+   beyond current best-effort event email and reminder-specific recovery behavior.
+7. Introduce shared session/revocation infrastructure only when multi-instance deployment is planned.
 
 ## 15. Related documentation
 

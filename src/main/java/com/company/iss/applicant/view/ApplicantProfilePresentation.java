@@ -145,6 +145,10 @@ final class ApplicantProfilePresentation {
         return switch (event) {
             case APPLICATION_CREATED -> "Application Created";
             case INTERVIEW_BOOKED -> "Interview Booked";
+            case INTERVIEW_CONFIRMED -> "Interview Confirmed";
+            case INTERVIEW_ATTENDED -> "Interview Attended";
+            case INTERVIEW_NO_SHOW -> "Interview No Show";
+            case INTERVIEW_CANCELLED -> "Interview Cancelled";
             case INTERVIEW_RESCHEDULED -> "Interview Rescheduled";
             case INTERVIEW_EVALUATED -> "Interview Evaluated";
             case JOB_OFFERED -> "Job Offer Issued";
@@ -160,7 +164,8 @@ final class ApplicantProfilePresentation {
         }
         return switch (event) {
             case APPLICATION_CREATED -> "application";
-            case INTERVIEW_BOOKED, INTERVIEW_RESCHEDULED -> "interview";
+            case INTERVIEW_BOOKED, INTERVIEW_CONFIRMED, INTERVIEW_ATTENDED,
+                    INTERVIEW_NO_SHOW, INTERVIEW_CANCELLED, INTERVIEW_RESCHEDULED -> "interview";
             case INTERVIEW_EVALUATED -> "evaluation";
             case JOB_OFFERED, HIRED, OFFER_DECLINED, WITHDRAWN -> "hiring";
         };

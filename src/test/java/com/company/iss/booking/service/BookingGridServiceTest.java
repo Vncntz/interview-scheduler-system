@@ -7,6 +7,7 @@ import com.company.iss.auth.service.SecurityService;
 import com.company.iss.booking.dto.BookingGridFilter;
 import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.repository.BookingRepository;
+import com.company.iss.booking.repository.BookingLifecycleHistoryRepository;
 import com.company.iss.booking.repository.BookingRescheduleHistoryRepository;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
@@ -32,6 +33,7 @@ import static org.mockito.Mockito.when;
 class BookingGridServiceTest {
 
     @Mock BookingRepository bookingRepository;
+    @Mock BookingLifecycleHistoryRepository lifecycleHistoryRepository;
     @Mock BookingRescheduleHistoryRepository historyRepository;
     @Mock InterviewEvaluationRepository evaluationRepository;
     @Mock ScheduleRepository scheduleRepository;
@@ -45,6 +47,7 @@ class BookingGridServiceTest {
     void setUp() {
         service = new BookingService(
                 bookingRepository,
+                lifecycleHistoryRepository,
                 historyRepository,
                 evaluationRepository,
                 scheduleRepository,

@@ -31,12 +31,18 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.repository.CrudRepository;
 
+import java.lang.reflect.Field;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -156,24 +162,74 @@ class InterviewEvaluationRepositoryTest {
         booking.setStatus(BookingStatus.ATTENDED);
         booking = bookingRepository.saveAndFlush(booking);
 
-        evaluationRepository.saveAndFlush(evaluation(booking, "first"));
+        appendAndFlush(evaluation(booking, "first"));
 
         Booking persistedBooking = booking;
         assertThrows(
                 DataIntegrityViolationException.class,
-                () -> evaluationRepository.saveAndFlush(evaluation(persistedBooking, "second"))
+                () -> appendAndFlush(evaluation(persistedBooking, "second"))
         );
     }
 
+    @Test
+    void persistedEvaluationAndInheritedLifecycleStateAreIgnoredByDirtyChecking()
+            throws ReflectiveOperationException {
+        Booking booking = new Booking();
+        booking.setBookingReference("BK-IMMUTABLE-EVAL");
+        booking.setStatus(BookingStatus.ATTENDED);
+        booking = bookingRepository.saveAndFlush(booking);
+        InterviewEvaluation evaluation = appendAndFlush(evaluation(booking, "Original remarks"));
+        entityManager.clear();
+
+        InterviewEvaluation persisted = evaluationRepository.findDetailedById(evaluation.getId()).orElseThrow();
+        LocalDateTime originalCreatedAt = persisted.getCreatedAt();
+        LocalDateTime originalUpdatedAt = persisted.getUpdatedAt();
+        Long originalVersion = persisted.getVersion();
+        Field remarks = InterviewEvaluation.class.getDeclaredField("remarks");
+        remarks.setAccessible(true);
+        remarks.set(persisted, "Tampered remarks");
+        persisted.setCreatedAt(originalCreatedAt.minusDays(1));
+        persisted.setUpdatedAt(originalUpdatedAt.plusDays(1));
+        persisted.setVersion(originalVersion + 1);
+        entityManager.flush();
+        entityManager.clear();
+
+        InterviewEvaluation reloaded = evaluationRepository.findDetailedById(evaluation.getId()).orElseThrow();
+        assertEquals("Original remarks", reloaded.getRemarks());
+        assertEquals(originalCreatedAt, reloaded.getCreatedAt());
+        assertEquals(originalUpdatedAt, reloaded.getUpdatedAt());
+        assertEquals(originalVersion, reloaded.getVersion());
+    }
+
+    @Test
+    void appendRejectsNullAndAssignedIdentityAndRepositoryExposesNoCrudMutationApi() {
+        assertThrows(NullPointerException.class, () -> evaluationRepository.append(null));
+        Booking booking = new Booking();
+        booking.setBookingReference("BK-EVAL-CONTRACT");
+        booking.setStatus(BookingStatus.ATTENDED);
+        booking = bookingRepository.saveAndFlush(booking);
+        InterviewEvaluation evaluation = evaluation(booking, "Contract");
+        evaluation.setId(99L);
+
+        InvalidDataAccessApiUsageException exception = assertThrows(
+                InvalidDataAccessApiUsageException.class,
+                () -> evaluationRepository.append(evaluation)
+        );
+        assertTrue(exception.getCause() instanceof IllegalArgumentException);
+
+        Set<String> methodNames = Arrays.stream(InterviewEvaluationRepository.class.getMethods())
+                .map(method -> method.getName())
+                .collect(Collectors.toSet());
+        assertFalse(CrudRepository.class.isAssignableFrom(InterviewEvaluationRepository.class));
+        assertFalse(methodNames.contains("findAll"));
+        assertFalse(methodNames.stream().anyMatch(name -> name.startsWith("save")
+                || name.startsWith("delete") || name.startsWith("update")));
+    }
+
     private InterviewEvaluation evaluation(Booking booking, String remarks) {
-        InterviewEvaluation evaluation = new InterviewEvaluation();
-        evaluation.setBooking(booking);
-        evaluation.setCommunicationScore(8);
-        evaluation.setTechnicalScore(8);
-        evaluation.setAttitudeScore(8);
-        evaluation.setResult(InterviewResult.PASS);
-        evaluation.setRemarks(remarks);
-        return evaluation;
+        return InterviewEvaluation.record(
+                booking, null, null, 8, 8, 8, InterviewResult.PASS, remarks, LocalDateTime.now()
+        );
     }
 
     private InterviewEvaluation evaluation(
@@ -220,12 +276,9 @@ class InterviewEvaluationRepositoryTest {
         booking.setStatus(BookingStatus.ATTENDED);
         booking = bookingRepository.saveAndFlush(booking);
 
-        InterviewEvaluation evaluation = evaluation(booking, key);
-        evaluation.setApplicant(applicant);
-        evaluation.setEvaluator(evaluator);
-        evaluation.setResult(result);
-        evaluation.setEvaluationDate(evaluationDate);
-        return evaluationRepository.saveAndFlush(evaluation);
+        return appendAndFlush(InterviewEvaluation.record(
+                booking, applicant, evaluator, 8, 8, 8, result, key, evaluationDate
+        ));
     }
 
     private InterviewEvaluation legacyEvaluationWithoutApplicant(User evaluator, LocalDateTime evaluationDate) {
@@ -234,11 +287,16 @@ class InterviewEvaluationRepositoryTest {
         booking.setStatus(BookingStatus.ATTENDED);
         booking = bookingRepository.saveAndFlush(booking);
 
-        InterviewEvaluation evaluation = evaluation(booking, "legacy without applicant");
-        evaluation.setApplicant(null);
-        evaluation.setEvaluator(evaluator);
-        evaluation.setEvaluationDate(evaluationDate);
-        return evaluationRepository.saveAndFlush(evaluation);
+        return appendAndFlush(InterviewEvaluation.record(
+                booking, null, evaluator, 8, 8, 8, InterviewResult.PASS,
+                "legacy without applicant", evaluationDate
+        ));
+    }
+
+    private InterviewEvaluation appendAndFlush(InterviewEvaluation evaluation) {
+        evaluationRepository.append(evaluation);
+        entityManager.flush();
+        return evaluation;
     }
 
     private Branch branch(String code, String name) {

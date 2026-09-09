@@ -135,25 +135,33 @@ class ApplicantProfilePresentationTest {
 
     @Test
     void labelsAndGroupsEveryTimelineEvent() {
-        Map<RecruitmentTimelineEvent, String> titles = Map.of(
-                RecruitmentTimelineEvent.APPLICATION_CREATED, "Application Created",
-                RecruitmentTimelineEvent.INTERVIEW_BOOKED, "Interview Booked",
-                RecruitmentTimelineEvent.INTERVIEW_RESCHEDULED, "Interview Rescheduled",
-                RecruitmentTimelineEvent.INTERVIEW_EVALUATED, "Interview Evaluated",
-                RecruitmentTimelineEvent.JOB_OFFERED, "Job Offer Issued",
-                RecruitmentTimelineEvent.HIRED, "Applicant Hired",
-                RecruitmentTimelineEvent.OFFER_DECLINED, "Offer Declined",
-                RecruitmentTimelineEvent.WITHDRAWN, "Applicant Withdrawn"
+        Map<RecruitmentTimelineEvent, String> titles = Map.ofEntries(
+                Map.entry(RecruitmentTimelineEvent.APPLICATION_CREATED, "Application Created"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_BOOKED, "Interview Booked"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_CONFIRMED, "Interview Confirmed"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_ATTENDED, "Interview Attended"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_NO_SHOW, "Interview No Show"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_CANCELLED, "Interview Cancelled"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_RESCHEDULED, "Interview Rescheduled"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_EVALUATED, "Interview Evaluated"),
+                Map.entry(RecruitmentTimelineEvent.JOB_OFFERED, "Job Offer Issued"),
+                Map.entry(RecruitmentTimelineEvent.HIRED, "Applicant Hired"),
+                Map.entry(RecruitmentTimelineEvent.OFFER_DECLINED, "Offer Declined"),
+                Map.entry(RecruitmentTimelineEvent.WITHDRAWN, "Applicant Withdrawn")
         );
-        Map<RecruitmentTimelineEvent, String> families = Map.of(
-                RecruitmentTimelineEvent.APPLICATION_CREATED, "application",
-                RecruitmentTimelineEvent.INTERVIEW_BOOKED, "interview",
-                RecruitmentTimelineEvent.INTERVIEW_RESCHEDULED, "interview",
-                RecruitmentTimelineEvent.INTERVIEW_EVALUATED, "evaluation",
-                RecruitmentTimelineEvent.JOB_OFFERED, "hiring",
-                RecruitmentTimelineEvent.HIRED, "hiring",
-                RecruitmentTimelineEvent.OFFER_DECLINED, "hiring",
-                RecruitmentTimelineEvent.WITHDRAWN, "hiring"
+        Map<RecruitmentTimelineEvent, String> families = Map.ofEntries(
+                Map.entry(RecruitmentTimelineEvent.APPLICATION_CREATED, "application"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_BOOKED, "interview"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_CONFIRMED, "interview"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_ATTENDED, "interview"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_NO_SHOW, "interview"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_CANCELLED, "interview"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_RESCHEDULED, "interview"),
+                Map.entry(RecruitmentTimelineEvent.INTERVIEW_EVALUATED, "evaluation"),
+                Map.entry(RecruitmentTimelineEvent.JOB_OFFERED, "hiring"),
+                Map.entry(RecruitmentTimelineEvent.HIRED, "hiring"),
+                Map.entry(RecruitmentTimelineEvent.OFFER_DECLINED, "hiring"),
+                Map.entry(RecruitmentTimelineEvent.WITHDRAWN, "hiring")
         );
         titles.forEach((event, title) -> assertEquals(title,
                 ApplicantProfilePresentation.timelineTitle(event)));

@@ -9,6 +9,7 @@ import com.company.iss.auth.entity.User;
 import com.company.iss.auth.repository.UserRepository;
 import com.company.iss.auth.service.SecurityService;
 import com.company.iss.booking.entity.Booking;
+import com.company.iss.booking.entity.BookingLifecycleAction;
 import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.branch.entity.Branch;
@@ -28,6 +29,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -79,6 +81,9 @@ class BookingCancellationIntegrationTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @MockitoBean
     private NotificationService notificationService;
 
@@ -99,6 +104,7 @@ class BookingCancellationIntegrationTest {
 
     @AfterEach
     void cleanDatabase() {
+        jdbcTemplate.update("delete from booking_lifecycle_history");
         bookingRepository.deleteAll();
         applicantRepository.deleteAll();
         scheduleRepository.deleteAll();
@@ -186,6 +192,7 @@ class BookingCancellationIntegrationTest {
         assertEquals(BookingStatus.BOOKED, booking.getStatus());
         assertEquals(1, schedule.getBookedCount());
         assertEquals(ScheduleStatus.FULL, schedule.getStatus());
+        assertEquals(0, lifecycleCount(fixture.bookingId(), BookingLifecycleAction.BOOKING_CANCELLED));
         verify(notificationService, after(500).never())
                 .send(eq(NotificationEvent.BOOKING_CANCELLED), any(Booking.class));
     }
@@ -233,6 +240,16 @@ class BookingCancellationIntegrationTest {
         assertEquals(BookingStatus.CANCELLED, booking.getStatus());
         assertEquals(expectedBookedCount, schedule.getBookedCount());
         assertEquals(expectedScheduleStatus, schedule.getStatus());
+        assertEquals(1, lifecycleCount(fixture.bookingId(), BookingLifecycleAction.BOOKING_CANCELLED));
+    }
+
+    private int lifecycleCount(Long bookingId, BookingLifecycleAction action) {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from booking_lifecycle_history where booking_id = ? and action = ?",
+                Integer.class,
+                bookingId,
+                action.name()
+        );
     }
 
     private Branch saveBranch(String code) {

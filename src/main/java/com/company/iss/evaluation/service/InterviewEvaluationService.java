@@ -72,21 +72,22 @@ public class InterviewEvaluationService {
             throw new BusinessRuleViolationException("Booking does not have an applicant.");
         }
 
-        InterviewEvaluation evaluation = new InterviewEvaluation();
-        evaluation.setBooking(booking);
-        evaluation.setApplicant(applicant);
-        evaluation.setEvaluator(actor);
-        evaluation.setCommunicationScore(command.communicationScore());
-        evaluation.setTechnicalScore(command.technicalScore());
-        evaluation.setAttitudeScore(command.attitudeScore());
-        evaluation.setResult(command.result());
-        evaluation.setRemarks(command.remarks());
-        evaluation.setEvaluationDate(LocalDateTime.now());
+        InterviewEvaluation evaluation = InterviewEvaluation.record(
+                booking,
+                applicant,
+                actor,
+                command.communicationScore(),
+                command.technicalScore(),
+                command.attitudeScore(),
+                command.result(),
+                command.remarks(),
+                LocalDateTime.now()
+        );
 
         applyResult(booking, applicant, command.result());
         updatePositionCounters(applicant, command.result());
         bookingRepository.save(booking);
-        return evaluationRepository.save(evaluation);
+        return evaluationRepository.append(evaluation);
     }
 
     /** Compatibility entry point for existing UI callers; identity is always derived from the current user. */

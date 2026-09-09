@@ -69,8 +69,7 @@ class InterviewEvaluationViewTest {
         InterviewEvaluationView view = new InterviewEvaluationView(mock(InterviewEvaluationService.class));
         Grid<InterviewEvaluation> grid = grid(view);
         var provider = grid.getDataProvider();
-        InterviewEvaluation stale = new InterviewEvaluation();
-        stale.setId(1L);
+        InterviewEvaluation stale = mock(InterviewEvaluation.class);
         grid.select(stale);
 
         result(view).setValue(InterviewResult.ON_HOLD);

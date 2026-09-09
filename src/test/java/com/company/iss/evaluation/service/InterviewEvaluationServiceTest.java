@@ -69,7 +69,7 @@ class InterviewEvaluationServiceTest {
 
         assertThrows(AccessDeniedException.class, () -> service.create(command(20L)));
 
-        verify(evaluationRepository, never()).save(any());
+        verify(evaluationRepository, never()).append(any());
         verify(bookingRepository, never()).save(any());
     }
 
@@ -83,7 +83,7 @@ class InterviewEvaluationServiceTest {
         booking.getApplicant().setPositionOpening(position);
         when(securityService.requireOperationsUser()).thenReturn(actor);
         when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
-        when(evaluationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         InterviewEvaluation result = service.create(command(20L));
 
@@ -93,7 +93,7 @@ class InterviewEvaluationServiceTest {
         assertEquals(4, position.getInterviewEvaluationCount());
         assertEquals(2, position.getPassedCount());
         verify(evaluationRepository).existsByBookingId(20L);
-        verify(evaluationRepository).save(result);
+        verify(evaluationRepository).append(result);
     }
 
     @Test
@@ -108,7 +108,7 @@ class InterviewEvaluationServiceTest {
         when(securityService.requireOperationsUser()).thenReturn(actor);
         when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(initialBooking));
         when(bookingRepository.findByIdForUpdate(21L)).thenReturn(Optional.of(finalBooking));
-        when(evaluationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.create(command(20L, InterviewResult.FOR_FINAL_INTERVIEW));
 
@@ -139,7 +139,7 @@ class InterviewEvaluationServiceTest {
         when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(initialBooking));
         when(bookingRepository.findByIdForUpdate(21L)).thenReturn(Optional.of(finalBooking));
         when(bookingRepository.findByIdForUpdate(22L)).thenReturn(Optional.of(clientBooking));
-        when(evaluationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.create(command(20L, InterviewResult.FOR_FINAL_INTERVIEW));
         assertEquals(1, position.getInterviewEvaluationCount());
@@ -166,7 +166,7 @@ class InterviewEvaluationServiceTest {
         booking.getApplicant().setPositionOpening(position);
         when(securityService.requireOperationsUser()).thenReturn(actor);
         when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
-        when(evaluationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.create(command(20L, InterviewResult.FAIL));
 
@@ -184,7 +184,7 @@ class InterviewEvaluationServiceTest {
         when(securityService.requireOperationsUser()).thenReturn(actor);
         when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
         when(evaluationRepository.existsByBookingId(20L)).thenReturn(false, true);
-        when(evaluationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.create(command(20L, InterviewResult.PASS));
         booking.setStatus(BookingStatus.ATTENDED);
@@ -194,7 +194,7 @@ class InterviewEvaluationServiceTest {
 
         assertEquals(1, position.getInterviewEvaluationCount());
         assertEquals(1, position.getPassedCount());
-        verify(evaluationRepository, times(1)).save(any());
+        verify(evaluationRepository, times(1)).append(any());
         verify(positionOpeningRepository, times(1)).save(position);
     }
 
@@ -207,7 +207,7 @@ class InterviewEvaluationServiceTest {
 
         assertThrows(BusinessRuleViolationException.class, () -> service.create(command(20L)));
 
-        verify(evaluationRepository, never()).save(any());
+        verify(evaluationRepository, never()).append(any());
     }
 
     @ParameterizedTest
@@ -222,7 +222,7 @@ class InterviewEvaluationServiceTest {
         Booking booking = booking(20L, 1L, BookingStatus.ATTENDED, stage);
         when(securityService.requireOperationsUser()).thenReturn(actor);
         when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
-        when(evaluationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.create(command(20L, result));
 
@@ -242,7 +242,7 @@ class InterviewEvaluationServiceTest {
 
         assertEquals(BookingStatus.ATTENDED, booking.getStatus());
         assertEquals(ApplicantStatus.INTERVIEWED, booking.getApplicant().getStatus());
-        verify(evaluationRepository, never()).save(any());
+        verify(evaluationRepository, never()).append(any());
         verify(bookingRepository, never()).save(any());
     }
 

@@ -278,15 +278,9 @@ class RecruiterFollowUpRepositoryTest {
                         : BookingStatus.FOR_CLIENT_INTERVIEW,
                 evaluatedAt.minusHours(1)
         );
-        InterviewEvaluation evaluation = new InterviewEvaluation();
-        evaluation.setBooking(booking);
-        evaluation.setApplicant(applicant);
-        evaluation.setEvaluator(recruiter);
-        evaluation.setCommunicationScore(8);
-        evaluation.setTechnicalScore(8);
-        evaluation.setAttitudeScore(8);
-        evaluation.setResult(result);
-        evaluation.setEvaluationDate(evaluatedAt);
+        InterviewEvaluation evaluation = InterviewEvaluation.record(
+                booking, applicant, recruiter, 8, 8, 8, result, null, evaluatedAt
+        );
         entityManager.persist(evaluation);
     }
 

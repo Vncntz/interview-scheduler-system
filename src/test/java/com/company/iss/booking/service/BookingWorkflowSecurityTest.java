@@ -8,8 +8,11 @@ import com.company.iss.auth.entity.User;
 import com.company.iss.auth.service.SecurityService;
 import com.company.iss.auth.repository.UserRepository;
 import com.company.iss.booking.entity.Booking;
+import com.company.iss.booking.entity.BookingLifecycleAction;
+import com.company.iss.booking.entity.BookingLifecycleHistory;
 import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.repository.BookingRepository;
+import com.company.iss.booking.repository.BookingLifecycleHistoryRepository;
 import com.company.iss.booking.repository.BookingRescheduleHistoryRepository;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
@@ -21,6 +24,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
@@ -46,6 +50,7 @@ import static org.mockito.Mockito.when;
 class BookingWorkflowSecurityTest {
 
     @Mock BookingRepository bookingRepository;
+    @Mock BookingLifecycleHistoryRepository lifecycleHistoryRepository;
     @Mock BookingRescheduleHistoryRepository historyRepository;
     @Mock InterviewEvaluationRepository evaluationRepository;
     @Mock ScheduleRepository scheduleRepository;
@@ -63,6 +68,7 @@ class BookingWorkflowSecurityTest {
                 .thenAnswer(invocation -> securityService.getCurrentUser());
         service = new BookingService(
                 bookingRepository,
+                lifecycleHistoryRepository,
                 historyRepository,
                 evaluationRepository,
                 scheduleRepository,
@@ -87,7 +93,8 @@ class BookingWorkflowSecurityTest {
         assertThrows(AccessDeniedException.class, () -> guarded.cancel(50L));
 
         verify(bookingRepository, never()).findByIdForUpdate(any());
-        verifyNoInteractions(scheduleRepository, historyRepository, applicantService, eventPublisher);
+        verifyNoInteractions(scheduleRepository, lifecycleHistoryRepository, historyRepository,
+                applicantService, eventPublisher);
     }
 
     @Test
@@ -100,7 +107,8 @@ class BookingWorkflowSecurityTest {
         assertThrows(AccessDeniedException.class, () -> guarded.confirm(50L));
 
         verify(bookingRepository, never()).findByIdForUpdate(any());
-        verifyNoInteractions(scheduleRepository, historyRepository, applicantService, eventPublisher);
+        verifyNoInteractions(scheduleRepository, lifecycleHistoryRepository, historyRepository,
+                applicantService, eventPublisher);
     }
 
     @Test
@@ -111,6 +119,7 @@ class BookingWorkflowSecurityTest {
         assertThrows(AccessDeniedException.class, () -> service.confirm(50L));
 
         verify(bookingRepository, never()).save(any());
+        verifyNoInteractions(lifecycleHistoryRepository);
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -125,6 +134,27 @@ class BookingWorkflowSecurityTest {
         assertEquals(BookingStatus.ATTENDED, booking.getStatus());
         assertEquals(ApplicantStatus.INTERVIEWED, booking.getApplicant().getStatus());
         verify(bookingRepository).save(booking);
+        ArgumentCaptor<BookingLifecycleHistory> history = ArgumentCaptor.forClass(BookingLifecycleHistory.class);
+        verify(lifecycleHistoryRepository).append(history.capture());
+        assertEquals(BookingLifecycleAction.ATTENDANCE_RECORDED, history.getValue().getAction());
+        assertEquals(BookingStatus.CONFIRMED, history.getValue().getPreviousStatus());
+        assertEquals(BookingStatus.ATTENDED, history.getValue().getNewStatus());
+    }
+
+    @Test
+    void noShowTransitionAppendsLifecycleHistory() {
+        Booking booking = booking(50L, 1L, BookingStatus.CONFIRMED);
+        when(securityService.getCurrentUser()).thenReturn(recruiter(1L));
+        when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking));
+
+        service.markNoShow(50L);
+
+        assertEquals(BookingStatus.NO_SHOW, booking.getStatus());
+        ArgumentCaptor<BookingLifecycleHistory> history = ArgumentCaptor.forClass(BookingLifecycleHistory.class);
+        verify(lifecycleHistoryRepository).append(history.capture());
+        assertEquals(BookingLifecycleAction.NO_SHOW_RECORDED, history.getValue().getAction());
+        assertEquals(BookingStatus.CONFIRMED, history.getValue().getPreviousStatus());
+        assertEquals(BookingStatus.NO_SHOW, history.getValue().getNewStatus());
     }
 
     @Test
@@ -135,6 +165,7 @@ class BookingWorkflowSecurityTest {
         assertThrows(BusinessRuleViolationException.class, () -> service.markNoShow(50L));
 
         verify(bookingRepository, never()).save(any());
+        verifyNoInteractions(lifecycleHistoryRepository);
     }
 
     private User recruiter(Long branchId) {
@@ -158,6 +189,7 @@ class BookingWorkflowSecurityTest {
         );
         return new BookingService(
                 bookingRepository,
+                lifecycleHistoryRepository,
                 historyRepository,
                 evaluationRepository,
                 scheduleRepository,
@@ -172,10 +204,15 @@ class BookingWorkflowSecurityTest {
         branch.setId(branchId);
         Schedule schedule = new Schedule();
         schedule.setBranch(branch);
+        schedule.setScheduleDate(java.time.LocalDate.of(2026, 9, 10));
+        schedule.setStartTime(java.time.LocalTime.of(9, 0));
+        schedule.setEndTime(java.time.LocalTime.of(10, 0));
+        schedule.setInterviewMode(com.company.iss.schedule.entity.InterviewMode.ONLINE);
         Applicant applicant = new Applicant();
         applicant.setStatus(ApplicantStatus.SCHEDULED);
         Booking booking = new Booking();
         booking.setId(id);
+        booking.setBookingReference("BK-" + id);
         booking.setSchedule(schedule);
         booking.setApplicant(applicant);
         booking.setStatus(status);
