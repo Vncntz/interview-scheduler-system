@@ -26,6 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.core.env.Environment;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -35,17 +36,20 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -205,17 +209,21 @@ class MySqlMigrationIT {
         assertThrows(DataIntegrityViolationException.class,
                 () -> jdbcTemplate.update(lifecycleHistoryInsert(booking, actor, 2,
                         "BOOKING_CREATED", "BOOKED", null)));
-        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update("""
-                INSERT INTO booking_lifecycle_history (
-                    action, appointment_date, end_time, actor_id, booking_id, created_at,
-                    occurred_at, schedule_id, start_time, updated_at, version, booking_reference,
-                    interview_mode, interview_stage, new_status
-                ) VALUES (
-                    'BOOKING_CONFIRMED', '2026-09-03', '10:00:00', ?, 9223372036854775807,
-                    CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6), ?, '09:00:00', CURRENT_TIMESTAMP(6),
-                    0, 'BK-MISSING', 'ONLINE', 'INITIAL', 'CONFIRMED'
-                )
-                """, actor.getId(), booking.getSchedule().getId()));
+        DataAccessException missingBookingException = assertThrows(DataAccessException.class,
+                () -> jdbcTemplate.update("""
+                        INSERT INTO booking_lifecycle_history (
+                            action, appointment_date, end_time, actor_id, booking_id, created_at,
+                            occurred_at, schedule_id, start_time, updated_at, version, booking_reference,
+                            interview_mode, interview_stage, new_status
+                        ) VALUES (
+                            'BOOKING_CREATED', '2026-09-03', '10:00:00', ?, 9223372036854775807,
+                            CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6), ?, '09:00:00', CURRENT_TIMESTAMP(6),
+                            0, 'BK-MISSING', 'ONLINE', 'INITIAL', 'BOOKED'
+                        )
+                        """, actor.getId(), booking.getSchedule().getId()));
+        assertMySqlConstraintViolation(
+                missingBookingException, 1452, "23000", "fk_booking_lifecycle_booking"
+        );
 
         List<String> timelineColumns = jdbcTemplate.queryForList("""
                 SELECT column_name
@@ -269,9 +277,13 @@ class MySqlMigrationIT {
         Booking booking = persistBooking("LIFE-BAD-" + historyId);
         User actor = persistLifecycleActor("rejected-" + historyId);
 
-        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
-                lifecycleHistoryInsert(booking, actor, historyId, action, newStatus, previousStatus)
-        ));
+        DataAccessException transitionException = assertThrows(DataAccessException.class,
+                () -> jdbcTemplate.update(
+                        lifecycleHistoryInsert(booking, actor, historyId, action, newStatus, previousStatus)
+                ));
+        assertMySqlConstraintViolation(
+                transitionException, 3819, "HY000", "chk_booking_lifecycle_transition"
+        );
     }
 
     private static Stream<Arguments> acceptedLifecycleTransitions() {
@@ -353,6 +365,20 @@ class MySqlMigrationIT {
         entityManager.persist(actor);
         entityManager.flush();
         return actor;
+    }
+
+    private void assertMySqlConstraintViolation(
+            DataAccessException exception,
+            int expectedErrorCode,
+            String expectedSqlState,
+            String expectedConstraint
+    ) {
+        SQLException sqlException = assertInstanceOf(SQLException.class, exception.getMostSpecificCause());
+        assertEquals(expectedErrorCode, sqlException.getErrorCode());
+        assertEquals(expectedSqlState, sqlException.getSQLState());
+        assertNotNull(sqlException.getMessage());
+        assertTrue(sqlException.getMessage().toLowerCase(Locale.ROOT)
+                .contains(expectedConstraint.toLowerCase(Locale.ROOT)));
     }
 
     private String lifecycleHistoryInsert(Booking booking, User actor, long id, String action,
