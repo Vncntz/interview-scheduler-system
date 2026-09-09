@@ -42,7 +42,7 @@ CREATE TABLE booking_lifecycle_history (
                     OR CAST(previous_status AS CHAR) = 'CONFIRMED')
                     AND CAST(new_status AS CHAR) = 'CANCELLED'
             ELSE FALSE
-        END
+        END = TRUE
     ),
     CONSTRAINT fk_booking_lifecycle_actor FOREIGN KEY (actor_id) REFERENCES users (id),
     CONSTRAINT fk_booking_lifecycle_booking FOREIGN KEY (booking_id) REFERENCES bookings (id),

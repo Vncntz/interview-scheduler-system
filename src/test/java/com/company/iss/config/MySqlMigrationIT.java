@@ -19,6 +19,9 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -39,6 +42,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -181,14 +185,7 @@ class MySqlMigrationIT {
     @Test
     void v9LifecycleSchemaEnforcesIdentityForeignKeysSnapshotsAndTimelineIndex() {
         Booking booking = persistBooking("LIFECYCLE");
-        User actor = new User();
-        actor.setEmail("mysql-lifecycle-actor@example.test");
-        actor.setPasswordHash("test-only-hash");
-        actor.setFullName("MySQL Lifecycle Actor");
-        actor.setRole(Role.ADMIN);
-        actor.setActive(true);
-        entityManager.persist(actor);
-        entityManager.flush();
+        User actor = persistLifecycleActor("schema");
 
         jdbcTemplate.update(lifecycleHistoryInsert(booking, actor, 1,
                 "BOOKING_CREATED", "BOOKED", null));
@@ -208,9 +205,6 @@ class MySqlMigrationIT {
         assertThrows(DataIntegrityViolationException.class,
                 () -> jdbcTemplate.update(lifecycleHistoryInsert(booking, actor, 2,
                         "BOOKING_CREATED", "BOOKED", null)));
-        assertThrows(DataIntegrityViolationException.class,
-                () -> jdbcTemplate.update(lifecycleHistoryInsert(booking, actor, 3,
-                        "BOOKING_CONFIRMED", "CONFIRMED", null)));
         assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update("""
                 INSERT INTO booking_lifecycle_history (
                     action, appointment_date, end_time, actor_id, booking_id, created_at,
@@ -246,6 +240,64 @@ class MySqlMigrationIT {
                       'destination_branch_display_name'
                   )
                 """, Integer.class));
+    }
+
+    @ParameterizedTest(name = "{1}: {2} -> {3}")
+    @MethodSource("acceptedLifecycleTransitions")
+    void v9LifecycleConstraintAcceptsEverySupportedTransition(
+            long historyId,
+            String action,
+            String previousStatus,
+            String newStatus
+    ) {
+        Booking booking = persistBooking("LIFE-OK-" + historyId);
+        User actor = persistLifecycleActor("accepted-" + historyId);
+
+        assertEquals(1, jdbcTemplate.update(lifecycleHistoryInsert(
+                booking, actor, historyId, action, newStatus, previousStatus
+        )));
+    }
+
+    @ParameterizedTest(name = "reject {1}: {2} -> {3}")
+    @MethodSource("rejectedLifecycleTransitions")
+    void v9LifecycleConstraintRejectsContradictoryTransitions(
+            long historyId,
+            String action,
+            String previousStatus,
+            String newStatus
+    ) {
+        Booking booking = persistBooking("LIFE-BAD-" + historyId);
+        User actor = persistLifecycleActor("rejected-" + historyId);
+
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
+                lifecycleHistoryInsert(booking, actor, historyId, action, newStatus, previousStatus)
+        ));
+    }
+
+    private static Stream<Arguments> acceptedLifecycleTransitions() {
+        return Stream.of(
+                Arguments.of(101L, "BOOKING_CREATED", null, "BOOKED"),
+                Arguments.of(102L, "BOOKING_CONFIRMED", "BOOKED", "CONFIRMED"),
+                Arguments.of(103L, "ATTENDANCE_RECORDED", "CONFIRMED", "ATTENDED"),
+                Arguments.of(104L, "NO_SHOW_RECORDED", "CONFIRMED", "NO_SHOW"),
+                Arguments.of(105L, "BOOKING_CANCELLED", "BOOKED", "CANCELLED"),
+                Arguments.of(106L, "BOOKING_CANCELLED", "CONFIRMED", "CANCELLED")
+        );
+    }
+
+    private static Stream<Arguments> rejectedLifecycleTransitions() {
+        return Stream.of(
+                Arguments.of(201L, "BOOKING_CREATED", "BOOKED", "BOOKED"),
+                Arguments.of(202L, "BOOKING_CREATED", null, "CONFIRMED"),
+                Arguments.of(203L, "BOOKING_CONFIRMED", null, "CONFIRMED"),
+                Arguments.of(204L, "BOOKING_CONFIRMED", "BOOKED", "ATTENDED"),
+                Arguments.of(205L, "ATTENDANCE_RECORDED", "BOOKED", "ATTENDED"),
+                Arguments.of(206L, "ATTENDANCE_RECORDED", "CONFIRMED", "NO_SHOW"),
+                Arguments.of(207L, "NO_SHOW_RECORDED", "BOOKED", "NO_SHOW"),
+                Arguments.of(208L, "NO_SHOW_RECORDED", "CONFIRMED", "ATTENDED"),
+                Arguments.of(209L, "BOOKING_CANCELLED", "ATTENDED", "CANCELLED"),
+                Arguments.of(210L, "BOOKING_CANCELLED", "BOOKED", "CONFIRMED")
+        );
     }
 
     private Booking persistBooking(String suffix) {
@@ -289,6 +341,18 @@ class MySqlMigrationIT {
         entityManager.persist(booking);
         entityManager.flush();
         return booking;
+    }
+
+    private User persistLifecycleActor(String suffix) {
+        User actor = new User();
+        actor.setEmail("mysql-lifecycle-" + suffix + "@example.test");
+        actor.setPasswordHash("test-only-hash");
+        actor.setFullName("MySQL Lifecycle Actor " + suffix);
+        actor.setRole(Role.ADMIN);
+        actor.setActive(true);
+        entityManager.persist(actor);
+        entityManager.flush();
+        return actor;
     }
 
     private String lifecycleHistoryInsert(Booking booking, User actor, long id, String action,
