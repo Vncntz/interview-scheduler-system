@@ -1,11 +1,15 @@
 package com.company.iss.dashboard.view;
 
-import com.company.iss.booking.entity.Booking;
 import com.company.iss.applicant.view.ApplicantDetailView;
 import com.company.iss.booking.dialog.BookingFormDialog;
 import com.company.iss.booking.dto.BookingApplicantInput;
+import com.company.iss.booking.entity.Booking;
+import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.booking.service.BookingService;
 import com.company.iss.dashboard.dto.FollowUpApplicant;
+import com.company.iss.dashboard.dto.FollowUpDeadlineFilter;
+import com.company.iss.dashboard.dto.FollowUpQueueSummary;
+import com.company.iss.dashboard.dto.FollowUpSlaStatus;
 import com.company.iss.dashboard.dto.RecruiterWorkbenchData;
 import com.company.iss.dashboard.dto.WorkbenchInterview;
 import com.company.iss.dashboard.service.RecruiterWorkbenchService;
@@ -29,15 +33,16 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.select.Select;
+import com.vaadin.flow.data.provider.CallbackDataProvider;
+import com.vaadin.flow.data.provider.DataProvider;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.router.RouteParameters;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.security.RolesAllowed;
 
-import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
@@ -47,14 +52,17 @@ import java.util.function.Function;
 @RolesAllowed("RECRUITER")
 public class RecruiterWorkbenchView extends VerticalLayout {
 
+    private static final int FOLLOW_UP_PAGE_SIZE = 25;
     private static final DateTimeFormatter FOLLOW_UP_DATE = DateTimeFormatter.ofPattern(
-            "MMM d, uuuu", Locale.ENGLISH
+            "MMM d, uuuu h:mm a", Locale.ENGLISH
     );
 
     private final RecruiterWorkbenchService workbenchService;
     private final BookingService bookingService;
     private final InterviewEvaluationService evaluationService;
     private final ScheduleService scheduleService;
+    private InterviewStage selectedFollowUpStage = InterviewStage.FINAL;
+    private FollowUpDeadlineFilter selectedDeadlineFilter = FollowUpDeadlineFilter.ALL;
 
     public RecruiterWorkbenchView(
             RecruiterWorkbenchService workbenchService,
@@ -107,30 +115,57 @@ public class RecruiterWorkbenchView extends VerticalLayout {
         heading.getStyle().set("margin", "0");
         section.add(heading);
 
-        if (data.finalInterviewFollowUps().isEmpty() && data.clientInterviewFollowUps().isEmpty()) {
+        if (data.finalInterviewFollowUp().total() == 0 && data.clientInterviewFollowUp().total() == 0) {
             Span empty = new Span("No applicants currently require interview follow-up.");
             empty.getStyle().set("color", "var(--vaadin-text-color-secondary)");
             section.add(empty);
         }
 
-        section.add(
-                followUpQueue("Final Interviews", data.finalInterviewFollowUps()),
-                followUpQueue("Client Interviews", data.clientInterviewFollowUps())
-        );
+        FollowUpQueueSummary summary = selectedFollowUpStage == InterviewStage.FINAL
+                ? data.finalInterviewFollowUp()
+                : data.clientInterviewFollowUp();
+        Select<InterviewStage> stageFilter = new Select<>();
+        stageFilter.setLabel("Stage");
+        stageFilter.setItems(InterviewStage.FINAL, InterviewStage.CLIENT);
+        stageFilter.setItemLabelGenerator(this::stageLabel);
+        stageFilter.setValue(selectedFollowUpStage);
+        stageFilter.addValueChangeListener(event -> {
+            selectedFollowUpStage = event.getValue();
+            refresh();
+        });
+        Select<FollowUpDeadlineFilter> deadlineFilter = new Select<>();
+        deadlineFilter.setLabel("Deadline status");
+        deadlineFilter.setItems(FollowUpDeadlineFilter.values());
+        deadlineFilter.setItemLabelGenerator(this::deadlineFilterLabel);
+        deadlineFilter.setValue(selectedDeadlineFilter);
+        deadlineFilter.addValueChangeListener(event -> {
+            selectedDeadlineFilter = event.getValue();
+            refresh();
+        });
+        section.add(new HorizontalLayout(stageFilter, deadlineFilter), followUpQueue(summary));
         return section;
     }
 
-    private Component followUpQueue(String heading, List<FollowUpApplicant> applicants) {
+    private Component followUpQueue(FollowUpQueueSummary summary) {
+        InterviewStage stage = summary.stage();
         VerticalLayout section = new VerticalLayout();
         section.setWidthFull();
         section.getStyle()
                 .set("border", "1px solid var(--vaadin-border-color-secondary)")
                 .set("border-radius", "var(--vaadin-radius-l)");
-        H3 title = new H3(heading + " (" + applicants.size() + ")");
+        H3 title = new H3(stageLabel(stage) + " Interviews (" + summary.total() + ")");
         title.getStyle().set("margin", "0");
-        section.add(title);
+        Span workload = new Span(
+                "On track " + summary.onTrack()
+                        + " · Due soon " + summary.dueSoon()
+                        + " · Overdue " + summary.overdue()
+                        + " · Timing unavailable " + summary.timingUnavailable()
+                        + " · Target " + formatTarget(summary)
+        );
+        workload.getStyle().set("color", "var(--vaadin-text-color-secondary)");
+        section.add(title, workload);
 
-        if (applicants.isEmpty()) {
+        if (summary.total() == 0) {
             Span empty = new Span("No applicants in this follow-up queue.");
             empty.getStyle().set("color", "var(--vaadin-text-color-secondary)");
             section.add(empty);
@@ -138,7 +173,14 @@ public class RecruiterWorkbenchView extends VerticalLayout {
         }
 
         Grid<FollowUpApplicant> grid = new Grid<>();
-        grid.setItems(applicants);
+        grid.setPageSize(FOLLOW_UP_PAGE_SIZE);
+        CallbackDataProvider<FollowUpApplicant, Void> dataProvider = DataProvider.fromCallbacks(
+                query -> workbenchService.findFollowUpPage(
+                        stage, selectedDeadlineFilter, query.getOffset(), query.getLimit()
+                ).stream(),
+                query -> toIntCount(workbenchService.countFollowUps(stage, selectedDeadlineFilter))
+        );
+        grid.setDataProvider(dataProvider);
         grid.addColumn(FollowUpApplicant::applicantName)
                 .setHeader("Applicant").setKey("follow-up-applicant").setAutoWidth(true);
         grid.addColumn(item -> item.requiredStage().name())
@@ -147,16 +189,20 @@ public class RecruiterWorkbenchView extends VerticalLayout {
                 .setHeader("Position").setKey("follow-up-position").setAutoWidth(true);
         grid.addColumn(item -> display(item.clientName()))
                 .setHeader("Client").setKey("follow-up-client").setAutoWidth(true);
-        grid.addColumn(item -> item.lastInterviewAt() == null
-                        ? "—"
-                        : item.lastInterviewAt().format(FOLLOW_UP_DATE))
-                .setHeader("Last Interview").setKey("follow-up-last-interview").setAutoWidth(true);
+        grid.addColumn(item -> formatTimestamp(item.relatedAppointmentAt(), "Related appointment unavailable"))
+                .setHeader("Related appointment").setKey("follow-up-related-appointment").setAutoWidth(true);
+        grid.addColumn(item -> formatTimestamp(item.waitingSince(), "Timing unavailable"))
+                .setHeader("Waiting since").setKey("follow-up-waiting-since").setAutoWidth(true);
+        grid.addComponentColumn(this::statusBadge)
+                .setHeader("Deadline status").setKey("follow-up-deadline-status").setAutoWidth(true);
+        grid.addColumn(item -> formatTimestamp(item.dueAt(), "Timing unavailable"))
+                .setHeader("Due at").setKey("follow-up-due-at").setAutoWidth(true);
         grid.addColumn(this::waitingDuration)
                 .setHeader("Waiting").setKey("follow-up-waiting").setAutoWidth(true);
         grid.addComponentColumn(this::scheduleButton)
                 .setHeader("Actions").setKey("follow-up-actions").setAutoWidth(true);
         grid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_NO_BORDER);
-        grid.setAllRowsVisible(true);
+        grid.setHeight("360px");
         grid.setWidthFull();
         section.add(grid);
         return section;
@@ -185,17 +231,60 @@ public class RecruiterWorkbenchView extends VerticalLayout {
     }
 
     private String waitingDuration(FollowUpApplicant applicant) {
-        if (applicant.waitingSince() == null) {
-            return "—";
+        if (applicant.elapsed() == null) {
+            return "Timing unavailable";
         }
-        long days = Math.max(0, ChronoUnit.DAYS.between(
-                applicant.waitingSince().toLocalDate(), LocalDate.now()
-        ));
-        return days + (days == 1 ? " day" : " days");
+        long hours = applicant.elapsed().toHours();
+        long days = hours / 24;
+        long remainderHours = hours % 24;
+        return days == 0 ? hours + "h" : days + "d " + remainderHours + "h";
+    }
+
+    private Component statusBadge(FollowUpApplicant applicant) {
+        FollowUpSlaStatus status = applicant.deadlineStatus();
+        Span badge = new Span(status == null ? "Timing unavailable" : switch (status) {
+            case ON_TRACK -> "On track";
+            case DUE_SOON -> "Due soon";
+            case OVERDUE -> "Overdue";
+        });
+        badge.getElement().getThemeList().add(status == null ? "badge contrast" : switch (status) {
+            case ON_TRACK -> "badge success";
+            case DUE_SOON -> "badge contrast";
+            case OVERDUE -> "badge error";
+        });
+        badge.getElement().setAttribute("aria-label", "Follow-up SLA status: " + badge.getText());
+        return badge;
+    }
+
+    private String formatTarget(FollowUpQueueSummary summary) {
+        long hours = summary.target().toHours();
+        return hours % 24 == 0 ? (hours / 24) + " days" : hours + " hours";
+    }
+
+    private int toIntCount(long count) {
+        return count > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) count;
     }
 
     private String display(String value) {
         return value == null || value.isBlank() ? "—" : value;
+    }
+
+    private String formatTimestamp(java.time.LocalDateTime timestamp, String unavailableText) {
+        return timestamp == null ? unavailableText : timestamp.format(FOLLOW_UP_DATE);
+    }
+
+    private String stageLabel(InterviewStage stage) {
+        return stage == InterviewStage.FINAL ? "Final" : "Client";
+    }
+
+    private String deadlineFilterLabel(FollowUpDeadlineFilter filter) {
+        return switch (filter) {
+            case ALL -> "All";
+            case ON_TRACK -> "On track";
+            case DUE_SOON -> "Due soon";
+            case OVERDUE -> "Overdue";
+            case TIMING_UNAVAILABLE -> "Timing unavailable";
+        };
     }
 
     private Component section(
@@ -223,7 +312,8 @@ public class RecruiterWorkbenchView extends VerticalLayout {
         grid.setItems(interviews);
         grid.addColumn(WorkbenchInterview::bookingReference).setHeader("Reference").setAutoWidth(true);
         grid.addColumn(WorkbenchInterview::applicant).setHeader("Applicant").setAutoWidth(true);
-        grid.addColumn(item -> item.interviewStage().name()).setHeader("Stage").setKey("interview-stage").setAutoWidth(true);
+        grid.addColumn(item -> item.interviewStage().name())
+                .setHeader("Stage").setKey("interview-stage").setAutoWidth(true);
         grid.addColumn(WorkbenchInterview::position).setHeader("Position").setAutoWidth(true);
         grid.addColumn(WorkbenchInterview::date).setHeader("Date").setAutoWidth(true);
         grid.addColumn(item -> DateTimeUtil.formatTime(item.startTime())).setHeader("Time").setAutoWidth(true);

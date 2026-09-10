@@ -4,7 +4,9 @@ import com.company.iss.applicant.entity.ApplicantStatus;
 import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.booking.entity.InterviewStage;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 public interface FollowUpApplicantProjection {
 
@@ -25,4 +27,8 @@ public interface FollowUpApplicantProjection {
     BookingStatus getMostRecentBookingStatus();
 
     LocalDateTime getWaitingSince();
+
+    LocalDate getRelatedAppointmentDate();
+
+    LocalTime getRelatedAppointmentStartTime();
 }

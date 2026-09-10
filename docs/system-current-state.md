@@ -301,10 +301,15 @@ The administrator dashboard provides organization-wide metrics, schedule summari
 
 The recruiter workbench provides branch-scoped queues and actions for upcoming interviews,
 attendance/no-show processing, pending evaluations, and applicants requiring `FINAL` or `CLIENT`
-follow-up. The follow-up read model uses one ordered scalar query scoped by the applicant's
-authoritative branch. It includes evaluation progression plus cancelled/no-show replacement bookings,
-excludes applicants with any active booking, and derives waiting time from existing evaluation or
-booking timestamps. Scheduling reuses the read-only stage-aware booking dialog and the locked,
+follow-up. The follow-up read model uses stage-specific, lazily paged scalar queries and matching
+aggregate counts scoped by the applicant's authoritative branch. It includes evaluation progression
+plus cancelled/no-show replacement bookings, excludes applicants with any active booking, and derives
+waiting time from the evaluation date or immutable lifecycle event timestamp. When trustworthy
+lifecycle timing is unavailable, the item remains visible and schedulable as `Timing unavailable`,
+with no waiting-since or due-at timestamp and no deadline classification. These items are excluded
+from `On track`, `Due soon`, and `Overdue` counts. Separate configurable elapsed calendar-hour targets
+show deadline status and timing availability; the SLA is informational only.
+Scheduling reuses the read-only stage-aware booking dialog and the locked,
 transactional booking service; the service revalidates stage, branch, and active-booking uniqueness.
 The workbench remains recruiter-only, while administrator dashboard behavior is unchanged.
 
@@ -319,9 +324,9 @@ of 50 rows, cap service requests at 100 rows, preserve non-page-aligned Vaadin o
 load only the displayed to-one relationships.
 
 Other management and operational grids have not all been converted to lazy paging. Branch, client,
-position, recruiter, notification-template, hiring-decision, dashboard, and recruiter-workbench grids
-still use bounded or complete list loading and remain future scalability candidates based on measured
-volume.
+position, recruiter, notification-template, hiring-decision, dashboard, and non-follow-up recruiter
+workbench grids still use bounded or complete list loading and remain future scalability candidates
+based on measured volume.
 
 ## 7. Authentication and account security
 

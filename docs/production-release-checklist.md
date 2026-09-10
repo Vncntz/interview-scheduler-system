@@ -22,6 +22,10 @@ present; never record its value in release evidence or command output.
 - Email credential, when email is required: `SMTP_PASSWORD`.
 - Interview reminders, when explicitly enabled: `INTERVIEW_REMINDERS_ENABLED`, business zone, scan
   interval, bounded batch/attempt settings, retry delay, and stale-claim timeout.
+- Recruiter follow-up indicators: `INTERVIEW_FOLLOW_UP_FINAL_TARGET`,
+  `INTERVIEW_FOLLOW_UP_CLIENT_TARGET`, and `INTERVIEW_FOLLOW_UP_DUE_SOON_WINDOW`. Confirm all are
+  positive and the due-soon window is shorter than both targets. Confirm the configured timestamp zone
+  matches the local-time convention of stored evaluation and booking lifecycle timestamps.
 - Set the stale-claim timeout comfortably above the total configured SMTP connection, read, and write
   timeout budget plus expected processing margin. These settings are validated individually; the
   application does not cross-validate their combined budget.
