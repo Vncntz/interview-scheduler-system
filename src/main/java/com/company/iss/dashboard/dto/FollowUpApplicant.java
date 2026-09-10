@@ -2,6 +2,7 @@ package com.company.iss.dashboard.dto;
 
 import com.company.iss.booking.entity.InterviewStage;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 public record FollowUpApplicant(
@@ -11,7 +12,10 @@ public record FollowUpApplicant(
         String positionTitle,
         String clientName,
         InterviewStage requiredStage,
-        LocalDateTime lastInterviewAt,
-        LocalDateTime waitingSince
+        LocalDateTime relatedAppointmentAt,
+        LocalDateTime waitingSince,
+        LocalDateTime dueAt,
+        Duration elapsed,
+        FollowUpSlaStatus deadlineStatus
 ) {
 }

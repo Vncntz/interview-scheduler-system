@@ -3,8 +3,9 @@
 The recruiter workbench is available at `/workbench`. It shows the recruiter's interviews today,
 upcoming assigned interviews, branch-scoped pending confirmations, attendance actions, and overdue
 evaluations. Each row includes the explicit interview stage and a link to the authorized applicant
-profile. It also includes separate `FINAL` and `CLIENT` follow-up queues with position, client, last
-interview, waiting duration, and a guided **Schedule Interview** action. Recruiters can only list or
+profile. It also includes separate, lazily paged `FINAL` and `CLIENT` follow-up queues with position,
+client, previous appointment, waiting duration, deadline, SLA status, and a guided **Schedule
+Interview** action. Recruiters can only list or
 mutate operational records within their assigned branch. The workbench route and read model remain
 recruiter-only; administrators continue to use the organization-wide dashboard and management views.
 
@@ -19,12 +20,31 @@ The database-backed queue includes active applicants in the recruiter's authorit
 
 An applicant is excluded if any `BOOKED`, `CONFIRMED`, or legacy `RESCHEDULED` booking exists.
 Cancelled or missed `INITIAL` interviews are not shown in this queue because this workbench section
-is specifically for final/client follow-up. The repository returns a scalar projection ordered by the
-derived waiting timestamp and applicant ID, without loading all applicants or filtering in the UI.
+is specifically for final/client follow-up. The repository returns stage-specific scalar projection
+pages filtered and ordered in the database, without loading all applicants or filtering in the UI.
+Matching aggregate queries show total, on-track, due-soon, overdue, and timing-unavailable counts.
 
-Waiting time is derived rather than persisted: progression items use the matching evaluation date,
-while cancelled/no-show replacements use the most recent booking update timestamp. These timestamps
-are operational indicators, not an enforced SLA.
+Waiting time is derived rather than persisted. Progression items use the matching evaluation date.
+For progression, follow-up starts at the qualifying evaluation event; the related appointment is read
+only from that booking's immutable `ATTENDANCE_RECORDED` snapshot. For replacement scheduling,
+follow-up starts at the matching cancellation or no-show event and the related appointment comes from
+that same immutable lifecycle row. A record without the required historical evidence stays visible and
+schedulable, shows **Timing unavailable**, and is excluded from deadline classifications. Mutable
+booking update timestamps and current schedule values are never used to reconstruct history.
+
+The provisional defaults are 72 elapsed calendar hours for `FINAL` and 120 hours for `CLIENT`, with a
+24-hour due-soon window. `Overdue` begins exactly at the deadline. `Due soon` includes the instant at
+which remaining time reaches the due-soon window and ends just before the deadline; earlier items are
+`On track`. Future source timestamps display zero elapsed time. These indicators are
+informational only and do not block, automatically schedule, or notify anyone.
+
+Override the targets with `INTERVIEW_FOLLOW_UP_FINAL_TARGET`,
+`INTERVIEW_FOLLOW_UP_CLIENT_TARGET`, and `INTERVIEW_FOLLOW_UP_DUE_SOON_WINDOW` using Spring
+duration syntax such as `72h`. All three durations must be positive, and the due-soon window must be
+shorter than both targets. `INTERVIEW_FOLLOW_UP_TIMESTAMP_ZONE` defaults to the JVM timestamp zone
+and must match the zone used for existing zone-less evaluation and lifecycle timestamps. Deadlines are
+derived at query time, so a configuration change reclassifies all existing timed rows after application
+configuration reload or restart; it does not rewrite history.
 
 The required stage is derived through `BookingStageEligibilityPolicy`. The dialog displays that stage
 read-only, but the UI value is never trusted: `BookingService` locks and reloads the applicant, checks
@@ -33,8 +53,8 @@ and allocates capacity transactionally. A stale queue item, cross-branch attempt
 concurrent duplicate is rejected by the backend. A successful booking refreshes the workbench and
 removes the applicant from the queue.
 
-Remaining limitations: the queues are currently unpaged, no follow-up SLA is configured, and no
-reminder or durable-notification workflow is implied by this feature.
+Remaining limitation: no reminder or durable-notification workflow is implied by this informational
+feature.
 
 ## Applicant branch ownership
 
