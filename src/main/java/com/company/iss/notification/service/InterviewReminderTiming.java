@@ -37,6 +37,14 @@ public class InterviewReminderTiming {
         return includes(windowAt(type, clock.instant()), scheduledStart);
     }
 
+    public boolean includesAt(
+            InterviewReminderType type,
+            LocalDateTime scheduledStart,
+            Instant instant
+    ) {
+        return includes(windowAt(type, instant), scheduledStart);
+    }
+
     public boolean includesAfter(
             InterviewReminderType type,
             LocalDateTime scheduledStart,
