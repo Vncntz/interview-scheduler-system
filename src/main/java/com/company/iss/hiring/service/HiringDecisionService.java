@@ -11,11 +11,15 @@ import com.company.iss.booking.entity.BookingStatus;
 import com.company.iss.evaluation.entity.InterviewEvaluation;
 import com.company.iss.evaluation.entity.InterviewResult;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
+import com.company.iss.hiring.dto.CompletedDecisionSortOrder;
+import com.company.iss.hiring.dto.EligibleCandidateSortOrder;
 import com.company.iss.hiring.dto.EligibleHiringCandidate;
 import com.company.iss.hiring.dto.HiringActionCommand;
 import com.company.iss.hiring.dto.HiringDecisionAuditSummary;
 import com.company.iss.hiring.dto.HiringDecisionSummary;
+import com.company.iss.hiring.dto.HiringWorklistFilter;
 import com.company.iss.hiring.dto.IssueOfferCommand;
+import com.company.iss.hiring.dto.OutstandingDecisionSortOrder;
 import com.company.iss.hiring.entity.HiringDecision;
 import com.company.iss.hiring.entity.HiringDecisionAction;
 import com.company.iss.hiring.entity.HiringDecisionAudit;
@@ -28,18 +32,26 @@ import com.company.iss.hiring.repository.HiringDecisionRepository;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.entity.PositionStatus;
 import com.company.iss.position.repository.PositionOpeningRepository;
+import com.company.iss.shared.pagination.OffsetLimitPageable;
+import com.company.iss.shared.exception.BusinessRuleViolationException;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 @Service
 public class HiringDecisionService {
 
+    private static final int MAX_WORKLIST_PAGE_SIZE = 100;
+    private static final int MAX_KEYWORD_LENGTH = 100;
     private static final List<HiringDecisionStatus> TERMINAL_STATUSES = List.of(
             HiringDecisionStatus.HIRED,
             HiringDecisionStatus.DECLINED,
@@ -73,36 +85,87 @@ public class HiringDecisionService {
     }
 
     @Transactional(readOnly = true)
-    public List<EligibleHiringCandidate> findEligibleCandidates() {
+    public List<EligibleHiringCandidate> findEligiblePage(
+            HiringWorklistFilter filter,
+            long offset,
+            int limit,
+            List<EligibleCandidateSortOrder> sortOrders
+    ) {
         User actor = securityService.requireOperationsUser();
-        List<InterviewEvaluation> evaluations = actor.getRole() == Role.ADMIN
-                ? decisionRepository.findEligibleEvaluations()
-                : decisionRepository.findEligibleEvaluationsByBranchId(actor.getBranch().getId());
-        return evaluations.stream().map(this::toEligibleCandidate).toList();
+        validateWorklistWindow(offset, limit);
+        String keyword = normalizedKeyword(filter);
+        return decisionRepository.findEligibleEvaluationPage(
+                worklistBranchId(actor),
+                keyword,
+                new OffsetLimitPageable(offset, limit, eligibleSort(sortOrders))
+        ).stream().map(this::toEligibleCandidate).toList();
     }
 
     @Transactional(readOnly = true)
-    public List<HiringDecisionSummary> findOutstandingDecisions() {
+    public long countEligible(HiringWorklistFilter filter) {
         User actor = securityService.requireOperationsUser();
-        List<HiringDecision> decisions = actor.getRole() == Role.ADMIN
-                ? decisionRepository.findByStatusOrderByOfferedAtDesc(HiringDecisionStatus.OFFERED)
-                : decisionRepository.findByStatusAndApplicantBranchIdOrderByOfferedAtDesc(
-                        HiringDecisionStatus.OFFERED,
-                        actor.getBranch().getId()
-                );
-        return decisions.stream().map(this::toSummary).toList();
+        return decisionRepository.countEligibleEvaluationPage(worklistBranchId(actor), normalizedKeyword(filter));
     }
 
     @Transactional(readOnly = true)
-    public List<HiringDecisionSummary> findCompletedDecisions() {
+    public List<HiringDecisionSummary> findOutstandingPage(
+            HiringWorklistFilter filter,
+            long offset,
+            int limit,
+            List<OutstandingDecisionSortOrder> sortOrders
+    ) {
         User actor = securityService.requireOperationsUser();
-        List<HiringDecision> decisions = actor.getRole() == Role.ADMIN
-                ? decisionRepository.findByStatusInOrderByResolvedAtDesc(TERMINAL_STATUSES)
-                : decisionRepository.findByStatusInAndApplicantBranchIdOrderByResolvedAtDesc(
-                        TERMINAL_STATUSES,
-                        actor.getBranch().getId()
-                );
-        return decisions.stream().map(this::toSummary).toList();
+        validateWorklistWindow(offset, limit);
+        String keyword = normalizedKeyword(filter);
+        StatusSearch statusSearch = statusSearch(keyword);
+        return decisionRepository.findDecisionPage(
+                worklistBranchId(actor),
+                List.of(HiringDecisionStatus.OFFERED),
+                keyword,
+                statusSearch.matches(),
+                statusSearch.statuses(),
+                new OffsetLimitPageable(offset, limit, outstandingSort(sortOrders))
+        ).stream().map(this::toSummary).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public long countOutstanding(HiringWorklistFilter filter) {
+        User actor = securityService.requireOperationsUser();
+        String keyword = normalizedKeyword(filter);
+        StatusSearch statusSearch = statusSearch(keyword);
+        return decisionRepository.countDecisionPage(
+                worklistBranchId(actor), List.of(HiringDecisionStatus.OFFERED), keyword,
+                statusSearch.matches(), statusSearch.statuses()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<HiringDecisionSummary> findCompletedPage(
+            HiringWorklistFilter filter,
+            long offset,
+            int limit,
+            List<CompletedDecisionSortOrder> sortOrders
+    ) {
+        User actor = securityService.requireOperationsUser();
+        validateWorklistWindow(offset, limit);
+        String keyword = normalizedKeyword(filter);
+        StatusSearch statusSearch = statusSearch(keyword);
+        return decisionRepository.findDecisionPage(
+                worklistBranchId(actor), TERMINAL_STATUSES, keyword,
+                statusSearch.matches(), statusSearch.statuses(),
+                new OffsetLimitPageable(offset, limit, completedSort(sortOrders))
+        ).stream().map(this::toSummary).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public long countCompleted(HiringWorklistFilter filter) {
+        User actor = securityService.requireOperationsUser();
+        String keyword = normalizedKeyword(filter);
+        StatusSearch statusSearch = statusSearch(keyword);
+        return decisionRepository.countDecisionPage(
+                worklistBranchId(actor), TERMINAL_STATUSES, keyword,
+                statusSearch.matches(), statusSearch.statuses()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -426,6 +489,92 @@ public class HiringDecisionService {
         }
     }
 
+    private void validateWorklistWindow(long offset, int limit) {
+        if (offset < 0 || offset > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("Worklist offset must be between 0 and " + Integer.MAX_VALUE + ".");
+        }
+        if (limit < 1 || limit > MAX_WORKLIST_PAGE_SIZE) {
+            throw new IllegalArgumentException("Worklist limit must be between 1 and " + MAX_WORKLIST_PAGE_SIZE + ".");
+        }
+    }
+
+    private String normalizedKeyword(HiringWorklistFilter filter) {
+        String keyword = filter == null ? null : trimToNull(filter.keyword());
+        if (keyword != null && keyword.length() > MAX_KEYWORD_LENGTH) {
+            throw new BusinessRuleViolationException(
+                    "Search text must not exceed " + MAX_KEYWORD_LENGTH + " characters."
+            );
+        }
+        return keyword == null ? null : keyword.toLowerCase(Locale.ROOT);
+    }
+
+    private Long worklistBranchId(User actor) {
+        if (actor.getRole() == Role.ADMIN) {
+            return null;
+        }
+        if (actor.getRole() != Role.RECRUITER || actor.getBranch() == null || actor.getBranch().getId() == null) {
+            throw new AccessDeniedException("You may only view hiring decisions within your branch.");
+        }
+        return actor.getBranch().getId();
+    }
+
+    private StatusSearch statusSearch(String keyword) {
+        if (keyword == null) {
+            return new StatusSearch(false, List.of(HiringDecisionStatus.OFFERED));
+        }
+        List<HiringDecisionStatus> statuses = Arrays.stream(HiringDecisionStatus.values())
+                .filter(status -> status.name().toLowerCase(Locale.ROOT).contains(keyword))
+                .toList();
+        return statuses.isEmpty()
+                ? new StatusSearch(false, List.of(HiringDecisionStatus.OFFERED))
+                : new StatusSearch(true, statuses);
+    }
+
+    private Sort eligibleSort(List<EligibleCandidateSortOrder> sortOrders) {
+        if (sortOrders == null || sortOrders.isEmpty()) {
+            return Sort.by(Sort.Order.desc("evaluationDate"), Sort.Order.desc("id"));
+        }
+        List<Sort.Order> orders = new ArrayList<>();
+        for (EligibleCandidateSortOrder order : sortOrders) {
+            if (order == null) {
+                throw new IllegalArgumentException("Eligible candidate sort order is required.");
+            }
+            order.field().properties().forEach(property -> orders.add(new Sort.Order(order.direction(), property)));
+        }
+        orders.add(Sort.Order.asc("id"));
+        return Sort.by(orders);
+    }
+
+    private Sort outstandingSort(List<OutstandingDecisionSortOrder> sortOrders) {
+        if (sortOrders == null || sortOrders.isEmpty()) {
+            return Sort.by(Sort.Order.desc("offeredAt"), Sort.Order.desc("id"));
+        }
+        List<Sort.Order> orders = new ArrayList<>();
+        for (OutstandingDecisionSortOrder order : sortOrders) {
+            if (order == null) {
+                throw new IllegalArgumentException("Outstanding decision sort order is required.");
+            }
+            order.field().properties().forEach(property -> orders.add(new Sort.Order(order.direction(), property)));
+        }
+        orders.add(Sort.Order.asc("id"));
+        return Sort.by(orders);
+    }
+
+    private Sort completedSort(List<CompletedDecisionSortOrder> sortOrders) {
+        if (sortOrders == null || sortOrders.isEmpty()) {
+            return Sort.by(Sort.Order.desc("resolvedAt"), Sort.Order.desc("id"));
+        }
+        List<Sort.Order> orders = new ArrayList<>();
+        for (CompletedDecisionSortOrder order : sortOrders) {
+            if (order == null) {
+                throw new IllegalArgumentException("Completed decision sort order is required.");
+            }
+            order.field().properties().forEach(property -> orders.add(new Sort.Order(order.direction(), property)));
+        }
+        orders.add(Sort.Order.asc("id"));
+        return Sort.by(orders);
+    }
+
     private EligibleHiringCandidate toEligibleCandidate(InterviewEvaluation evaluation) {
         Applicant applicant = evaluation.getApplicant();
         PositionOpening position = applicant.getPositionOpening();
@@ -464,5 +613,8 @@ public class HiringDecisionService {
 
     private String trimToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private record StatusSearch(boolean matches, List<HiringDecisionStatus> statuses) {
     }
 }

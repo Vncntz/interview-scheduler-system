@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
@@ -52,35 +53,73 @@ public interface HiringDecisionRepository extends JpaRepository<HiringDecision, 
     @EntityGraph(attributePaths = {
             "applicant", "applicant.branch", "evaluation", "position", "position.client", "offeredBy", "resolvedBy"
     })
-    List<HiringDecision> findByStatusOrderByOfferedAtDesc(HiringDecisionStatus status);
-
-    @EntityGraph(attributePaths = {
-            "applicant", "applicant.branch", "evaluation", "position", "position.client", "offeredBy", "resolvedBy"
-    })
-    List<HiringDecision> findByStatusAndApplicantBranchIdOrderByOfferedAtDesc(
-            HiringDecisionStatus status,
-            Long branchId
+    @Query("""
+            select d from HiringDecision d
+            join d.applicant a
+            join a.branch branch
+            join d.position p
+            left join p.client client
+            where (:branchId is null or branch.id = :branchId)
+              and d.status in :statuses
+              and (:keyword is null
+                   or locate(:keyword, lower(a.firstName)) > 0
+                   or locate(:keyword, lower(coalesce(a.middleName, ''))) > 0
+                   or locate(:keyword, lower(a.lastName)) > 0
+                   or locate(:keyword, lower(concat(a.firstName, concat(' ', a.lastName)))) > 0
+                   or locate(:keyword, lower(concat(a.firstName,
+                       concat(case when a.middleName is null or trim(a.middleName) = ''
+                                   then ' ' else concat(' ', concat(trim(a.middleName), ' ')) end,
+                              a.lastName)))) > 0
+                   or locate(:keyword, lower(branch.branchName)) > 0
+                   or locate(:keyword, lower(p.title)) > 0
+                   or locate(:keyword, lower(coalesce(client.companyName, ''))) > 0
+                   or (:statusKeywordMatches = true and d.status in :matchingStatuses))
+            """)
+    List<HiringDecision> findDecisionPage(
+            @Param("branchId") Long branchId,
+            @Param("statuses") List<HiringDecisionStatus> statuses,
+            @Param("keyword") String keyword,
+            @Param("statusKeywordMatches") boolean statusKeywordMatches,
+            @Param("matchingStatuses") List<HiringDecisionStatus> matchingStatuses,
+            Pageable pageable
     );
 
-    @EntityGraph(attributePaths = {
-            "applicant", "applicant.branch", "evaluation", "position", "position.client", "offeredBy", "resolvedBy"
-    })
-    List<HiringDecision> findByStatusInOrderByResolvedAtDesc(List<HiringDecisionStatus> statuses);
-
-    @EntityGraph(attributePaths = {
-            "applicant", "applicant.branch", "evaluation", "position", "position.client", "offeredBy", "resolvedBy"
-    })
-    List<HiringDecision> findByStatusInAndApplicantBranchIdOrderByResolvedAtDesc(
-            List<HiringDecisionStatus> statuses,
-            Long branchId
+    @Query("""
+            select count(d) from HiringDecision d
+            join d.applicant a
+            join a.branch branch
+            join d.position p
+            left join p.client client
+            where (:branchId is null or branch.id = :branchId)
+              and d.status in :statuses
+              and (:keyword is null
+                   or locate(:keyword, lower(a.firstName)) > 0
+                   or locate(:keyword, lower(coalesce(a.middleName, ''))) > 0
+                   or locate(:keyword, lower(a.lastName)) > 0
+                   or locate(:keyword, lower(concat(a.firstName, concat(' ', a.lastName)))) > 0
+                   or locate(:keyword, lower(concat(a.firstName,
+                       concat(case when a.middleName is null or trim(a.middleName) = ''
+                                   then ' ' else concat(' ', concat(trim(a.middleName), ' ')) end,
+                              a.lastName)))) > 0
+                   or locate(:keyword, lower(branch.branchName)) > 0
+                   or locate(:keyword, lower(p.title)) > 0
+                   or locate(:keyword, lower(coalesce(client.companyName, ''))) > 0
+                   or (:statusKeywordMatches = true and d.status in :matchingStatuses))
+            """)
+    long countDecisionPage(
+            @Param("branchId") Long branchId,
+            @Param("statuses") List<HiringDecisionStatus> statuses,
+            @Param("keyword") String keyword,
+            @Param("statusKeywordMatches") boolean statusKeywordMatches,
+            @Param("matchingStatuses") List<HiringDecisionStatus> matchingStatuses
     );
 
     @Query("""
             select e from InterviewEvaluation e
             join fetch e.applicant a
-            join fetch a.branch
+            join fetch a.branch branch
             join fetch a.positionOpening p
-            left join fetch p.client
+            left join fetch p.client client
             join fetch e.booking b
             where e.result = com.company.iss.evaluation.entity.InterviewResult.PASS
               and b.status = com.company.iss.booking.entity.BookingStatus.PASSED
@@ -90,20 +129,45 @@ public interface HiringDecisionRepository extends JpaRepository<HiringDecision, 
               and p.active = true
               and p.status = com.company.iss.position.entity.PositionStatus.OPEN
               and p.hiredCount < p.requiredHeadcount
+              and (:branchId is null or branch.id = :branchId)
+              and (:keyword is null
+                   or locate(:keyword, lower(a.firstName)) > 0
+                   or locate(:keyword, lower(coalesce(a.middleName, ''))) > 0
+                   or locate(:keyword, lower(a.lastName)) > 0
+                   or locate(:keyword, lower(concat(a.firstName, concat(' ', a.lastName)))) > 0
+                   or locate(:keyword, lower(concat(a.firstName,
+                       concat(case when a.middleName is null or trim(a.middleName) = ''
+                                   then ' ' else concat(' ', concat(trim(a.middleName), ' ')) end,
+                              a.lastName)))) > 0
+                   or locate(:keyword, lower(branch.branchName)) > 0
+                   or locate(:keyword, lower(p.title)) > 0
+                   or locate(:keyword, lower(coalesce(client.companyName, ''))) > 0)
               and not exists (select d.id from HiringDecision d where d.applicant = a or d.evaluation = e)
-            order by e.evaluationDate desc
+              and not exists (
+                  select newer.id from InterviewEvaluation newer
+                  join newer.booking newerBooking
+                  where newer.applicant = a
+                    and newer.result = com.company.iss.evaluation.entity.InterviewResult.PASS
+                    and newerBooking.status = com.company.iss.booking.entity.BookingStatus.PASSED
+                    and newerBooking.applicant = a
+                    and (newer.evaluationDate > e.evaluationDate
+                         or (newer.evaluationDate = e.evaluationDate and newer.id > e.id))
+              )
             """)
-    List<InterviewEvaluation> findEligibleEvaluations();
+    List<InterviewEvaluation> findEligibleEvaluationPage(
+            @Param("branchId") Long branchId,
+            @Param("keyword") String keyword,
+            Pageable pageable
+    );
 
     @Query("""
-            select e from InterviewEvaluation e
-            join fetch e.applicant a
-            join fetch a.branch branch
-            join fetch a.positionOpening p
-            left join fetch p.client
-            join fetch e.booking b
-            where branch.id = :branchId
-              and e.result = com.company.iss.evaluation.entity.InterviewResult.PASS
+            select count(e) from InterviewEvaluation e
+            join e.applicant a
+            join a.branch branch
+            join a.positionOpening p
+            left join p.client client
+            join e.booking b
+            where e.result = com.company.iss.evaluation.entity.InterviewResult.PASS
               and b.status = com.company.iss.booking.entity.BookingStatus.PASSED
               and b.applicant = a
               and a.active = true
@@ -111,8 +175,30 @@ public interface HiringDecisionRepository extends JpaRepository<HiringDecision, 
               and p.active = true
               and p.status = com.company.iss.position.entity.PositionStatus.OPEN
               and p.hiredCount < p.requiredHeadcount
+              and (:branchId is null or branch.id = :branchId)
+              and (:keyword is null
+                   or locate(:keyword, lower(a.firstName)) > 0
+                   or locate(:keyword, lower(coalesce(a.middleName, ''))) > 0
+                   or locate(:keyword, lower(a.lastName)) > 0
+                   or locate(:keyword, lower(concat(a.firstName, concat(' ', a.lastName)))) > 0
+                   or locate(:keyword, lower(concat(a.firstName,
+                       concat(case when a.middleName is null or trim(a.middleName) = ''
+                                   then ' ' else concat(' ', concat(trim(a.middleName), ' ')) end,
+                              a.lastName)))) > 0
+                   or locate(:keyword, lower(branch.branchName)) > 0
+                   or locate(:keyword, lower(p.title)) > 0
+                   or locate(:keyword, lower(coalesce(client.companyName, ''))) > 0)
               and not exists (select d.id from HiringDecision d where d.applicant = a or d.evaluation = e)
-            order by e.evaluationDate desc
+              and not exists (
+                  select newer.id from InterviewEvaluation newer
+                  join newer.booking newerBooking
+                  where newer.applicant = a
+                    and newer.result = com.company.iss.evaluation.entity.InterviewResult.PASS
+                    and newerBooking.status = com.company.iss.booking.entity.BookingStatus.PASSED
+                    and newerBooking.applicant = a
+                    and (newer.evaluationDate > e.evaluationDate
+                         or (newer.evaluationDate = e.evaluationDate and newer.id > e.id))
+              )
             """)
-    List<InterviewEvaluation> findEligibleEvaluationsByBranchId(@Param("branchId") Long branchId);
+    long countEligibleEvaluationPage(@Param("branchId") Long branchId, @Param("keyword") String keyword);
 }

@@ -288,6 +288,12 @@ Implemented behavior:
 - Exact repeated terminal actions are idempotent; conflicting terminal actions are rejected.
 - Every successful transition appends an immutable hiring audit record.
 - Offer and hired notifications run after commit.
+- The three hiring worklists use independent database-backed page and count queries. Search and
+  whitelisted sorting run in those queries with the same organization or recruiter-branch scope.
+- Search is case-insensitive literal substring matching across applicant, branch, position, client,
+  and applicable decision status values. `%`, `_`, and backslashes are ordinary characters.
+- Page ordering is deterministic. Eligible candidates default to newest qualifying evaluation,
+  outstanding offers to newest offer, and completed decisions to newest resolution.
 
 Re-offers, reversals, applicant self-service acceptance, and offer-time headcount reservation are not supported.
 
@@ -324,7 +330,7 @@ of 50 rows, cap service requests at 100 rows, preserve non-page-aligned Vaadin o
 load only the displayed to-one relationships.
 
 Other management and operational grids have not all been converted to lazy paging. Branch, client,
-position, recruiter, notification-template, hiring-decision, dashboard, and non-follow-up recruiter
+position, recruiter, notification-template, dashboard, and non-follow-up recruiter
 workbench grids still use bounded or complete list loading and remain future scalability candidates
 based on measured volume.
 
@@ -494,7 +500,7 @@ Clients, positions, and applicants are demo data. Their loaders require both the
 
 ## 12. Testing and continuous integration
 
-At this snapshot, the clean Java 25 default H2 suite contains **467 tests** with:
+At this snapshot, the clean Java 25 default H2 suite contains **482 tests** with:
 
 - 0 failures
 - 0 errors
@@ -537,8 +543,8 @@ H2 in MySQL mode is a fast compatibility test; it is not proof that MySQL-specif
 
 ### Scalability and operability gaps
 
-- Applicant, booking, schedule, evaluation, and final/client recruiter follow-up grids are paged, but
-  branch, client, position, recruiter, notification-template, hiring-decision, dashboard, and the
+- Applicant, booking, schedule, evaluation, hiring-decision, and final/client recruiter follow-up grids are paged, but
+  branch, client, position, recruiter, notification-template, dashboard, and the
   remaining recruiter-workbench grids remain unpaged.
 - Contains-style keyword filters use leading wildcards and may still become expensive at high volume;
   offset pagination may also slow down for very deep result windows.
@@ -550,7 +556,7 @@ H2 in MySQL mode is a fast compatibility test; it is not proof that MySQL-specif
 ### Technical debt
 
 - Some existing Spring components still use field or setter injection.
-- Several remaining administration, hiring, dashboard, and recruiter-workbench grids still use
+- Several remaining administration, dashboard, and recruiter-workbench grids still use
   unpaged list loading.
 - Tracked Vaadin-generated frontend artifacts require careful synchronization during builds.
 
@@ -567,7 +573,7 @@ operational gaps, the next priorities are:
 
 ### P2
 
-2. Continue server-side pagination and database filtering for remaining high-volume hiring,
+2. Continue server-side pagination and database filtering for remaining high-volume
    recruiter-workbench, dashboard, and administration grids, prioritized by measured usage.
 
 ### Later or conditional

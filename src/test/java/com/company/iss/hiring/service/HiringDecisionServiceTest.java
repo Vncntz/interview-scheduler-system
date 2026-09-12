@@ -14,6 +14,9 @@ import com.company.iss.evaluation.entity.InterviewEvaluation;
 import com.company.iss.evaluation.entity.InterviewResult;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
 import com.company.iss.hiring.dto.HiringActionCommand;
+import com.company.iss.hiring.dto.CompletedDecisionSort;
+import com.company.iss.hiring.dto.CompletedDecisionSortOrder;
+import com.company.iss.hiring.dto.HiringWorklistFilter;
 import com.company.iss.hiring.dto.IssueOfferCommand;
 import com.company.iss.hiring.entity.HiringDecision;
 import com.company.iss.hiring.entity.HiringDecisionAction;
@@ -38,6 +41,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -47,6 +52,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -330,32 +338,116 @@ class HiringDecisionServiceTest {
     }
 
     @Test
-    void recruiterEligibleListingUsesBranchScopedQueryOnly() {
+    void recruiterEligiblePageAndCountUseBranchScopeAndExactWindow() {
         User recruiter = recruiter(1L);
         when(securityService.requireOperationsUser()).thenReturn(recruiter);
-        when(decisionRepository.findEligibleEvaluationsByBranchId(1L)).thenReturn(List.of());
+        when(decisionRepository.findEligibleEvaluationPage(eq(1L), eq("alex"), any())).thenReturn(List.of());
+        when(decisionRepository.countEligibleEvaluationPage(1L, "alex")).thenReturn(0L);
 
-        assertEquals(List.of(), service.findEligibleCandidates());
+        assertEquals(List.of(), service.findEligiblePage(
+                new HiringWorklistFilter("  AlEx  "), 25, 10, List.of()
+        ));
+        assertEquals(0L, service.countEligible(new HiringWorklistFilter("  AlEx  ")));
 
-        verify(decisionRepository).findEligibleEvaluationsByBranchId(1L);
-        verify(decisionRepository, never()).findEligibleEvaluations();
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(decisionRepository).findEligibleEvaluationPage(eq(1L), eq("alex"), pageable.capture());
+        assertEquals(25L, pageable.getValue().getOffset());
+        assertEquals(10, pageable.getValue().getPageSize());
+        assertEquals("evaluationDate: DESC,id: DESC", pageable.getValue().getSort().toString());
+        verify(decisionRepository).countEligibleEvaluationPage(1L, "alex");
     }
 
     @Test
-    void recruiterDecisionListingsUseOnlyBranchScopedQueries() {
+    void recruiterDecisionPagesAndCountsUseOnlyBranchScopedQueries() {
         User recruiter = recruiter(1L);
         when(securityService.requireOperationsUser()).thenReturn(recruiter);
-        when(decisionRepository.findByStatusAndApplicantBranchIdOrderByOfferedAtDesc(
-                HiringDecisionStatus.OFFERED, 1L
-        )).thenReturn(List.of());
-        when(decisionRepository.findByStatusInAndApplicantBranchIdOrderByResolvedAtDesc(any(), org.mockito.ArgumentMatchers.eq(1L)))
+        when(decisionRepository.findDecisionPage(eq(1L), any(), isNull(), anyBoolean(), any(), any()))
                 .thenReturn(List.of());
+        when(decisionRepository.countDecisionPage(eq(1L), any(), isNull(), anyBoolean(), any()))
+                .thenReturn(0L);
 
-        assertEquals(List.of(), service.findOutstandingDecisions());
-        assertEquals(List.of(), service.findCompletedDecisions());
+        assertEquals(List.of(), service.findOutstandingPage(HiringWorklistFilter.empty(), 0, 50, List.of()));
+        assertEquals(List.of(), service.findCompletedPage(HiringWorklistFilter.empty(), 0, 50, List.of()));
+        assertEquals(0L, service.countOutstanding(HiringWorklistFilter.empty()));
+        assertEquals(0L, service.countCompleted(HiringWorklistFilter.empty()));
 
-        verify(decisionRepository, never()).findByStatusOrderByOfferedAtDesc(any());
-        verify(decisionRepository, never()).findByStatusInOrderByResolvedAtDesc(any());
+        verify(decisionRepository, org.mockito.Mockito.times(2)).findDecisionPage(
+                eq(1L), any(), isNull(), eq(false), eq(List.of(HiringDecisionStatus.OFFERED)), any()
+        );
+        verify(decisionRepository, org.mockito.Mockito.times(2)).countDecisionPage(
+                eq(1L), any(), isNull(), eq(false), eq(List.of(HiringDecisionStatus.OFFERED))
+        );
+    }
+
+    @Test
+    void worklistRejectsInvalidWindowsAndOversizedSearchBeforeQueryingRepository() {
+        when(securityService.requireOperationsUser()).thenReturn(admin());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.findEligiblePage(HiringWorklistFilter.empty(), -1, 10, List.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.findOutstandingPage(HiringWorklistFilter.empty(), 0, 101, List.of()));
+        assertThrows(BusinessRuleViolationException.class,
+                () -> service.countCompleted(new HiringWorklistFilter("x".repeat(101))));
+
+        verifyNoInteractions(decisionRepository);
+    }
+
+    @Test
+    void adminCompletedSearchMatchesOnlyRelevantStatusAndUsesWhitelistedStableSort() {
+        when(securityService.requireOperationsUser()).thenReturn(admin());
+        when(decisionRepository.findDecisionPage(
+                isNull(), any(), eq("hired"), eq(true), eq(List.of(HiringDecisionStatus.HIRED)), any()
+        )).thenReturn(List.of());
+
+        service.findCompletedPage(
+                new HiringWorklistFilter(" HiReD "), 0, 20,
+                List.of(new CompletedDecisionSortOrder(CompletedDecisionSort.APPLICANT, Sort.Direction.DESC))
+        );
+
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(decisionRepository).findDecisionPage(
+                isNull(), any(), eq("hired"), eq(true), eq(List.of(HiringDecisionStatus.HIRED)), pageable.capture()
+        );
+        assertEquals(
+                "applicant.lastName: DESC,applicant.firstName: DESC,id: ASC",
+                pageable.getValue().getSort().toString()
+        );
+    }
+
+    @Test
+    void applicantIsDeniedEveryWorklistPageAndCountBeforeRepositoryAccess() {
+        when(securityService.requireOperationsUser()).thenThrow(new AccessDeniedException("operations only"));
+
+        assertThrows(AccessDeniedException.class,
+                () -> service.findEligiblePage(HiringWorklistFilter.empty(), 0, 10, List.of()));
+        assertThrows(AccessDeniedException.class,
+                () -> service.countEligible(HiringWorklistFilter.empty()));
+        assertThrows(AccessDeniedException.class,
+                () -> service.findOutstandingPage(HiringWorklistFilter.empty(), 0, 10, List.of()));
+        assertThrows(AccessDeniedException.class,
+                () -> service.countOutstanding(HiringWorklistFilter.empty()));
+        assertThrows(AccessDeniedException.class,
+                () -> service.findCompletedPage(HiringWorklistFilter.empty(), 0, 10, List.of()));
+        assertThrows(AccessDeniedException.class,
+                () -> service.countCompleted(HiringWorklistFilter.empty()));
+
+        verifyNoInteractions(decisionRepository);
+    }
+
+    @Test
+    void worklistRejectsTooLargeOffsetAndNullSortOrder() {
+        when(securityService.requireOperationsUser()).thenReturn(admin());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.findEligiblePage(
+                        HiringWorklistFilter.empty(), (long) Integer.MAX_VALUE + 1, 10, List.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.findCompletedPage(
+                        HiringWorklistFilter.empty(), 0, 10,
+                        java.util.Collections.singletonList(null)));
+
+        verifyNoInteractions(decisionRepository);
     }
 
     private User admin() {
