@@ -19,6 +19,59 @@ import java.util.Optional;
 
 public interface InterviewReminderDeliveryRepository extends JpaRepository<InterviewReminderDelivery, Long> {
 
+    @Query("""
+            select d.id as deliveryId,
+                   b.bookingReference as bookingReference,
+                   d.reminderGeneration as reminderGeneration,
+                   d.reminderType as reminderType,
+                   d.status as deliveryStatus,
+                   d.scheduledStartAt as scheduledStartAt,
+                   d.attemptCount as attemptCount,
+                   d.claimedAt as claimedAt,
+                   d.nextAttemptAt as nextAttemptAt,
+                   d.sentAt as sentAt,
+                   d.statusReason as statusReason,
+                   b.reminderGeneration as currentReminderGeneration,
+                   b.status as currentBookingStatus,
+                   a.active as applicantActive,
+                   a.status as currentApplicantStatus,
+                   s.active as scheduleActive,
+                   s.status as currentScheduleStatus,
+                   s.scheduleDate as currentScheduleDate,
+                   s.startTime as currentScheduleStartTime
+            from InterviewReminderDelivery d
+            join d.booking b
+            left join b.applicant a
+            left join b.schedule s
+            where (:status is null or d.status = :status)
+              and (:reminderType is null or d.reminderType = :reminderType)
+              and (:scheduledFrom is null or d.scheduledStartAt >= :scheduledFrom)
+              and (:scheduledThrough is null or d.scheduledStartAt < :scheduledThrough)
+            order by d.scheduledStartAt desc, d.id desc
+            """)
+    List<ReminderDeliveryHealthProjection> findHealthPage(
+            @Param("status") com.company.iss.notification.entity.InterviewReminderDeliveryStatus status,
+            @Param("reminderType") InterviewReminderType reminderType,
+            @Param("scheduledFrom") java.time.LocalDateTime scheduledFrom,
+            @Param("scheduledThrough") java.time.LocalDateTime scheduledThrough,
+            Pageable pageable
+    );
+
+    @Query("""
+            select count(d)
+            from InterviewReminderDelivery d
+            where (:status is null or d.status = :status)
+              and (:reminderType is null or d.reminderType = :reminderType)
+              and (:scheduledFrom is null or d.scheduledStartAt >= :scheduledFrom)
+              and (:scheduledThrough is null or d.scheduledStartAt < :scheduledThrough)
+            """)
+    long countHealth(
+            @Param("status") com.company.iss.notification.entity.InterviewReminderDeliveryStatus status,
+            @Param("reminderType") InterviewReminderType reminderType,
+            @Param("scheduledFrom") java.time.LocalDateTime scheduledFrom,
+            @Param("scheduledThrough") java.time.LocalDateTime scheduledThrough
+    );
+
     Optional<InterviewReminderDelivery> findByBookingIdAndReminderGenerationAndReminderType(
             Long bookingId,
             int reminderGeneration,

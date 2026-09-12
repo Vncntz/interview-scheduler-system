@@ -53,6 +53,20 @@ class SecurityServiceTest {
     }
 
     @Test
+    void administratorBoundaryRejectsRecruiterAndApplicant() {
+        User recruiter = authenticatedUser();
+        recruiter.setRole(Role.RECRUITER);
+        com.company.iss.branch.entity.Branch branch = new com.company.iss.branch.entity.Branch();
+        branch.setId(10L);
+        recruiter.setBranch(branch);
+        assertThrows(AccessDeniedException.class, () -> serviceFor(recruiter).requireAdmin());
+
+        User applicant = authenticatedUser();
+        applicant.setRole(Role.APPLICANT);
+        assertThrows(AccessDeniedException.class, () -> serviceFor(applicant).requireAdmin());
+    }
+
+    @Test
     void customUnauthorizedMessageAppliesOnlyToWrongRole() {
         User applicant = authenticatedUser();
         applicant.setRole(Role.APPLICANT);

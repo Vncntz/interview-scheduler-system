@@ -414,6 +414,10 @@ Notification behavior:
 - `interview_reminder_deliveries` records `PENDING`, `SENT`, `FAILED`, or `SKIPPED` status without storing
   message bodies, recipient addresses, provider responses, or credentials. Database uniqueness on
   booking, reschedule generation, and reminder type prevents normal concurrent/retry duplicates.
+- The administrator-only `/reminder-delivery-health` screen provides database-paged status/type/date
+  filtering, safe persisted reasons, current retry/exhaustion/stale-claim/window/generation indicators,
+  and business-timezone display. It is monitoring-only; `SENT` means SMTP acceptance rather than
+  confirmed inbox delivery.
 - Rescheduling the same booking increments its reminder generation exactly once. Schedule appointment
   date/time/mode fields cannot be edited directly once any booking references the schedule.
 - There is no durable notification outbox, dead-letter dashboard, or exactly-once external-delivery
@@ -490,7 +494,7 @@ Clients, positions, and applicants are demo data. Their loaders require both the
 
 ## 12. Testing and continuous integration
 
-At this snapshot, the clean Java 25 default H2 suite contains **409 tests** with:
+At this snapshot, the clean Java 25 default H2 suite contains **467 tests** with:
 
 - 0 failures
 - 0 errors
@@ -528,15 +532,14 @@ H2 in MySQL mode is a fast compatibility test; it is not proof that MySQL-specif
 
 - No applicant-facing portal or ownership-protected applicant workflow.
 - `APPLICANT` has no authorized landing route.
-- The recruiter follow-up queue is currently unpaged and has no configured follow-up SLA.
 - No automated interview-result email policy or default template.
 - No offer reversal, re-offer, or applicant self-service acceptance.
 
 ### Scalability and operability gaps
 
-- Applicant, booking, schedule, and evaluation grids are paged, but branch, client, position,
-  recruiter, notification-template, hiring-decision, dashboard, and recruiter-workbench grids remain
-  unpaged.
+- Applicant, booking, schedule, evaluation, and final/client recruiter follow-up grids are paged, but
+  branch, client, position, recruiter, notification-template, hiring-decision, dashboard, and the
+  remaining recruiter-workbench grids remain unpaged.
 - Contains-style keyword filters use leading wildcards and may still become expensive at high volume;
   offset pagination may also slow down for very deep result windows.
 - Notification delivery is not durable and can be lost if the process stops after commit but before dispatch.
@@ -559,29 +562,26 @@ operational gaps, the next priorities are:
 
 ### P1
 
-1. Build SLA-aware final/client follow-up on reliable lifecycle timestamps, including configurable
-   targets, overdue prioritization, branch-scoped workload counts, and pagination.
-2. Define the HR/privacy policy for interview-result communications before adding a seeded
+1. Define the HR/privacy policy for interview-result communications before adding a seeded
    `INTERVIEW_RESULT` template or automated delivery workflow.
 
 ### P2
 
-3. Continue server-side pagination and database filtering for remaining high-volume hiring,
+2. Continue server-side pagination and database filtering for remaining high-volume hiring,
    recruiter-workbench, dashboard, and administration grids, prioritized by measured usage.
-4. Add an administrator-facing reminder-delivery health view only after defining safe diagnostics and
-   permitted retry or remediation actions.
 
 ### Later or conditional
 
-5. Design applicant identity, provisioning, authorization, privacy, recovery, and record ownership
+3. Design applicant identity, provisioning, authorization, privacy, recovery, and record ownership
    before enabling a narrowly scoped applicant-facing appointment workflow.
-6. Introduce a general durable notification outbox only if the business requires delivery guarantees
+4. Introduce a general durable notification outbox only if the business requires delivery guarantees
    beyond current best-effort event email and reminder-specific recovery behavior.
-7. Introduce shared session/revocation infrastructure only when multi-instance deployment is planned.
+5. Introduce shared session/revocation infrastructure only when multi-instance deployment is planned.
 
 ## 15. Related documentation
 
 - [`recruiter-workbench.md`](recruiter-workbench.md)
+- [`reminder-delivery-health.md`](reminder-delivery-health.md)
 - [`account-security.md`](account-security.md)
 - [`database-migrations.md`](database-migrations.md)
 - [`production-release-checklist.md`](production-release-checklist.md)

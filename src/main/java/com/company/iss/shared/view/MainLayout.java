@@ -265,6 +265,12 @@ public class MainLayout extends AppLayout {
                         "Notification Templates",
                         "/notification-templates",
                         VaadinIcon.FILE_CODE.create()
+                ),
+
+                new SideNavItem(
+                        "Reminder Delivery Health",
+                        "/reminder-delivery-health",
+                        VaadinIcon.WARNING.create()
                 )
             );
         }
