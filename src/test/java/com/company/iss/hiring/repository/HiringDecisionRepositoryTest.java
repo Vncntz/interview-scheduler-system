@@ -24,16 +24,19 @@ import com.company.iss.position.entity.EmploymentType;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.entity.PositionStatus;
 import com.company.iss.position.repository.PositionOpeningRepository;
+import com.company.iss.shared.pagination.OffsetLimitPageable;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.repository.CrudRepository;
+import org.springframework.data.domain.Sort;
 
 import java.lang.reflect.Field;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -88,16 +91,192 @@ class HiringDecisionRepositoryTest {
     @Test
     void eligibleFetchIsBranchScopedAndExcludesExistingDecision() {
         TestData data = persistEligibleCandidate("eligible-query");
+        OffsetLimitPageable page = new OffsetLimitPageable(0, 20,
+                Sort.by(Sort.Order.desc("evaluationDate"), Sort.Order.desc("id")));
 
-        assertEquals(1, decisionRepository.findEligibleEvaluations().size());
+        assertEquals(1, decisionRepository.findEligibleEvaluationPage(null, null, page).size());
+        assertEquals(1, decisionRepository.countEligibleEvaluationPage(null, null));
         assertTrue(decisionRepository.existsEligibleEvaluationByApplicantId(data.applicant().getId()));
-        assertEquals(1, decisionRepository.findEligibleEvaluationsByBranchId(data.branch().getId()).size());
-        assertEquals(0, decisionRepository.findEligibleEvaluationsByBranchId(data.branch().getId() + 100).size());
+        assertEquals(1, decisionRepository.findEligibleEvaluationPage(data.branch().getId(), null, page).size());
+        assertEquals(0, decisionRepository.findEligibleEvaluationPage(data.branch().getId() + 100, null, page).size());
 
         decisionRepository.saveAndFlush(decision(data, data.evaluation()));
 
-        assertEquals(0, decisionRepository.findEligibleEvaluations().size());
+        assertEquals(0, decisionRepository.findEligibleEvaluationPage(null, null, page).size());
+        assertEquals(0, decisionRepository.countEligibleEvaluationPage(null, null));
         assertFalse(decisionRepository.existsEligibleEvaluationByApplicantId(data.applicant().getId()));
+    }
+
+    @Test
+    void eligiblePageUsesExactOffsetsLiteralCaseInsensitiveSearchAndMatchingCounts() {
+        TestData first = persistEligibleCandidate("page-first");
+        TestData second = persistEligibleCandidate("page-second");
+        TestData literal = persistEligibleCandidate("page-literal");
+        literal.applicant().setFirstName("Jane%_\\");
+        literal.applicant().setMiddleName("Anne");
+        literal.applicant().setLastName("Doe");
+        applicantRepository.saveAndFlush(literal.applicant());
+        Sort byId = Sort.by(Sort.Order.asc("id"));
+
+        List<Long> all = decisionRepository.findEligibleEvaluationPage(
+                null, null, new OffsetLimitPageable(0, 10, byId)
+        ).stream().map(InterviewEvaluation::getId).toList();
+        List<Long> offset = decisionRepository.findEligibleEvaluationPage(
+                null, null, new OffsetLimitPageable(1, 2, byId)
+        ).stream().map(InterviewEvaluation::getId).toList();
+
+        assertEquals(all.subList(1, 3), offset);
+        assertEquals(3, all.stream().distinct().count());
+        assertEquals(1, decisionRepository.findEligibleEvaluationPage(
+                null, "%_\\", new OffsetLimitPageable(0, 10, byId)).size());
+        assertEquals(1, decisionRepository.countEligibleEvaluationPage(null, "%_\\"));
+        assertEquals(1, decisionRepository.findEligibleEvaluationPage(
+                null, "jane%_\\ anne doe", new OffsetLimitPageable(0, 10, byId)).size());
+        assertEquals(1, decisionRepository.findEligibleEvaluationPage(
+                null, "JANE".toLowerCase(), new OffsetLimitPageable(0, 10, byId)).size());
+        assertTrue(all.contains(first.evaluation().getId()));
+        assertTrue(all.contains(second.evaluation().getId()));
+    }
+
+    @Test
+    void eligibleWorklistReturnsOnlyLatestQualifyingEvaluationPerApplicant() {
+        TestData data = persistEligibleCandidate("latest-evaluation");
+        Booking newerBooking = bookingRepository.save(booking(data.applicant(), "BK-latest-evaluation-new"));
+        InterviewEvaluation newer = appendAndFlush(InterviewEvaluation.record(
+                newerBooking, data.applicant(), null, 9, 9, 9, InterviewResult.PASS, null,
+                data.evaluation().getEvaluationDate().plusHours(1)));
+
+        List<InterviewEvaluation> result = decisionRepository.findEligibleEvaluationPage(
+                null, null, new OffsetLimitPageable(0, 10,
+                        Sort.by(Sort.Order.desc("evaluationDate"), Sort.Order.desc("id"))));
+
+        assertEquals(List.of(newer.getId()), result.stream().map(InterviewEvaluation::getId).toList());
+        assertEquals(1, decisionRepository.countEligibleEvaluationPage(null, null));
+    }
+
+    @Test
+    void decisionPagesKeepFiltersCountsStatusesAndBranchScopeConsistent() {
+        TestData offered = persistEligibleCandidate("decision-offered");
+        TestData hired = persistEligibleCandidate("decision-hired");
+        TestData declined = persistEligibleCandidate("decision-declined");
+        HiringDecision offeredDecision = decision(offered, offered.evaluation());
+        HiringDecision hiredDecision = decision(hired, hired.evaluation());
+        hiredDecision.setStatus(HiringDecisionStatus.HIRED);
+        hiredDecision.setResolvedAt(LocalDateTime.of(2026, 9, 1, 10, 0));
+        HiringDecision declinedDecision = decision(declined, declined.evaluation());
+        declinedDecision.setStatus(HiringDecisionStatus.DECLINED);
+        declinedDecision.setResolvedAt(LocalDateTime.of(2026, 9, 1, 10, 0));
+        decisionRepository.saveAllAndFlush(List.of(offeredDecision, hiredDecision, declinedDecision));
+        List<HiringDecisionStatus> terminal = List.of(
+                HiringDecisionStatus.HIRED, HiringDecisionStatus.DECLINED, HiringDecisionStatus.WITHDRAWN);
+        OffsetLimitPageable newest = new OffsetLimitPageable(0, 10,
+                Sort.by(Sort.Order.desc("resolvedAt"), Sort.Order.desc("id")));
+
+        assertEquals(1, decisionRepository.findDecisionPage(
+                offered.branch().getId(), List.of(HiringDecisionStatus.OFFERED), null,
+                false, List.of(HiringDecisionStatus.OFFERED), newest).size());
+        assertEquals(1, decisionRepository.countDecisionPage(
+                offered.branch().getId(), List.of(HiringDecisionStatus.OFFERED), null,
+                false, List.of(HiringDecisionStatus.OFFERED)));
+        assertEquals(2, decisionRepository.findDecisionPage(
+                null, terminal, null, false, List.of(HiringDecisionStatus.OFFERED), newest).size());
+        assertEquals(2, decisionRepository.countDecisionPage(
+                null, terminal, null, false, List.of(HiringDecisionStatus.OFFERED)));
+
+        assertEquals(List.of(hiredDecision.getId()), decisionRepository.findDecisionPage(
+                null, terminal, "hired", true, List.of(HiringDecisionStatus.HIRED), newest
+        ).stream().map(HiringDecision::getId).toList());
+        assertEquals(1, decisionRepository.countDecisionPage(
+                null, terminal, "hired", true, List.of(HiringDecisionStatus.HIRED)));
+        assertEquals(0, decisionRepository.countDecisionPage(
+                declined.branch().getId(), terminal, "hired", true, List.of(HiringDecisionStatus.HIRED)));
+
+        List<Long> stable = decisionRepository.findDecisionPage(
+                null, terminal, null, false, List.of(HiringDecisionStatus.OFFERED), newest
+        ).stream().map(HiringDecision::getId).toList();
+        List<Long> paged = List.of(
+                decisionRepository.findDecisionPage(null, terminal, null, false,
+                        List.of(HiringDecisionStatus.OFFERED), new OffsetLimitPageable(0, 1, newest.getSort()))
+                        .getFirst().getId(),
+                decisionRepository.findDecisionPage(null, terminal, null, false,
+                        List.of(HiringDecisionStatus.OFFERED), new OffsetLimitPageable(1, 1, newest.getSort()))
+                        .getFirst().getId()
+        );
+        assertEquals(stable, paged);
+        assertEquals(2, paged.stream().distinct().count());
+    }
+
+    @Test
+    void outstandingDefaultOrderIsStableAcrossPagesAndOutOfRangePageIsEmpty() {
+        TestData first = persistEligibleCandidate("offered-tie-first");
+        TestData second = persistEligibleCandidate("offered-tie-second");
+        LocalDateTime offeredAt = LocalDateTime.of(2026, 9, 2, 12, 0);
+        HiringDecision firstDecision = decision(first, first.evaluation());
+        firstDecision.setOfferedAt(offeredAt);
+        HiringDecision secondDecision = decision(second, second.evaluation());
+        secondDecision.setOfferedAt(offeredAt);
+        decisionRepository.saveAllAndFlush(List.of(firstDecision, secondDecision));
+        List<HiringDecisionStatus> offered = List.of(HiringDecisionStatus.OFFERED);
+        Sort order = Sort.by(Sort.Order.desc("offeredAt"), Sort.Order.desc("id"));
+
+        List<Long> all = decisionRepository.findDecisionPage(
+                null, offered, null, false, offered, new OffsetLimitPageable(0, 10, order)
+        ).stream().map(HiringDecision::getId).toList();
+        List<Long> paged = List.of(
+                decisionRepository.findDecisionPage(null, offered, null, false, offered,
+                        new OffsetLimitPageable(0, 1, order)).getFirst().getId(),
+                decisionRepository.findDecisionPage(null, offered, null, false, offered,
+                        new OffsetLimitPageable(1, 1, order)).getFirst().getId()
+        );
+
+        assertEquals(all, paged);
+        assertEquals(2, paged.stream().distinct().count());
+        assertTrue(decisionRepository.findDecisionPage(null, offered, null, false, offered,
+                new OffsetLimitPageable(10, 1, order)).isEmpty());
+    }
+
+    @Test
+    void decisionSearchPreservesFullNamesLiteralCharactersAndRelatedFields() {
+        TestData data = persistEligibleCandidate("decision-search");
+        data.applicant().setFirstName("Jane%_\\");
+        data.applicant().setMiddleName("Anne");
+        data.applicant().setLastName("Doe");
+        applicantRepository.saveAndFlush(data.applicant());
+        HiringDecision decision = decision(data, data.evaluation());
+        decision.setStatus(HiringDecisionStatus.HIRED);
+        decision.setResolvedAt(LocalDateTime.of(2026, 9, 3, 12, 0));
+        decisionRepository.saveAndFlush(decision);
+        List<HiringDecisionStatus> terminal = List.of(
+                HiringDecisionStatus.HIRED, HiringDecisionStatus.DECLINED, HiringDecisionStatus.WITHDRAWN);
+        OffsetLimitPageable page = new OffsetLimitPageable(0, 10, Sort.by("id"));
+
+        for (String keyword : List.of(
+                "%_\\", "jane%_\\ anne doe", "branch decision-search",
+                "engineer decision-search", "client decision-search")) {
+            assertEquals(1, decisionRepository.findDecisionPage(
+                    null, terminal, keyword, false, List.of(HiringDecisionStatus.OFFERED), page).size());
+            assertEquals(1, decisionRepository.countDecisionPage(
+                    null, terminal, keyword, false, List.of(HiringDecisionStatus.OFFERED)));
+        }
+    }
+
+    @Test
+    void eligibleClientSortKeepsRowsWithoutAClient() {
+        TestData withClient = persistEligibleCandidate("sort-client");
+        TestData withoutClient = persistEligibleCandidate("sort-no-client");
+        withoutClient.position().setClient(null);
+        positionRepository.saveAndFlush(withoutClient.position());
+
+        List<Long> result = decisionRepository.findEligibleEvaluationPage(
+                null, null, new OffsetLimitPageable(0, 10,
+                        Sort.by(Sort.Order.asc("applicant.positionOpening.client.companyName"),
+                                Sort.Order.asc("id")))
+        ).stream().map(InterviewEvaluation::getId).toList();
+
+        assertEquals(2, result.size());
+        assertTrue(result.contains(withClient.evaluation().getId()));
+        assertTrue(result.contains(withoutClient.evaluation().getId()));
+        assertEquals(2, decisionRepository.countEligibleEvaluationPage(null, null));
     }
 
     @Test
