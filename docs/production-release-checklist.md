@@ -26,6 +26,11 @@ present; never record its value in release evidence or command output.
   `INTERVIEW_FOLLOW_UP_CLIENT_TARGET`, and `INTERVIEW_FOLLOW_UP_DUE_SOON_WINDOW`. Confirm all are
   positive and the due-soon window is shorter than both targets. Confirm the configured timestamp zone
   matches the local-time convention of stored evaluation and booking lifecycle timestamps.
+- Hiring offer timing: when `OFFER_RESPONSE_TIMESTAMP_ZONE` is absent, empty or new installations may use the
+  implicit `Asia/Manila` default; an explicitly present blank value is invalid. Before upgrading
+  a deployment with existing hiring decisions, set `OFFER_RESPONSE_TIMESTAMP_ZONE` explicitly to the zone
+  historically used for its zone-less hiring timestamps. Do not substitute Manila merely to pass validation;
+  a historical zone with fall-back overlaps requires an approved timestamp backfill/storage migration.
 - Set the stale-claim timeout comfortably above the total configured SMTP connection, read, and write
   timeout budget plus expected processing margin. These settings are validated individually; the
   application does not cross-validate their combined budget.
@@ -56,6 +61,8 @@ data.
 - Confirm every booking has `interview_stage`, the column is non-null, and no database default remains.
 - Confirm every booking has `reminder_generation`, the column is non-null with no database default,
   and reminder delivery uniqueness, booking foreign key, and scan/retry indexes exist.
+- For a nonempty upgrade rehearsal, confirm the application refuses to start without an explicit
+  `OFFER_RESPONSE_TIMESTAMP_ZONE`, then starts with the verified historical zone when that zone is supported.
 - Confirm Hibernate schema validation succeeds with the release binary.
 - Run controlled smoke checks with email delivery disabled or replaced by a safe test double. Runtime
   SMS delivery does not exist.
