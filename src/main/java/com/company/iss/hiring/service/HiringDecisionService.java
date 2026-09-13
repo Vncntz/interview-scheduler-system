@@ -20,6 +20,7 @@ import com.company.iss.hiring.dto.HiringDecisionSummary;
 import com.company.iss.hiring.dto.HiringWorklistFilter;
 import com.company.iss.hiring.dto.IssueOfferCommand;
 import com.company.iss.hiring.dto.OutstandingDecisionSortOrder;
+import com.company.iss.hiring.dto.OutstandingOfferFilter;
 import com.company.iss.hiring.entity.HiringDecision;
 import com.company.iss.hiring.entity.HiringDecisionAction;
 import com.company.iss.hiring.entity.HiringDecisionAudit;
@@ -65,6 +66,7 @@ public class HiringDecisionService {
     private final PositionOpeningRepository positionRepository;
     private final SecurityService securityService;
     private final ApplicationEventPublisher eventPublisher;
+    private final OfferDeadlinePolicy deadlinePolicy;
 
     public HiringDecisionService(
             HiringDecisionRepository decisionRepository,
@@ -73,7 +75,8 @@ public class HiringDecisionService {
             InterviewEvaluationRepository evaluationRepository,
             PositionOpeningRepository positionRepository,
             SecurityService securityService,
-            ApplicationEventPublisher eventPublisher
+            ApplicationEventPublisher eventPublisher,
+            OfferDeadlinePolicy deadlinePolicy
     ) {
         this.decisionRepository = decisionRepository;
         this.auditRepository = auditRepository;
@@ -82,6 +85,7 @@ public class HiringDecisionService {
         this.positionRepository = positionRepository;
         this.securityService = securityService;
         this.eventPublisher = eventPublisher;
+        this.deadlinePolicy = deadlinePolicy;
     }
 
     @Transactional(readOnly = true)
@@ -109,7 +113,7 @@ public class HiringDecisionService {
 
     @Transactional(readOnly = true)
     public List<HiringDecisionSummary> findOutstandingPage(
-            HiringWorklistFilter filter,
+            OutstandingOfferFilter filter,
             long offset,
             int limit,
             List<OutstandingDecisionSortOrder> sortOrders
@@ -118,24 +122,33 @@ public class HiringDecisionService {
         validateWorklistWindow(offset, limit);
         String keyword = normalizedKeyword(filter);
         StatusSearch statusSearch = statusSearch(keyword);
-        return decisionRepository.findDecisionPage(
-                worklistBranchId(actor),
-                List.of(HiringDecisionStatus.OFFERED),
-                keyword,
-                statusSearch.matches(),
-                statusSearch.statuses(),
-                new OffsetLimitPageable(offset, limit, outstandingSort(sortOrders))
-        ).stream().map(this::toSummary).toList();
+        LocalDateTime now = deadlinePolicy.now();
+        LocalDateTime dueSoonCutoff = deadlinePolicy.dueSoonCutoff(now);
+        OutstandingOfferFilter normalizedFilter = normalizedOutstandingFilter(filter);
+        boolean offeredStatusMatches = statusSearch.matches()
+                && statusSearch.statuses().contains(HiringDecisionStatus.OFFERED);
+        List<HiringDecision> decisions = sortOrders == null || sortOrders.isEmpty()
+                ? decisionRepository.findOutstandingDecisionPageByDeadlinePriority(
+                        worklistBranchId(actor), keyword, offeredStatusMatches, normalizedFilter.deadline().name(),
+                        now, dueSoonCutoff, new OffsetLimitPageable(offset, limit, Sort.unsorted()))
+                : decisionRepository.findOutstandingDecisionPage(
+                        worklistBranchId(actor), keyword, offeredStatusMatches, normalizedFilter.deadline().name(),
+                        now, dueSoonCutoff, new OffsetLimitPageable(offset, limit, outstandingSort(sortOrders)));
+        return decisions.stream().map(decision -> toSummary(decision, now)).toList();
     }
 
     @Transactional(readOnly = true)
-    public long countOutstanding(HiringWorklistFilter filter) {
+    public long countOutstanding(OutstandingOfferFilter filter) {
         User actor = securityService.requireOperationsUser();
         String keyword = normalizedKeyword(filter);
         StatusSearch statusSearch = statusSearch(keyword);
-        return decisionRepository.countDecisionPage(
-                worklistBranchId(actor), List.of(HiringDecisionStatus.OFFERED), keyword,
-                statusSearch.matches(), statusSearch.statuses()
+        LocalDateTime now = deadlinePolicy.now();
+        boolean offeredStatusMatches = statusSearch.matches()
+                && statusSearch.statuses().contains(HiringDecisionStatus.OFFERED);
+        return decisionRepository.countOutstandingDecisions(
+                worklistBranchId(actor), keyword, offeredStatusMatches,
+                normalizedOutstandingFilter(filter).deadline().name(),
+                now, deadlinePolicy.dueSoonCutoff(now)
         );
     }
 
@@ -150,11 +163,12 @@ public class HiringDecisionService {
         validateWorklistWindow(offset, limit);
         String keyword = normalizedKeyword(filter);
         StatusSearch statusSearch = statusSearch(keyword);
+        LocalDateTime now = deadlinePolicy.now();
         return decisionRepository.findDecisionPage(
                 worklistBranchId(actor), TERMINAL_STATUSES, keyword,
                 statusSearch.matches(), statusSearch.statuses(),
                 new OffsetLimitPageable(offset, limit, completedSort(sortOrders))
-        ).stream().map(this::toSummary).toList();
+        ).stream().map(decision -> toSummary(decision, now)).toList();
     }
 
     @Transactional(readOnly = true)
@@ -193,20 +207,26 @@ public class HiringDecisionService {
 
         HiringDecision existing = decisionRepository.findByApplicantIdForUpdate(applicant.getId()).orElse(null);
         if (existing != null) {
-            if (existing.getStatus() == HiringDecisionStatus.OFFERED
-                    && Objects.equals(existing.getEvaluation().getId(), command.evaluationId())) {
-                return toSummary(existing);
+            boolean sameOutstandingOffer = existing.getStatus() == HiringDecisionStatus.OFFERED
+                    && Objects.equals(existing.getEvaluation().getId(), command.evaluationId());
+            if (sameOutstandingOffer) {
+                if (Objects.equals(existing.getResponseDueAt(), command.responseDueAt())) {
+                    return toSummary(existing);
+                }
+                validateResponseDeadline(command.responseDueAt(), deadlinePolicy.now());
             }
             throw new HiringDecisionException(
                     "This applicant already has a hiring decision and cannot receive another offer."
             );
         }
 
+        LocalDateTime now = deadlinePolicy.now();
+        validateResponseDeadline(command.responseDueAt(), now);
+
         InterviewEvaluation evaluation = evaluationRepository.findDetailedById(command.evaluationId())
                 .orElseThrow(() -> new HiringDecisionException("Interview evaluation not found."));
         validateEligible(applicant, evaluation);
 
-        LocalDateTime now = LocalDateTime.now();
         HiringDecision decision = new HiringDecision();
         decision.setApplicant(applicant);
         decision.setEvaluation(evaluation);
@@ -214,6 +234,7 @@ public class HiringDecisionService {
         decision.setStatus(HiringDecisionStatus.OFFERED);
         decision.setOfferedBy(actor);
         decision.setOfferedAt(now);
+        decision.setResponseDueAt(command.responseDueAt());
         decision.setOfferedRemarks(trimToNull(command.remarks()));
         decision = decisionRepository.saveAndFlush(decision);
 
@@ -255,7 +276,7 @@ public class HiringDecisionService {
             position.setStatus(PositionStatus.FILLED);
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = deadlinePolicy.now();
         completeDecision(decision, HiringDecisionStatus.HIRED, applicant, ApplicantStatus.HIRED, actor, now, command.remarks());
         positionRepository.save(position);
         appendAudit(
@@ -310,7 +331,7 @@ public class HiringDecisionService {
         requireReason(command.remarks());
         validateOutstandingApplicantState(decision, applicant);
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = deadlinePolicy.now();
         completeDecision(decision, targetStatus, applicant, applicantStatus, actor, now, command.remarks());
         appendAudit(
                 decision,
@@ -467,6 +488,12 @@ public class HiringDecisionService {
         validateRemarksLength(command.remarks());
     }
 
+    private void validateResponseDeadline(LocalDateTime responseDueAt, LocalDateTime now) {
+        if (!deadlinePolicy.isFuture(responseDueAt, now)) {
+            throw new HiringDecisionException("Response deadline must be in the future.");
+        }
+    }
+
     private void validateActionCommand(HiringActionCommand command, boolean reasonRequired) {
         if (command == null || command.applicantId() == null) {
             throw new HiringDecisionException("Applicant is required.");
@@ -508,6 +535,14 @@ public class HiringDecisionService {
         return keyword == null ? null : keyword.toLowerCase(Locale.ROOT);
     }
 
+    private String normalizedKeyword(OutstandingOfferFilter filter) {
+        return normalizedKeyword(new HiringWorklistFilter(filter == null ? null : filter.keyword()));
+    }
+
+    private OutstandingOfferFilter normalizedOutstandingFilter(OutstandingOfferFilter filter) {
+        return filter == null ? OutstandingOfferFilter.empty() : filter;
+    }
+
     private Long worklistBranchId(User actor) {
         if (actor.getRole() == Role.ADMIN) {
             return null;
@@ -546,9 +581,6 @@ public class HiringDecisionService {
     }
 
     private Sort outstandingSort(List<OutstandingDecisionSortOrder> sortOrders) {
-        if (sortOrders == null || sortOrders.isEmpty()) {
-            return Sort.by(Sort.Order.desc("offeredAt"), Sort.Order.desc("id"));
-        }
         List<Sort.Order> orders = new ArrayList<>();
         for (OutstandingDecisionSortOrder order : sortOrders) {
             if (order == null) {
@@ -591,6 +623,10 @@ public class HiringDecisionService {
     }
 
     private HiringDecisionSummary toSummary(HiringDecision decision) {
+        return toSummary(decision, deadlinePolicy.now());
+    }
+
+    private HiringDecisionSummary toSummary(HiringDecision decision, LocalDateTime now) {
         Applicant applicant = decision.getApplicant();
         PositionOpening position = decision.getPosition();
         return new HiringDecisionSummary(
@@ -604,6 +640,9 @@ public class HiringDecisionService {
                 decision.getStatus(),
                 decision.getOfferedBy().getFullName(),
                 decision.getOfferedAt(),
+                decision.getResponseDueAt(),
+                deadlinePolicy.age(decision.getOfferedAt(), now),
+                deadlinePolicy.classify(decision.getResponseDueAt(), now),
                 decision.getOfferedRemarks(),
                 decision.getResolvedBy() == null ? "" : decision.getResolvedBy().getFullName(),
                 decision.getResolvedAt(),

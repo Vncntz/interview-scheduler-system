@@ -18,6 +18,11 @@ import com.company.iss.hiring.dto.CompletedDecisionSort;
 import com.company.iss.hiring.dto.CompletedDecisionSortOrder;
 import com.company.iss.hiring.dto.HiringWorklistFilter;
 import com.company.iss.hiring.dto.IssueOfferCommand;
+import com.company.iss.hiring.dto.OfferDeadlineFilter;
+import com.company.iss.hiring.dto.OutstandingOfferFilter;
+import com.company.iss.hiring.dto.OutstandingDecisionSort;
+import com.company.iss.hiring.dto.OutstandingDecisionSortOrder;
+import com.company.iss.hiring.config.OfferDeadlineProperties;
 import com.company.iss.hiring.entity.HiringDecision;
 import com.company.iss.hiring.entity.HiringDecisionAction;
 import com.company.iss.hiring.entity.HiringDecisionAudit;
@@ -44,7 +49,10 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -63,6 +71,9 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class HiringDecisionServiceTest {
 
+    private static final Instant NOW = Instant.parse("2026-09-13T02:00:00Z");
+    private static final LocalDateTime NOW_LOCAL = LocalDateTime.ofInstant(NOW, ZoneOffset.UTC);
+
     @Mock HiringDecisionRepository decisionRepository;
     @Mock HiringDecisionAuditRepository auditRepository;
     @Mock ApplicantRepository applicantRepository;
@@ -75,6 +86,8 @@ class HiringDecisionServiceTest {
 
     @BeforeEach
     void setUp() {
+        OfferDeadlineProperties properties = new OfferDeadlineProperties();
+        properties.setTimestampZone(ZoneOffset.UTC);
         service = new HiringDecisionService(
                 decisionRepository,
                 auditRepository,
@@ -82,7 +95,8 @@ class HiringDecisionServiceTest {
                 evaluationRepository,
                 positionRepository,
                 securityService,
-                eventPublisher
+                eventPublisher,
+                new OfferDeadlinePolicy(Clock.fixed(NOW, ZoneOffset.UTC), properties)
         );
     }
 
@@ -110,6 +124,44 @@ class HiringDecisionServiceTest {
         verify(decisionRepository).findByApplicantIdForUpdate(10L);
         verify(auditRepository).append(any(HiringDecisionAudit.class));
         verify(eventPublisher).publishEvent(new JobOfferIssuedEvent(30L));
+    }
+
+    @Test
+    void issueOfferPersistsStrictlyFutureResponseDeadline() {
+        User actor = admin();
+        Applicant applicant = eligibleApplicant(10L, 1L);
+        InterviewEvaluation evaluation = passedEvaluation(20L, applicant);
+        LocalDateTime deadline = NOW_LOCAL.plusDays(2);
+        when(securityService.requireOperationsUser()).thenReturn(actor);
+        when(applicantRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(applicant));
+        when(decisionRepository.findByApplicantIdForUpdate(10L)).thenReturn(Optional.empty());
+        when(evaluationRepository.findDetailedById(20L)).thenReturn(Optional.of(evaluation));
+        when(decisionRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.issueOffer(new IssueOfferCommand(10L, 20L, deadline, null));
+
+        assertEquals(deadline, result.responseDueAt());
+        assertEquals(com.company.iss.hiring.entity.OfferDeadlineState.ON_TRACK, result.deadlineState());
+        ArgumentCaptor<HiringDecision> decision = ArgumentCaptor.forClass(HiringDecision.class);
+        verify(decisionRepository).saveAndFlush(decision.capture());
+        assertEquals(deadline, decision.getValue().getResponseDueAt());
+    }
+
+    @Test
+    void issueOfferRejectsNonFutureDeadlineBeforePersistence() {
+        User actor = admin();
+        Applicant applicant = eligibleApplicant(10L, 1L);
+        when(securityService.requireOperationsUser()).thenReturn(actor);
+        when(applicantRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(applicant));
+        when(decisionRepository.findByApplicantIdForUpdate(10L)).thenReturn(Optional.empty());
+
+        HiringDecisionException exception = assertThrows(HiringDecisionException.class,
+                () -> service.issueOffer(new IssueOfferCommand(10L, 20L, NOW_LOCAL, null)));
+
+        assertEquals("Response deadline must be in the future.", exception.getMessage());
+        verify(decisionRepository, never()).saveAndFlush(any());
+        verify(applicantRepository, never()).save(any());
+        verifyNoInteractions(evaluationRepository, auditRepository, eventPublisher);
     }
 
     @ParameterizedTest
@@ -145,18 +197,59 @@ class HiringDecisionServiceTest {
     }
 
     @Test
-    void reissuingSameOutstandingOfferIsIdempotent() {
+    void reissuingSameOutstandingOfferAndStoredDeadlineIsIdempotentAfterDeadlinePasses() {
         User actor = admin();
         HiringDecision decision = offeredDecision(30L, eligibleApplicant(10L, 1L), actor);
+        LocalDateTime storedDeadline = NOW_LOCAL.minusHours(1);
+        decision.setResponseDueAt(storedDeadline);
         when(securityService.requireOperationsUser()).thenReturn(actor);
         when(applicantRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(decision.getApplicant()));
         when(decisionRepository.findByApplicantIdForUpdate(10L)).thenReturn(Optional.of(decision));
 
-        var result = service.issueOffer(new IssueOfferCommand(10L, 20L, "ignored repeat"));
+        var result = service.issueOffer(new IssueOfferCommand(10L, 20L, storedDeadline, "ignored repeat"));
 
         assertEquals(30L, result.decisionId());
+        assertEquals(storedDeadline, result.responseDueAt());
         verifyNoInteractions(evaluationRepository, auditRepository, eventPublisher);
         verify(decisionRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void reissuingOutstandingOfferWithDifferentFutureDeadlineIsRejectedAsConflict() {
+        User actor = admin();
+        HiringDecision decision = offeredDecision(30L, eligibleApplicant(10L, 1L), actor);
+        decision.setResponseDueAt(NOW_LOCAL.plusHours(2));
+        when(securityService.requireOperationsUser()).thenReturn(actor);
+        when(applicantRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(decision.getApplicant()));
+        when(decisionRepository.findByApplicantIdForUpdate(10L)).thenReturn(Optional.of(decision));
+
+        HiringDecisionException exception = assertThrows(HiringDecisionException.class,
+                () -> service.issueOffer(new IssueOfferCommand(
+                        10L, 20L, NOW_LOCAL.plusHours(3), "changed deadline")));
+
+        assertEquals("This applicant already has a hiring decision and cannot receive another offer.",
+                exception.getMessage());
+        verifyNoInteractions(evaluationRepository, auditRepository, eventPublisher);
+        verify(decisionRepository, never()).saveAndFlush(any());
+        verify(applicantRepository, never()).save(any());
+    }
+
+    @Test
+    void reissuingOutstandingOfferWithDifferentInvalidDeadlineReturnsValidationError() {
+        User actor = admin();
+        HiringDecision decision = offeredDecision(30L, eligibleApplicant(10L, 1L), actor);
+        decision.setResponseDueAt(NOW_LOCAL.minusHours(1));
+        when(securityService.requireOperationsUser()).thenReturn(actor);
+        when(applicantRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(decision.getApplicant()));
+        when(decisionRepository.findByApplicantIdForUpdate(10L)).thenReturn(Optional.of(decision));
+
+        HiringDecisionException exception = assertThrows(HiringDecisionException.class,
+                () -> service.issueOffer(new IssueOfferCommand(10L, 20L, NOW_LOCAL, null)));
+
+        assertEquals("Response deadline must be in the future.", exception.getMessage());
+        verifyNoInteractions(evaluationRepository, auditRepository, eventPublisher);
+        verify(decisionRepository, never()).saveAndFlush(any());
+        verify(applicantRepository, never()).save(any());
     }
 
     @Test
@@ -184,6 +277,7 @@ class HiringDecisionServiceTest {
         position.setRequiredHeadcount(2);
         position.setHiredCount(1);
         HiringDecision decision = offeredDecision(30L, applicant, actor);
+        decision.setResponseDueAt(NOW_LOCAL.minusHours(1));
         when(securityService.requireOperationsUser()).thenReturn(actor);
         when(applicantRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(applicant));
         when(decisionRepository.findByApplicantIdForUpdate(10L)).thenReturn(Optional.of(decision));
@@ -195,6 +289,7 @@ class HiringDecisionServiceTest {
         assertEquals(ApplicantStatus.HIRED, applicant.getStatus());
         assertEquals(2, position.getHiredCount());
         assertEquals(PositionStatus.FILLED, position.getStatus());
+        assertEquals(NOW_LOCAL.minusHours(1), result.responseDueAt());
         verify(applicantRepository).findByIdForUpdate(10L);
         verify(decisionRepository).findByApplicantIdForUpdate(10L);
         verify(positionRepository).findByIdForUpdate(100L);
@@ -338,6 +433,25 @@ class HiringDecisionServiceTest {
     }
 
     @Test
+    void recruiterCanIssueDeadlineOfferInsideAuthoritativeBranch() {
+        User recruiter = recruiter(1L);
+        Applicant applicant = eligibleApplicant(10L, 1L);
+        InterviewEvaluation evaluation = passedEvaluation(20L, applicant);
+        when(securityService.requireOperationsUser()).thenReturn(recruiter);
+        when(applicantRepository.findByIdAndBranchIdForUpdate(10L, 1L)).thenReturn(Optional.of(applicant));
+        when(decisionRepository.findByApplicantIdForUpdate(10L)).thenReturn(Optional.empty());
+        when(evaluationRepository.findDetailedById(20L)).thenReturn(Optional.of(evaluation));
+        when(decisionRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.issueOffer(new IssueOfferCommand(
+                10L, 20L, NOW_LOCAL.plusHours(12), null));
+
+        assertEquals(NOW_LOCAL.plusHours(12), result.responseDueAt());
+        assertEquals(HiringDecisionStatus.OFFERED, result.status());
+        verify(applicantRepository).findByIdAndBranchIdForUpdate(10L, 1L);
+    }
+
+    @Test
     void recruiterEligiblePageAndCountUseBranchScopeAndExactWindow() {
         User recruiter = recruiter(1L);
         when(securityService.requireOperationsUser()).thenReturn(recruiter);
@@ -366,17 +480,65 @@ class HiringDecisionServiceTest {
         when(decisionRepository.countDecisionPage(eq(1L), any(), isNull(), anyBoolean(), any()))
                 .thenReturn(0L);
 
-        assertEquals(List.of(), service.findOutstandingPage(HiringWorklistFilter.empty(), 0, 50, List.of()));
+        when(decisionRepository.findOutstandingDecisionPageByDeadlinePriority(
+                eq(1L), isNull(), eq(false), eq("ALL"), eq(NOW_LOCAL),
+                eq(NOW_LOCAL.plusHours(24)), any())).thenReturn(List.of());
+        when(decisionRepository.countOutstandingDecisions(
+                eq(1L), isNull(), eq(false), eq("ALL"), eq(NOW_LOCAL),
+                eq(NOW_LOCAL.plusHours(24)))).thenReturn(0L);
+
+        assertEquals(List.of(), service.findOutstandingPage(OutstandingOfferFilter.empty(), 0, 50, List.of()));
         assertEquals(List.of(), service.findCompletedPage(HiringWorklistFilter.empty(), 0, 50, List.of()));
-        assertEquals(0L, service.countOutstanding(HiringWorklistFilter.empty()));
+        assertEquals(0L, service.countOutstanding(OutstandingOfferFilter.empty()));
         assertEquals(0L, service.countCompleted(HiringWorklistFilter.empty()));
 
-        verify(decisionRepository, org.mockito.Mockito.times(2)).findDecisionPage(
+        verify(decisionRepository).findDecisionPage(
                 eq(1L), any(), isNull(), eq(false), eq(List.of(HiringDecisionStatus.OFFERED)), any()
         );
-        verify(decisionRepository, org.mockito.Mockito.times(2)).countDecisionPage(
+        verify(decisionRepository).countDecisionPage(
                 eq(1L), any(), isNull(), eq(false), eq(List.of(HiringDecisionStatus.OFFERED))
         );
+        verify(decisionRepository).findOutstandingDecisionPageByDeadlinePriority(
+                eq(1L), isNull(), eq(false), eq("ALL"), eq(NOW_LOCAL),
+                eq(NOW_LOCAL.plusHours(24)), any());
+        verify(decisionRepository).countOutstandingDecisions(
+                1L, null, false, "ALL", NOW_LOCAL, NOW_LOCAL.plusHours(24));
+    }
+
+    @Test
+    void outstandingDeadlineFilterAndWhitelistedResponseSortReachRepositoryWithExactBoundaries() {
+        when(securityService.requireOperationsUser()).thenReturn(admin());
+        when(decisionRepository.findOutstandingDecisionPage(
+                isNull(), eq("offered"), eq(true), eq("OVERDUE"), eq(NOW_LOCAL),
+                eq(NOW_LOCAL.plusHours(24)), any())).thenReturn(List.of());
+
+        service.findOutstandingPage(
+                new OutstandingOfferFilter(" Offered ", OfferDeadlineFilter.OVERDUE), 7, 12,
+                List.of(new OutstandingDecisionSortOrder(
+                        OutstandingDecisionSort.RESPONSE_DUE, Sort.Direction.DESC)));
+
+        ArgumentCaptor<Pageable> page = ArgumentCaptor.forClass(Pageable.class);
+        verify(decisionRepository).findOutstandingDecisionPage(
+                isNull(), eq("offered"), eq(true), eq("OVERDUE"), eq(NOW_LOCAL),
+                eq(NOW_LOCAL.plusHours(24)), page.capture());
+        assertEquals(7L, page.getValue().getOffset());
+        assertEquals(12, page.getValue().getPageSize());
+        assertEquals("responseDueAt: DESC,id: ASC", page.getValue().getSort().toString());
+    }
+
+    @Test
+    void outstandingSearchDoesNotTreatTerminalStatusTextAsAnOfferedMatch() {
+        when(securityService.requireOperationsUser()).thenReturn(admin());
+        when(decisionRepository.findOutstandingDecisionPageByDeadlinePriority(
+                isNull(), eq("hired"), eq(false), eq("ALL"), eq(NOW_LOCAL),
+                eq(NOW_LOCAL.plusHours(24)), any())).thenReturn(List.of());
+
+        service.findOutstandingPage(
+                new OutstandingOfferFilter(" HiReD ", OfferDeadlineFilter.ALL), 0, 20, List.of());
+
+        verify(decisionRepository).findOutstandingDecisionPageByDeadlinePriority(
+                isNull(), eq("hired"), eq(false), eq("ALL"), eq(NOW_LOCAL),
+                eq(NOW_LOCAL.plusHours(24)), any());
     }
 
     @Test
@@ -386,7 +548,7 @@ class HiringDecisionServiceTest {
         assertThrows(IllegalArgumentException.class,
                 () -> service.findEligiblePage(HiringWorklistFilter.empty(), -1, 10, List.of()));
         assertThrows(IllegalArgumentException.class,
-                () -> service.findOutstandingPage(HiringWorklistFilter.empty(), 0, 101, List.of()));
+                () -> service.findOutstandingPage(OutstandingOfferFilter.empty(), 0, 101, List.of()));
         assertThrows(BusinessRuleViolationException.class,
                 () -> service.countCompleted(new HiringWorklistFilter("x".repeat(101))));
 
@@ -424,9 +586,9 @@ class HiringDecisionServiceTest {
         assertThrows(AccessDeniedException.class,
                 () -> service.countEligible(HiringWorklistFilter.empty()));
         assertThrows(AccessDeniedException.class,
-                () -> service.findOutstandingPage(HiringWorklistFilter.empty(), 0, 10, List.of()));
+                () -> service.findOutstandingPage(OutstandingOfferFilter.empty(), 0, 10, List.of()));
         assertThrows(AccessDeniedException.class,
-                () -> service.countOutstanding(HiringWorklistFilter.empty()));
+                () -> service.countOutstanding(OutstandingOfferFilter.empty()));
         assertThrows(AccessDeniedException.class,
                 () -> service.findCompletedPage(HiringWorklistFilter.empty(), 0, 10, List.of()));
         assertThrows(AccessDeniedException.class,

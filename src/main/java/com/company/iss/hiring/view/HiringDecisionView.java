@@ -13,11 +13,16 @@ import com.company.iss.hiring.dto.HiringDecisionSummary;
 import com.company.iss.hiring.dto.HiringWorklistFilter;
 import com.company.iss.hiring.dto.OutstandingDecisionSort;
 import com.company.iss.hiring.dto.OutstandingDecisionSortOrder;
+import com.company.iss.hiring.dto.OfferDeadlineFilter;
+import com.company.iss.hiring.dto.OutstandingOfferFilter;
+import com.company.iss.hiring.entity.OfferDeadlineState;
 import com.company.iss.hiring.service.HiringDecisionService;
+import com.company.iss.hiring.service.OfferDeadlinePolicy;
 import com.company.iss.shared.view.MainLayout;
 import com.company.iss.shared.view.UserSafeNotifier;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.H2;
@@ -36,6 +41,7 @@ import jakarta.annotation.security.RolesAllowed;
 import org.springframework.data.domain.Sort;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.stream.Stream;
@@ -49,10 +55,12 @@ public class HiringDecisionView extends VerticalLayout {
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final HiringDecisionService hiringDecisionService;
+    private final OfferDeadlinePolicy deadlinePolicy;
     private final Grid<EligibleHiringCandidate> eligibleGrid = new Grid<>();
     private final Grid<HiringDecisionSummary> outstandingGrid = new Grid<>();
     private final Grid<HiringDecisionSummary> completedGrid = new Grid<>();
     private final TextField filter = new TextField("Filter");
+    private final ComboBox<OfferDeadlineFilter> deadlineFilter = new ComboBox<>("Offer deadline");
     private final Button refreshButton = new Button("Refresh");
     private final Span eligibleState = new Span("Loading eligible candidates...");
     private final Span outstandingState = new Span("Loading outstanding offers...");
@@ -64,8 +72,9 @@ public class HiringDecisionView extends VerticalLayout {
     private boolean outstandingLoadFailed;
     private boolean completedLoadFailed;
 
-    public HiringDecisionView(HiringDecisionService hiringDecisionService) {
+    public HiringDecisionView(HiringDecisionService hiringDecisionService, OfferDeadlinePolicy deadlinePolicy) {
         this.hiringDecisionService = hiringDecisionService;
+        this.deadlinePolicy = deadlinePolicy;
         setSizeFull();
         setPadding(true);
 
@@ -77,12 +86,17 @@ public class HiringDecisionView extends VerticalLayout {
         filter.setValueChangeMode(ValueChangeMode.LAZY);
         filter.setValueChangeTimeout(350);
         filter.addValueChangeListener(event -> refreshWorklists(true));
+        deadlineFilter.setItems(OfferDeadlineFilter.values());
+        deadlineFilter.setItemLabelGenerator(this::deadlineFilterLabel);
+        deadlineFilter.setValue(OfferDeadlineFilter.ALL);
+        deadlineFilter.setAllowCustomValue(false);
+        deadlineFilter.addValueChangeListener(event -> refreshOutstanding(true));
         refreshButton.addClickListener(event -> refreshWorklists(false));
 
         configureEligibleGrid();
         configureOutstandingGrid();
         configureCompletedGrid();
-        add(new HorizontalLayout(filter, refreshButton),
+        add(new HorizontalLayout(filter, deadlineFilter, refreshButton),
                 heading("Eligible passed candidates", eligibleState), eligibleGrid,
                 heading("Outstanding offers", outstandingState), outstandingGrid,
                 heading("Completed decisions and audit", completedState), completedGrid);
@@ -112,7 +126,7 @@ public class HiringDecisionView extends VerticalLayout {
                 .setKey("evaluatedAt").setSortProperty("evaluatedAt").setAutoWidth(true);
         eligibleGrid.addComponentColumn(candidate -> {
             Button offer = new Button("Issue offer", event -> new IssueOfferDialog(
-                    candidate, hiringDecisionService, this::onHiringActionSucceeded).open());
+                    candidate, hiringDecisionService, deadlinePolicy, this::onHiringActionSucceeded).open());
             offer.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_SMALL);
             return offer;
         }).setHeader("Action").setAutoWidth(true);
@@ -125,6 +139,10 @@ public class HiringDecisionView extends VerticalLayout {
     private void configureOutstandingGrid() {
         configureGrid(outstandingGrid);
         addDecisionColumns(outstandingGrid);
+        outstandingGrid.addColumn(row -> formatDeadline(row.responseDueAt())).setHeader("Response Due")
+                .setKey("responseDueAt").setSortProperty("responseDueAt").setAutoWidth(true);
+        outstandingGrid.addColumn(row -> formatAge(row.offerAge())).setHeader("Age").setAutoWidth(true);
+        outstandingGrid.addComponentColumn(this::deadlineStateBadge).setHeader("Deadline State").setAutoWidth(true);
         outstandingGrid.addComponentColumn(decision -> {
             Button hired = new Button("Mark hired", event -> openAction(
                     "Confirm hire",
@@ -218,7 +236,7 @@ public class HiringDecisionView extends VerticalLayout {
     private Stream<HiringDecisionSummary> fetchOutstanding(int offset, int limit, List<QuerySortOrder> sortOrders) {
         try {
             return hiringDecisionService.findOutstandingPage(
-                    currentFilter(), offset, limit, outstandingSortOrders(sortOrders)).stream();
+                    currentOutstandingFilter(), offset, limit, outstandingSortOrders(sortOrders)).stream();
         } catch (RuntimeException exception) {
             markFailure(outstandingState, "outstanding offers", exception);
             return Stream.empty();
@@ -228,7 +246,7 @@ public class HiringDecisionView extends VerticalLayout {
     private int countOutstanding() {
         try {
             return updateCount(outstandingState,
-                    hiringDecisionService.countOutstanding(currentFilter()), "outstanding offers");
+                    hiringDecisionService.countOutstanding(currentOutstandingFilter()), "outstanding offers");
         } catch (RuntimeException exception) {
             markFailure(outstandingState, "outstanding offers", exception);
             return 0;
@@ -286,6 +304,10 @@ public class HiringDecisionView extends VerticalLayout {
 
     private HiringWorklistFilter currentFilter() {
         return new HiringWorklistFilter(filter.getValue());
+    }
+
+    private OutstandingOfferFilter currentOutstandingFilter() {
+        return new OutstandingOfferFilter(filter.getValue(), deadlineFilter.getValue());
     }
 
     private List<EligibleCandidateSortOrder> eligibleSortOrders(List<QuerySortOrder> orders) {
@@ -355,7 +377,63 @@ public class HiringDecisionView extends VerticalLayout {
         completedProvider.refreshAll();
     }
 
+    private void refreshOutstanding(boolean scrollToStart) {
+        outstandingLoadFailed = false;
+        outstandingState.setText("Loading outstanding offers...");
+        if (scrollToStart) {
+            outstandingGrid.scrollToStart();
+        }
+        outstandingGrid.deselectAll();
+        outstandingProvider.refreshAll();
+    }
+
     private String format(LocalDateTime value) {
         return value == null ? "" : value.format(DATE_TIME);
+    }
+
+    String formatDeadline(LocalDateTime value) {
+        return value == null ? "No deadline" : format(value);
+    }
+
+    String formatAge(Duration age) {
+        if (age == null) {
+            return "";
+        }
+        long hours = age.toHours();
+        long days = hours / 24;
+        long remainderHours = hours % 24;
+        if (days == 0) {
+            return hours + "h";
+        }
+        return remainderHours == 0 ? days + "d" : days + "d " + remainderHours + "h";
+    }
+
+    Span deadlineStateBadge(HiringDecisionSummary decision) {
+        OfferDeadlineState state = decision.deadlineState();
+        String label = switch (state) {
+            case ON_TRACK -> "On track";
+            case DUE_SOON -> "Due soon";
+            case OVERDUE -> "Overdue";
+            case NO_DEADLINE -> "No deadline";
+        };
+        Span badge = new Span(label);
+        badge.getElement().getThemeList().add(switch (state) {
+            case ON_TRACK -> "badge success";
+            case DUE_SOON -> "badge contrast";
+            case OVERDUE -> "badge error";
+            case NO_DEADLINE -> "badge";
+        });
+        badge.getElement().setAttribute("aria-label", "Offer deadline state: " + label);
+        return badge;
+    }
+
+    private String deadlineFilterLabel(OfferDeadlineFilter value) {
+        return switch (value) {
+            case ALL -> "All";
+            case OVERDUE -> "Overdue";
+            case DUE_SOON -> "Due soon";
+            case ON_TRACK -> "On track";
+            case NO_DEADLINE -> "No deadline";
+        };
     }
 }

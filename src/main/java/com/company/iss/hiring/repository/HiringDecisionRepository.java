@@ -60,6 +60,143 @@ public interface HiringDecisionRepository extends JpaRepository<HiringDecision, 
             join d.position p
             left join p.client client
             where (:branchId is null or branch.id = :branchId)
+              and d.status = com.company.iss.hiring.entity.HiringDecisionStatus.OFFERED
+              and (:keyword is null
+                   or locate(:keyword, lower(a.firstName)) > 0
+                   or locate(:keyword, lower(coalesce(a.middleName, ''))) > 0
+                   or locate(:keyword, lower(a.lastName)) > 0
+                   or locate(:keyword, lower(concat(a.firstName, concat(' ', a.lastName)))) > 0
+                   or locate(:keyword, lower(concat(a.firstName,
+                       concat(case when a.middleName is null or trim(a.middleName) = ''
+                                   then ' ' else concat(' ', concat(trim(a.middleName), ' ')) end,
+                              a.lastName)))) > 0
+                   or locate(:keyword, lower(branch.branchName)) > 0
+                   or locate(:keyword, lower(p.title)) > 0
+                   or locate(:keyword, lower(coalesce(client.companyName, ''))) > 0
+                   or (:statusKeywordMatches = true))
+              and (:deadlineFilter = 'ALL'
+                   or (:deadlineFilter = 'OVERDUE'
+                       and d.responseDueAt is not null and d.responseDueAt <= :now)
+                   or (:deadlineFilter = 'DUE_SOON'
+                       and d.responseDueAt > :now and d.responseDueAt <= :dueSoonCutoff)
+                   or (:deadlineFilter = 'ON_TRACK'
+                       and d.responseDueAt > :dueSoonCutoff)
+                   or (:deadlineFilter = 'NO_DEADLINE'
+                       and d.responseDueAt is null))
+            """)
+    List<HiringDecision> findOutstandingDecisionPage(
+            @Param("branchId") Long branchId,
+            @Param("keyword") String keyword,
+            @Param("statusKeywordMatches") boolean statusKeywordMatches,
+            @Param("deadlineFilter") String deadlineFilter,
+            @Param("now") java.time.LocalDateTime now,
+            @Param("dueSoonCutoff") java.time.LocalDateTime dueSoonCutoff,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = {
+            "applicant", "applicant.branch", "evaluation", "position", "position.client", "offeredBy", "resolvedBy"
+    })
+    @Query("""
+            select d from HiringDecision d
+            join d.applicant a
+            join a.branch branch
+            join d.position p
+            left join p.client client
+            where (:branchId is null or branch.id = :branchId)
+              and d.status = com.company.iss.hiring.entity.HiringDecisionStatus.OFFERED
+              and (:keyword is null
+                   or locate(:keyword, lower(a.firstName)) > 0
+                   or locate(:keyword, lower(coalesce(a.middleName, ''))) > 0
+                   or locate(:keyword, lower(a.lastName)) > 0
+                   or locate(:keyword, lower(concat(a.firstName, concat(' ', a.lastName)))) > 0
+                   or locate(:keyword, lower(concat(a.firstName,
+                       concat(case when a.middleName is null or trim(a.middleName) = ''
+                                   then ' ' else concat(' ', concat(trim(a.middleName), ' ')) end,
+                              a.lastName)))) > 0
+                   or locate(:keyword, lower(branch.branchName)) > 0
+                   or locate(:keyword, lower(p.title)) > 0
+                   or locate(:keyword, lower(coalesce(client.companyName, ''))) > 0
+                   or (:statusKeywordMatches = true))
+              and (:deadlineFilter = 'ALL'
+                   or (:deadlineFilter = 'OVERDUE'
+                       and d.responseDueAt is not null and d.responseDueAt <= :now)
+                   or (:deadlineFilter = 'DUE_SOON'
+                       and d.responseDueAt > :now and d.responseDueAt <= :dueSoonCutoff)
+                   or (:deadlineFilter = 'ON_TRACK'
+                       and d.responseDueAt > :dueSoonCutoff)
+                   or (:deadlineFilter = 'NO_DEADLINE'
+                       and d.responseDueAt is null))
+            order by
+              case
+                when d.responseDueAt is not null and d.responseDueAt <= :now then 0
+                when d.responseDueAt > :now and d.responseDueAt <= :dueSoonCutoff then 1
+                when d.responseDueAt > :dueSoonCutoff then 2
+                else 3
+              end,
+              d.responseDueAt asc,
+              d.id asc
+            """)
+    List<HiringDecision> findOutstandingDecisionPageByDeadlinePriority(
+            @Param("branchId") Long branchId,
+            @Param("keyword") String keyword,
+            @Param("statusKeywordMatches") boolean statusKeywordMatches,
+            @Param("deadlineFilter") String deadlineFilter,
+            @Param("now") java.time.LocalDateTime now,
+            @Param("dueSoonCutoff") java.time.LocalDateTime dueSoonCutoff,
+            Pageable pageable
+    );
+
+    @Query("""
+            select count(d) from HiringDecision d
+            join d.applicant a
+            join a.branch branch
+            join d.position p
+            left join p.client client
+            where (:branchId is null or branch.id = :branchId)
+              and d.status = com.company.iss.hiring.entity.HiringDecisionStatus.OFFERED
+              and (:keyword is null
+                   or locate(:keyword, lower(a.firstName)) > 0
+                   or locate(:keyword, lower(coalesce(a.middleName, ''))) > 0
+                   or locate(:keyword, lower(a.lastName)) > 0
+                   or locate(:keyword, lower(concat(a.firstName, concat(' ', a.lastName)))) > 0
+                   or locate(:keyword, lower(concat(a.firstName,
+                       concat(case when a.middleName is null or trim(a.middleName) = ''
+                                   then ' ' else concat(' ', concat(trim(a.middleName), ' ')) end,
+                              a.lastName)))) > 0
+                   or locate(:keyword, lower(branch.branchName)) > 0
+                   or locate(:keyword, lower(p.title)) > 0
+                   or locate(:keyword, lower(coalesce(client.companyName, ''))) > 0
+                   or (:statusKeywordMatches = true))
+              and (:deadlineFilter = 'ALL'
+                   or (:deadlineFilter = 'OVERDUE'
+                       and d.responseDueAt is not null and d.responseDueAt <= :now)
+                   or (:deadlineFilter = 'DUE_SOON'
+                       and d.responseDueAt > :now and d.responseDueAt <= :dueSoonCutoff)
+                   or (:deadlineFilter = 'ON_TRACK'
+                       and d.responseDueAt > :dueSoonCutoff)
+                   or (:deadlineFilter = 'NO_DEADLINE'
+                       and d.responseDueAt is null))
+            """)
+    long countOutstandingDecisions(
+            @Param("branchId") Long branchId,
+            @Param("keyword") String keyword,
+            @Param("statusKeywordMatches") boolean statusKeywordMatches,
+            @Param("deadlineFilter") String deadlineFilter,
+            @Param("now") java.time.LocalDateTime now,
+            @Param("dueSoonCutoff") java.time.LocalDateTime dueSoonCutoff
+    );
+
+    @EntityGraph(attributePaths = {
+            "applicant", "applicant.branch", "evaluation", "position", "position.client", "offeredBy", "resolvedBy"
+    })
+    @Query("""
+            select d from HiringDecision d
+            join d.applicant a
+            join a.branch branch
+            join d.position p
+            left join p.client client
+            where (:branchId is null or branch.id = :branchId)
               and d.status in :statuses
               and (:keyword is null
                    or locate(:keyword, lower(a.firstName)) > 0

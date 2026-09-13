@@ -55,6 +55,8 @@ public class HiringDecision extends BaseEntity {
     @Column(nullable = false)
     private LocalDateTime offeredAt;
 
+    private LocalDateTime responseDueAt;
+
     @Column(length = 1000)
     private String offeredRemarks;
 

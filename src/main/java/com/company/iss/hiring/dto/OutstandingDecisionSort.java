@@ -10,6 +10,7 @@ public enum OutstandingDecisionSort {
     POSITION("position", List.of("position.title")),
     CLIENT("client", List.of("position.client.companyName")),
     STATUS("status", List.of("status")),
+    RESPONSE_DUE("responseDueAt", List.of("responseDueAt")),
     OFFERED_AT("offeredAt", List.of("offeredAt"));
 
     private final String key;

@@ -283,9 +283,12 @@ Hiring decision states are `OFFERED`, `HIRED`, `DECLINED`, and `WITHDRAWN`.
 Implemented behavior:
 
 - Issuing an offer changes the applicant to `OFFERED` but does not reserve headcount.
+- Offer issuance accepts an optional, strictly future response deadline. Legacy and new null deadlines
+  remain usable and display as `No deadline`.
 - An outstanding offer can transition only to hired, declined, or withdrawn.
 - Accepting an offer pessimistically locks the position, increments hired count exactly once, and marks the position `FILLED` when headcount is reached.
-- Exact repeated terminal actions are idempotent; conflicting terminal actions are rejected.
+- Exact repeated terminal actions are idempotent; conflicting terminal actions are rejected. An offer
+  retry is exact only when its evaluation and response deadline match the stored offer.
 - Every successful transition appends an immutable hiring audit record.
 - Offer and hired notifications run after commit.
 - The three hiring worklists use independent database-backed page and count queries. Search and
@@ -293,9 +296,15 @@ Implemented behavior:
 - Search is case-insensitive literal substring matching across applicant, branch, position, client,
   and applicable decision status values. `%`, `_`, and backslashes are ordinary characters.
 - Page ordering is deterministic. Eligible candidates default to newest qualifying evaluation,
-  outstanding offers to newest offer, and completed decisions to newest resolution.
+  outstanding offers to overdue/due-soon/on-track/no-deadline priority with earliest deadline first,
+  and completed decisions to newest resolution.
+- Outstanding offers expose response due time, offer age, and derived `On track`, `Due soon`,
+  `Overdue`, or `No deadline` state. The due-soon window defaults to 24 hours and filtering, keyword
+  search, counts, branch scope, and pagination remain database-backed. Passing the deadline does not
+  automatically transition the hiring decision.
 
-Re-offers, reversals, applicant self-service acceptance, and offer-time headcount reservation are not supported.
+Post-issuance deadline editing, deadline reminders, automatic expiry, re-offers, reversals, applicant
+self-service acceptance, and offer-time headcount reservation are not supported.
 
 ## 6. Dashboards and operational UX
 
@@ -451,6 +460,7 @@ MySQL runtime migrations and logically equivalent H2 test migrations currently c
 | V7 | Add SMTP provider/security/sender metadata and notification-settings audit history |
 | V8 | Add generation-aware, duplicate-safe scheduled interview reminder delivery tracking |
 | V9 | Add immutable booking lifecycle history and reschedule appointment snapshots |
+| V10 | Add optional hiring offer response deadlines and the outstanding-worklist timing index |
 
 Migration locations:
 
@@ -458,7 +468,7 @@ Migration locations:
 - Fast/default H2 tests: `classpath:db/migration/h2`
 - Opt-in MySQL Testcontainers tests: `classpath:db/migration/mysql`
 
-Flyway clean is disabled. The production application requires migration version 9. Default tests assert
+Flyway clean is disabled. The production application requires migration version 10. Default tests assert
 the equivalent H2 schema, while the `mysql-it` Maven profile applies the complete production migration
 chain to a fresh `mysql:8.4.6` container and starts the full context with Hibernate schema validation.
 
@@ -484,6 +494,9 @@ repository operations.
 
 ### Optional controlled variables
 
+- `OFFER_RESPONSE_DUE_SOON_WINDOW` and `OFFER_RESPONSE_TIMESTAMP_ZONE` configure the optional offer
+  deadline classification window and timestamp zone.
+
 - `ADMIN_EMAIL` and `ADMIN_PASSWORD` — opt-in first-administrator bootstrap; remove after use and rotate the credential.
 - `SPRING_PROFILES_ACTIVE=dev` plus `DEMO_DATA_ENABLED=true` — both are required for deterministic development demo data.
 - `FLYWAY_BASELINE_ON_MIGRATE` and `FLYWAY_BASELINE_VERSION` — controlled legacy-baseline procedure only; not normal defaults.
@@ -500,7 +513,7 @@ Clients, positions, and applicants are demo data. Their loaders require both the
 
 ## 12. Testing and continuous integration
 
-At this snapshot, the clean Java 25 default H2 suite contains **482 tests** with:
+At this snapshot, the clean Java 25 default H2 suite contains **503 tests** with:
 
 - 0 failures
 - 0 errors
@@ -520,11 +533,12 @@ Coverage includes:
   ordering, relationship fetching, and applicable branch isolation
 - Notification templates/settings and user-safe UI boundaries
 
-The separate Java 25 MySQL integration gate runs with `./mvnw clean verify -Pmysql-it`. Its seven focused
-tests cover fresh V1-through-V9 migration/checksum validation, full-context Hibernate validation, seeded
+The separate Java 25 MySQL integration gate runs with `./mvnw clean verify -Pmysql-it`. Its focused
+tests cover fresh V1-through-V10 migration/checksum validation, full-context Hibernate validation, seeded
 V8 reminder enum values, repository mapping with `DATETIME(6)` precision, duplicate delivery identity,
-foreign keys, ordered reminder-processing indexes, and V9 lifecycle identity, transition, snapshot, and
-timeline-index constraints. CI runs the H2 and MySQL gates as separate mandatory jobs.
+foreign keys, ordered reminder-processing indexes, V9 lifecycle identity, transition, snapshot, and
+timeline-index constraints, and the nullable V10 offer deadline mapping. CI runs the H2 and MySQL gates
+as separate mandatory jobs.
 
 GitHub Actions runs separate Temurin Java 25 jobs for every pull request and push to `main`: the fast
 job executes `./mvnw clean test` against isolated H2, and the MySQL integration job executes
