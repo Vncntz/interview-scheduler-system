@@ -15,12 +15,12 @@ class FlywayMigrationTest {
     private static final String LOCATIONS = "classpath:db/migration/h2";
 
     @Test
-    void freshSchemaMigratesThroughV9WithoutPersistedNotificationSecrets() throws SQLException {
-        String url = databaseUrl("fresh_v9");
+    void freshSchemaMigratesThroughV10WithNullableOfferResponseDeadline() throws SQLException {
+        String url = databaseUrl("fresh_v10");
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("9", flyway.info().current().getVersion().getVersion());
+        assertEquals("10", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement();
              var result = statement.executeQuery("""
@@ -31,6 +31,105 @@ class FlywayMigrationTest {
                      """)) {
             result.next();
             assertEquals(0, result.getInt(1));
+        }
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+             var statement = connection.createStatement();
+             var result = statement.executeQuery("""
+                     SELECT IS_NULLABLE
+                     FROM INFORMATION_SCHEMA.COLUMNS
+                     WHERE TABLE_NAME = 'HIRING_DECISIONS' AND COLUMN_NAME = 'RESPONSE_DUE_AT'
+                     """)) {
+            result.next();
+            assertEquals("YES", result.getString(1));
+        }
+    }
+
+    @Test
+    void v10PreservesExistingV9OfferWithNullResponseDeadline() throws SQLException {
+        String url = databaseUrl("v10_offer_deadline_upgrade");
+        migrate(url, "9");
+
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+             var statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    INSERT INTO branches (
+                        id, active, created_at, updated_at, version, branch_code,
+                        city, province, branch_name, address
+                    ) VALUES (
+                        91, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'V10',
+                        'Manila', 'Metro Manila', 'V10 Branch', 'Test Address'
+                    )
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO users (
+                        id, active, failed_login_attempts, must_change_password, created_at,
+                        updated_at, version, email, full_name, password_hash, role
+                    ) VALUES (
+                        91, TRUE, 0, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
+                        'v10-actor@example.test', 'V10 Actor', 'test-only-hash', 'ADMIN'
+                    )
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO position_openings (
+                        id, active, applied_count, hired_count, interviewed_count, passed_count,
+                        required_headcount, created_at, updated_at, version, title, work_location,
+                        employment_type, status
+                    ) VALUES (
+                        91, TRUE, 1, 0, 1, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
+                        'V10 Position', 'Manila', 'FULL_TIME', 'OPEN'
+                    )
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO applicants (
+                        id, active, branch_id, position_opening_id, created_at, updated_at, version,
+                        mobile_number, first_name, last_name, email, status
+                    ) VALUES (
+                        91, TRUE, 91, 91, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
+                        '09170000000', 'Legacy', 'Offer', 'v10-offer@example.test', 'OFFERED'
+                    )
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO bookings (
+                        id, applicant_id, booked_date_time, created_at, updated_at, version,
+                        booking_reference, status, interview_stage, reminder_generation
+                    ) VALUES (
+                        91, 91, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
+                        'BK-V10-OFFER', 'PASSED', 'INITIAL', 0
+                    )
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO interview_evaluations (
+                        id, attitude_score, communication_score, technical_score, applicant_id,
+                        booking_id, created_at, evaluation_date, updated_at, version, result
+                    ) VALUES (
+                        91, 8, 8, 8, 91, 91, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                        CURRENT_TIMESTAMP, 0, 'PASS'
+                    )
+                    """);
+            statement.executeUpdate("""
+                    INSERT INTO hiring_decisions (
+                        id, applicant_id, evaluation_id, offered_at, offered_by_id, position_id,
+                        created_at, updated_at, version, status
+                    ) VALUES (
+                        91, 91, 91, CURRENT_TIMESTAMP, 91, 91,
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'OFFERED'
+                    )
+                    """);
+        }
+
+        Flyway flyway = migrate(url, null);
+
+        assertEquals("10", flyway.info().current().getVersion().getVersion());
+        try (var connection = DriverManager.getConnection(url, "sa", "");
+             var statement = connection.createStatement();
+             var result = statement.executeQuery("""
+                     SELECT status, response_due_at
+                     FROM hiring_decisions
+                     WHERE id = 91
+                     """)) {
+            result.next();
+            assertEquals("OFFERED", result.getString("status"));
+            assertEquals(null, result.getObject("response_due_at"));
         }
     }
 
@@ -101,7 +200,7 @@ class FlywayMigrationTest {
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("9", flyway.info().current().getVersion().getVersion());
+        assertEquals("10", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
             try (var result = statement.executeQuery("""
@@ -145,7 +244,7 @@ class FlywayMigrationTest {
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("9", flyway.info().current().getVersion().getVersion());
+        assertEquals("10", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
             try (var result = statement.executeQuery("""
@@ -225,7 +324,7 @@ class FlywayMigrationTest {
         }
 
         Flyway flyway = migrate(url, null);
-        assertEquals("9", flyway.info().current().getVersion().getVersion());
+        assertEquals("10", flyway.info().current().getVersion().getVersion());
 
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
@@ -312,7 +411,7 @@ class FlywayMigrationTest {
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("9", flyway.info().current().getVersion().getVersion());
+        assertEquals("10", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
             try (var result = statement.executeQuery(
@@ -397,7 +496,7 @@ class FlywayMigrationTest {
 
         Flyway flyway = migrate(url, null);
 
-        assertEquals("9", flyway.info().current().getVersion().getVersion());
+        assertEquals("10", flyway.info().current().getVersion().getVersion());
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement()) {
             try (var result = statement.executeQuery("""

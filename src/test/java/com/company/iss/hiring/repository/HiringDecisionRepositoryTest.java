@@ -20,6 +20,7 @@ import com.company.iss.hiring.entity.HiringDecision;
 import com.company.iss.hiring.entity.HiringDecisionAction;
 import com.company.iss.hiring.entity.HiringDecisionAudit;
 import com.company.iss.hiring.entity.HiringDecisionStatus;
+import com.company.iss.hiring.dto.OfferDeadlineFilter;
 import com.company.iss.position.entity.EmploymentType;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.entity.PositionStatus;
@@ -233,6 +234,82 @@ class HiringDecisionRepositoryTest {
         assertEquals(2, paged.stream().distinct().count());
         assertTrue(decisionRepository.findDecisionPage(null, offered, null, false, offered,
                 new OffsetLimitPageable(10, 1, order)).isEmpty());
+    }
+
+    @Test
+    void responseDeadlinePersistsWhileLegacyNullRemainsSupported() {
+        TestData withDeadline = persistEligibleCandidate("deadline-persisted");
+        TestData withoutDeadline = persistEligibleCandidate("deadline-null");
+        LocalDateTime dueAt = LocalDateTime.of(2026, 9, 15, 12, 30, 45, 123_456_000);
+        HiringDecision dated = decision(withDeadline, withDeadline.evaluation());
+        dated.setResponseDueAt(dueAt);
+        HiringDecision undated = decision(withoutDeadline, withoutDeadline.evaluation());
+        dated = decisionRepository.saveAndFlush(dated);
+        undated = decisionRepository.saveAndFlush(undated);
+
+        entityManager.clear();
+
+        assertEquals(dueAt, decisionRepository.findById(dated.getId()).orElseThrow().getResponseDueAt());
+        assertEquals(null, decisionRepository.findById(undated.getId()).orElseThrow().getResponseDueAt());
+    }
+
+    @Test
+    void outstandingDeadlineFiltersCountsPriorityBranchKeywordAndPagesStayConsistent() {
+        LocalDateTime now = LocalDateTime.of(2026, 9, 13, 10, 0);
+        LocalDateTime cutoff = now.plusHours(24);
+        TestData overdue = persistEligibleCandidate("deadline-java-overdue");
+        TestData dueSoon = persistEligibleCandidate("deadline-due-soon");
+        TestData onTrack = persistEligibleCandidate("deadline-on-track");
+        TestData noDeadline = persistEligibleCandidate("deadline-none");
+        HiringDecision overdueDecision = decision(overdue, overdue.evaluation());
+        overdueDecision.setResponseDueAt(now);
+        HiringDecision dueSoonDecision = decision(dueSoon, dueSoon.evaluation());
+        dueSoonDecision.setResponseDueAt(cutoff);
+        HiringDecision onTrackDecision = decision(onTrack, onTrack.evaluation());
+        onTrackDecision.setResponseDueAt(cutoff.plusMinutes(1));
+        HiringDecision noDeadlineDecision = decision(noDeadline, noDeadline.evaluation());
+        decisionRepository.saveAllAndFlush(List.of(
+                noDeadlineDecision, onTrackDecision, dueSoonDecision, overdueDecision));
+        OffsetLimitPageable page = new OffsetLimitPageable(0, 10, Sort.unsorted());
+
+        List<Long> priority = decisionRepository.findOutstandingDecisionPageByDeadlinePriority(
+                null, null, false, OfferDeadlineFilter.ALL.name(), now, cutoff, page
+        ).stream().map(HiringDecision::getId).toList();
+        assertEquals(List.of(
+                overdueDecision.getId(), dueSoonDecision.getId(), onTrackDecision.getId(), noDeadlineDecision.getId()
+        ), priority);
+
+        for (OfferDeadlineFilter filter : List.of(
+                OfferDeadlineFilter.OVERDUE,
+                OfferDeadlineFilter.DUE_SOON,
+                OfferDeadlineFilter.ON_TRACK,
+                OfferDeadlineFilter.NO_DEADLINE)) {
+            assertEquals(1, decisionRepository.findOutstandingDecisionPage(
+                    null, null, false, filter.name(), now, cutoff, page).size());
+            assertEquals(1, decisionRepository.countOutstandingDecisions(
+                    null, null, false, filter.name(), now, cutoff));
+        }
+
+        assertEquals(1, decisionRepository.findOutstandingDecisionPage(
+                overdue.branch().getId(), "java", false, OfferDeadlineFilter.OVERDUE.name(),
+                now, cutoff, page).size());
+        assertEquals(1, decisionRepository.countOutstandingDecisions(
+                overdue.branch().getId(), "java", false, OfferDeadlineFilter.OVERDUE.name(), now, cutoff));
+        assertEquals(0, decisionRepository.countOutstandingDecisions(
+                dueSoon.branch().getId(), "java", false, OfferDeadlineFilter.OVERDUE.name(), now, cutoff));
+
+        List<Long> paged = List.of(
+                decisionRepository.findOutstandingDecisionPageByDeadlinePriority(
+                        null, null, false, OfferDeadlineFilter.ALL.name(), now, cutoff,
+                        new OffsetLimitPageable(0, 2, Sort.unsorted())).getFirst().getId(),
+                decisionRepository.findOutstandingDecisionPageByDeadlinePriority(
+                        null, null, false, OfferDeadlineFilter.ALL.name(), now, cutoff,
+                        new OffsetLimitPageable(1, 2, Sort.unsorted())).getFirst().getId()
+        );
+        assertEquals(priority.subList(0, 2), paged);
+        assertTrue(decisionRepository.findOutstandingDecisionPageByDeadlinePriority(
+                null, null, false, OfferDeadlineFilter.ALL.name(), now, cutoff,
+                new OffsetLimitPageable(10, 2, Sort.unsorted())).isEmpty());
     }
 
     @Test

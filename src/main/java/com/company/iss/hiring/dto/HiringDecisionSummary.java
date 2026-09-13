@@ -1,7 +1,9 @@
 package com.company.iss.hiring.dto;
 
 import com.company.iss.hiring.entity.HiringDecisionStatus;
+import com.company.iss.hiring.entity.OfferDeadlineState;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 public record HiringDecisionSummary(
@@ -15,6 +17,9 @@ public record HiringDecisionSummary(
         HiringDecisionStatus status,
         String offeredBy,
         LocalDateTime offeredAt,
+        LocalDateTime responseDueAt,
+        Duration offerAge,
+        OfferDeadlineState deadlineState,
         String offeredRemarks,
         String resolvedBy,
         LocalDateTime resolvedAt,

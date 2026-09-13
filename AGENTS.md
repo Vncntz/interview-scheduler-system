@@ -173,7 +173,7 @@ Rules:
   Never point automated tests at a developer or production database.
 - Hibernate uses `spring.jpa.hibernate.ddl-auto=validate` in both environments. It must never create, update, or repair the schema.
 - Never edit an applied migration. Add the next version to both dialect directories and keep constraints, defaults, enum values, indexes, and nullability logically equivalent.
-- The current latest migration is V9, and `contextLoads()` asserts that version.
+- The current latest migration is V10, and `contextLoads()` asserts that version.
 - H2 MySQL mode is a fast compatibility check, not proof that MySQL-specific DDL is safe.
 - Keep `spring.flyway.clean-disabled=true`; never run Flyway clean against a developer, rehearsal, or real database.
 - `baseline-on-migrate` is a one-time controlled rollout option only. Follow `docs/database-migrations.md`; never enable it by default.

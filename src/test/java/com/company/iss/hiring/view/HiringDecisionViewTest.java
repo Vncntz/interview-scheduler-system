@@ -8,12 +8,19 @@ import com.company.iss.hiring.dto.HiringWorklistFilter;
 import com.company.iss.hiring.dto.HiringDecisionSummary;
 import com.company.iss.hiring.dto.OutstandingDecisionSort;
 import com.company.iss.hiring.dto.OutstandingDecisionSortOrder;
+import com.company.iss.hiring.dto.OfferDeadlineFilter;
+import com.company.iss.hiring.dto.OutstandingOfferFilter;
+import com.company.iss.hiring.config.OfferDeadlineProperties;
+import com.company.iss.hiring.entity.HiringDecisionStatus;
+import com.company.iss.hiring.entity.OfferDeadlineState;
 import com.company.iss.hiring.service.HiringDecisionService;
+import com.company.iss.hiring.service.OfferDeadlinePolicy;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridSortOrder;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.provider.CallbackDataProvider;
 import com.vaadin.flow.data.provider.Query;
@@ -23,6 +30,11 @@ import com.vaadin.flow.data.value.ValueChangeMode;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Sort;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
@@ -41,7 +53,7 @@ class HiringDecisionViewTest {
     @Test
     void allThreeProvidersForwardExactWindowsFilterAndWhitelistedSorts() {
         HiringDecisionService service = mock(HiringDecisionService.class);
-        HiringDecisionView view = new HiringDecisionView(service);
+        HiringDecisionView view = view(service);
         TextField filter = filter(view);
         filter.setValue("  Alex  ");
         HiringWorklistFilter expected = new HiringWorklistFilter("  Alex  ");
@@ -53,7 +65,7 @@ class HiringDecisionViewTest {
 
         verify(service).findEligiblePage(expected, 25, 10, List.of(
                 new EligibleCandidateSortOrder(EligibleCandidateSort.EVALUATED_AT, Sort.Direction.ASC)));
-        verify(service).findOutstandingPage(expected, 15, 5, List.of(
+        verify(service).findOutstandingPage(new OutstandingOfferFilter("  Alex  ", OfferDeadlineFilter.ALL), 15, 5, List.of(
                 new OutstandingDecisionSortOrder(OutstandingDecisionSort.OFFERED_AT, Sort.Direction.ASC)));
         verify(service).findCompletedPage(expected, 7, 3, List.of(
                 new CompletedDecisionSortOrder(CompletedDecisionSort.RESOLVED_AT, Sort.Direction.ASC)));
@@ -70,10 +82,11 @@ class HiringDecisionViewTest {
     @Test
     void countsUseSameFilterAndEmptyResultsAreClear() {
         HiringDecisionService service = mock(HiringDecisionService.class);
-        HiringDecisionView view = new HiringDecisionView(service);
+        HiringDecisionView view = view(service);
         HiringWorklistFilter filter = new HiringWorklistFilter("");
+        OutstandingOfferFilter outstandingFilter = new OutstandingOfferFilter("", OfferDeadlineFilter.ALL);
         when(service.countEligible(filter)).thenReturn(0L);
-        when(service.countOutstanding(filter)).thenReturn(0L);
+        when(service.countOutstanding(outstandingFilter)).thenReturn(0L);
         when(service.countCompleted(filter)).thenReturn(0L);
 
         grids(view).forEach(grid -> grid.getDataProvider().size(new Query<>()));
@@ -86,7 +99,7 @@ class HiringDecisionViewTest {
 
     @Test
     void successfulActionRefreshesEveryProviderWhilePreservingFilterAndSort() {
-        HiringDecisionView view = new HiringDecisionView(mock(HiringDecisionService.class));
+        HiringDecisionView view = view(mock(HiringDecisionService.class));
         TextField filter = filter(view);
         filter.setValue("candidate");
         List<Grid<?>> grids = grids(view);
@@ -114,7 +127,7 @@ class HiringDecisionViewTest {
     void fetchFailureRemainsVisibleWhenCountLaterSucceedsAndDoesNotExposeDetails() {
         UI.setCurrent(new UI());
         HiringDecisionService service = mock(HiringDecisionService.class);
-        HiringDecisionView view = new HiringDecisionView(service);
+        HiringDecisionView view = view(service);
         HiringWorklistFilter filter = new HiringWorklistFilter("");
         when(service.findEligiblePage(filter, 0, 50, List.of()))
                 .thenThrow(new IllegalStateException("backend diagnostic detail"));
@@ -133,13 +146,14 @@ class HiringDecisionViewTest {
     @Test
     void successfulLastRowActionRecountsAndAllowsReloadFromFirstWindow() {
         HiringDecisionService service = mock(HiringDecisionService.class);
-        HiringDecisionView view = new HiringDecisionView(service);
+        HiringDecisionView view = view(service);
         HiringWorklistFilter filter = new HiringWorklistFilter("");
+        OutstandingOfferFilter outstandingFilter = new OutstandingOfferFilter("", OfferDeadlineFilter.ALL);
         Grid<?> outstanding = grids(view).get(1);
-        when(service.countOutstanding(filter)).thenReturn(1L, 0L);
-        when(service.findOutstandingPage(filter, 50, 50, List.of()))
+        when(service.countOutstanding(outstandingFilter)).thenReturn(1L, 0L);
+        when(service.findOutstandingPage(outstandingFilter, 50, 50, List.of()))
                 .thenReturn(List.of(mock(HiringDecisionSummary.class)), List.of());
-        when(service.findOutstandingPage(filter, 0, 50, List.of())).thenReturn(List.of());
+        when(service.findOutstandingPage(outstandingFilter, 0, 50, List.of())).thenReturn(List.of());
 
         assertEquals(1, outstanding.getDataProvider().size(new Query<>()));
         outstanding.getDataProvider().fetch(new Query<>(50, 50, List.of(), null, null)).toList();
@@ -148,9 +162,33 @@ class HiringDecisionViewTest {
         outstanding.getDataProvider().fetch(new Query<>(50, 50, List.of(), null, null)).toList();
         outstanding.getDataProvider().fetch(new Query<>(0, 50, List.of(), null, null)).toList();
 
-        verify(service, org.mockito.Mockito.times(2)).countOutstanding(filter);
-        verify(service, org.mockito.Mockito.times(2)).findOutstandingPage(filter, 50, 50, List.of());
-        verify(service).findOutstandingPage(filter, 0, 50, List.of());
+        verify(service, org.mockito.Mockito.times(2)).countOutstanding(outstandingFilter);
+        verify(service, org.mockito.Mockito.times(2)).findOutstandingPage(outstandingFilter, 50, 50, List.of());
+        verify(service).findOutstandingPage(outstandingFilter, 0, 50, List.of());
+    }
+
+    @Test
+    void deadlineFilterAndResponseDueSortAreForwardedAndPresentationIncludesVisibleText() {
+        HiringDecisionService service = mock(HiringDecisionService.class);
+        HiringDecisionView view = view(service);
+        @SuppressWarnings("unchecked")
+        ComboBox<OfferDeadlineFilter> deadline = descendants(view)
+                .filter(ComboBox.class::isInstance)
+                .map(component -> (ComboBox<OfferDeadlineFilter>) component)
+                .findFirst().orElseThrow();
+        deadline.setValue(OfferDeadlineFilter.OVERDUE);
+
+        grids(view).get(1).getDataProvider().fetch(query(0, 20, "responseDueAt")).toList();
+
+        verify(service).findOutstandingPage(
+                new OutstandingOfferFilter("", OfferDeadlineFilter.OVERDUE), 0, 20,
+                List.of(new OutstandingDecisionSortOrder(OutstandingDecisionSort.RESPONSE_DUE, Sort.Direction.ASC)));
+        assertEquals("No deadline", view.formatDeadline(null));
+        assertEquals("5d 6h", view.formatAge(Duration.ofHours(126)));
+        Span badge = view.deadlineStateBadge(summary(OfferDeadlineState.OVERDUE));
+        assertEquals("Overdue", badge.getText());
+        assertTrue(badge.getElement().getThemeList().contains("error"));
+        assertEquals(OfferDeadlineFilter.OVERDUE, deadline.getValue());
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -178,6 +216,22 @@ class HiringDecisionViewTest {
 
     private Stream<String> spanTexts(HiringDecisionView view) {
         return descendants(view).filter(Span.class::isInstance).map(Span.class::cast).map(Span::getText);
+    }
+
+    private HiringDecisionView view(HiringDecisionService service) {
+        OfferDeadlineProperties properties = new OfferDeadlineProperties();
+        properties.setTimestampZone(ZoneOffset.UTC);
+        OfferDeadlinePolicy policy = new OfferDeadlinePolicy(
+                Clock.fixed(Instant.parse("2026-09-13T02:00:00Z"), ZoneOffset.UTC), properties);
+        return new HiringDecisionView(service, policy);
+    }
+
+    private HiringDecisionSummary summary(OfferDeadlineState state) {
+        return new HiringDecisionSummary(
+                1L, 2L, "Alex Candidate", "Branch", "Engineer", "Client", "Singapore",
+                HiringDecisionStatus.OFFERED, "Recruiter", LocalDateTime.of(2026, 9, 8, 20, 0),
+                null, Duration.ofHours(126), state, null, "", null, null
+        );
     }
 
     private Stream<Component> descendants(Component component) {

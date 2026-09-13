@@ -60,7 +60,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Transactional
 class MySqlMigrationIT {
 
-    private static final List<String> EXPECTED_MIGRATIONS = List.of("1", "2", "3", "4", "5", "6", "7", "8", "9");
+    private static final List<String> EXPECTED_MIGRATIONS = List.of(
+            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
 
     @Container
     @ServiceConnection
@@ -74,17 +75,33 @@ class MySqlMigrationIT {
     @Autowired InterviewReminderDeliveryRepository deliveryRepository;
 
     @Test
-    void freshMySqlMigratesFromV1ThroughV9AndHibernateValidatesTheFullContext() {
+    void freshMySqlMigratesFromV1ThroughV10AndHibernateValidatesTheFullContext() {
         List<String> appliedVersions = Arrays.stream(flyway.info().applied())
                 .map(info -> info.getVersion().getVersion())
                 .toList();
 
         assertEquals(EXPECTED_MIGRATIONS, appliedVersions);
-        assertEquals("9", flyway.info().current().getVersion().getVersion());
+        assertEquals("10", flyway.info().current().getVersion().getVersion());
         assertDoesNotThrow(flyway::validate);
         assertEquals("classpath:db/migration/mysql", environment.getProperty("spring.flyway.locations"));
         assertEquals("validate", environment.getProperty("spring.jpa.hibernate.ddl-auto"));
         assertTrue(entityManagerFactory.isOpen());
+        assertEquals("YES", jdbcTemplate.queryForObject(
+                """
+                SELECT IS_NULLABLE
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'hiring_decisions'
+                  AND COLUMN_NAME = 'response_due_at'
+                """, String.class));
+        assertEquals(3, jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM INFORMATION_SCHEMA.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'hiring_decisions'
+                  AND INDEX_NAME = 'ix_hiring_decision_status_response_due_id'
+                """, Integer.class));
     }
 
     @Test

@@ -19,7 +19,10 @@ import com.company.iss.evaluation.entity.InterviewResult;
 import com.company.iss.evaluation.repository.InterviewEvaluationRepository;
 import com.company.iss.hiring.dto.HiringActionCommand;
 import com.company.iss.hiring.dto.IssueOfferCommand;
+import com.company.iss.hiring.config.OfferDeadlineProperties;
+import com.company.iss.hiring.entity.HiringDecisionAction;
 import com.company.iss.hiring.entity.HiringDecisionStatus;
+import com.company.iss.hiring.entity.OfferDeadlineState;
 import com.company.iss.hiring.repository.HiringDecisionAuditRepository;
 import com.company.iss.hiring.repository.HiringDecisionRepository;
 import com.company.iss.position.entity.EmploymentType;
@@ -29,6 +32,8 @@ import com.company.iss.position.repository.PositionOpeningRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
@@ -40,6 +45,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -52,7 +60,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 @DataJpaTest
-@Import(HiringDecisionService.class)
+@Import({HiringDecisionService.class, OfferDeadlinePolicy.class, OfferDeadlineProperties.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class HiringDecisionIntegrationTest {
 
@@ -68,13 +76,17 @@ class HiringDecisionIntegrationTest {
     @Autowired ClientRepository clientRepository;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired OfferDeadlineProperties deadlineProperties;
 
     @MockitoBean SecurityService securityService;
+    @MockitoBean Clock clock;
 
     private User admin;
 
     @BeforeEach
     void setUp() {
+        when(clock.instant()).thenReturn(Instant.parse("2026-09-13T02:00:00Z"));
+        deadlineProperties.setTimestampZone(ZoneOffset.UTC);
         admin = saveUser("hiring-admin@example.test");
         when(securityService.requireOperationsUser()).thenReturn(admin);
     }
@@ -162,6 +174,50 @@ class HiringDecisionIntegrationTest {
         assertEquals(ApplicantStatus.OFFERED, applicantRepository.findById(candidate.applicantId()).orElseThrow().getStatus());
         assertEquals(0, positionRepository.findById(position.getId()).orElseThrow().getHiredCount());
         assertEquals(1, auditRepository.count());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = HiringDecisionAction.class, names = {"ACCEPTED_AND_HIRED", "DECLINED", "WITHDRAWN"})
+    void overdueOfferRemainsOutstandingAndCanStillReachEveryTerminalDecision(HiringDecisionAction action) {
+        Branch branch = saveBranch("OD-" + action.ordinal());
+        PositionOpening position = savePosition("Overdue " + action.name(), 1);
+        CandidateFixture candidate = savePassedCandidate("overdue-" + action.name().toLowerCase(), branch, position);
+        LocalDateTime responseDueAt = LocalDateTime.of(2026, 9, 13, 2, 30);
+        service.issueOffer(new IssueOfferCommand(
+                candidate.applicantId(), candidate.evaluationId(), responseDueAt, null));
+
+        when(clock.instant()).thenReturn(Instant.parse("2026-09-13T03:00:00Z"));
+        assertEquals(HiringDecisionStatus.OFFERED,
+                decisionRepository.findById(decisionRepository.findAll().getFirst().getId()).orElseThrow().getStatus());
+
+        var result = switch (action) {
+            case ACCEPTED_AND_HIRED -> service.acceptAndHire(
+                    new HiringActionCommand(candidate.applicantId(), "Accepted"));
+            case DECLINED -> service.decline(new HiringActionCommand(candidate.applicantId(), "Declined"));
+            case WITHDRAWN -> service.withdraw(new HiringActionCommand(candidate.applicantId(), "Withdrawn"));
+            case OFFER_ISSUED -> throw new IllegalArgumentException("Issue is not a terminal action.");
+        };
+
+        HiringDecisionStatus expectedDecisionStatus = switch (action) {
+            case ACCEPTED_AND_HIRED -> HiringDecisionStatus.HIRED;
+            case DECLINED -> HiringDecisionStatus.DECLINED;
+            case WITHDRAWN -> HiringDecisionStatus.WITHDRAWN;
+            case OFFER_ISSUED -> throw new IllegalArgumentException("Issue is not a terminal action.");
+        };
+        ApplicantStatus expectedApplicantStatus = switch (action) {
+            case ACCEPTED_AND_HIRED -> ApplicantStatus.HIRED;
+            case DECLINED -> ApplicantStatus.OFFER_DECLINED;
+            case WITHDRAWN -> ApplicantStatus.WITHDRAWN;
+            case OFFER_ISSUED -> throw new IllegalArgumentException("Issue is not a terminal action.");
+        };
+        assertEquals(expectedDecisionStatus, result.status());
+        assertEquals(expectedApplicantStatus,
+                applicantRepository.findById(candidate.applicantId()).orElseThrow().getStatus());
+        assertEquals(responseDueAt, result.responseDueAt());
+        assertEquals(OfferDeadlineState.OVERDUE, result.deadlineState());
+        assertEquals(action == HiringDecisionAction.ACCEPTED_AND_HIRED ? 1 : 0,
+                positionRepository.findById(position.getId()).orElseThrow().getHiredCount());
+        assertEquals(2, auditRepository.count());
     }
 
     private boolean attemptHire(CountDownLatch startGate, Long applicantId) throws InterruptedException {

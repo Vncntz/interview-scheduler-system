@@ -14,11 +14,11 @@ The default Java 25 suite remains Docker-free and uses isolated H2 in MySQL comp
 
 The opt-in integration profile requires Docker and starts an isolated `mysql:8.4.6` Testcontainer.
 Spring Boot supplies the container JDBC connection through a service connection; the suite never uses
-developer datasource variables or a fixed host port. It applies the production MySQL V1-through-V9
+developer datasource variables or a fixed host port. It applies the production MySQL V1-through-V10
 migrations to an empty schema, validates their checksums and current version, starts the complete Spring
-context with Hibernate `ddl-auto=validate`, and exercises V8's critical reminder mappings plus V9's
+context with Hibernate `ddl-auto=validate`, and exercises V8's critical reminder mappings, V9's
 lifecycle-history mappings, uniqueness, foreign keys, snapshots, enum values, microsecond timestamps,
-and processing indexes:
+and processing indexes, plus V10's nullable offer-deadline mapping:
 
 ```powershell
 .\mvnw.cmd clean verify -Pmysql-it
@@ -82,7 +82,7 @@ return zero rows/counts before V2 is allowed to run.
 ## Fresh database rollout
 
 For an empty database, keep `FLYWAY_BASELINE_ON_MIGRATE` unset (its default is `false`). Start the
-application with normal datasource credentials. Flyway applies V1 through V9 in order, after which
+application with normal datasource credentials. Flyway applies V1 through V10 in order, after which
 Hibernate validates the resulting schema. The fresh schema has `applicants.branch_id NOT NULL`, the
 final hiring decision workflow tables, secure account lifecycle tables, and no persisted notification
 credential columns.
@@ -95,8 +95,8 @@ and has no Flyway history table.
 1. Complete backup, structural comparison, and applicant reconciliation.
 2. For one controlled deployment only, set `FLYWAY_BASELINE_ON_MIGRATE=true` and
    `FLYWAY_BASELINE_VERSION=1`.
-3. Start one application instance. Flyway records version 1 as the baseline and then runs V2 through V9.
-4. Verify `flyway_schema_history` contains the version 1 baseline and successful version 2 through 9 migrations.
+3. Start one application instance. Flyway records version 1 as the baseline and then runs V2 through V10.
+4. Verify `flyway_schema_history` contains the version 1 baseline and successful version 2 through 10 migrations.
 5. Stop the instance, remove the baseline override, and restart with
    `FLYWAY_BASELINE_ON_MIGRATE=false` (or the variable unset) before scaling out.
 
@@ -260,6 +260,27 @@ V9 is forward-only. Rolling back to pre-V9 binaries requires restoring the match
 those binaries. Do not delete lifecycle records, backfill legacy snapshots from current schedules, drop
 the new table or columns while V9 code is running, edit the applied migration, or use Flyway repair to
 hide a mismatch.
+
+## V10 offer response deadline rollout
+
+V10 adds nullable `hiring_decisions.response_due_at` with the same microsecond timestamp precision used
+by existing hiring timestamps. Existing decisions are deliberately left null, so deployment requires no
+deadline backfill and historical offers continue to work as `No deadline`.
+
+The `(status, response_due_at, id)` index supports the outstanding-offer predicate, earliest-deadline
+ordering, and deterministic page boundary used by the database-backed worklist. It is deliberately
+composite because every deadline worklist query first constrains `status = 'OFFERED'`, then filters or
+orders by `response_due_at`, with `id` as the unique tie-breaker.
+
+Before rollout, rehearse both a fresh V1-to-V10 migration and a V9-to-V10 upgrade against an isolated,
+representative MySQL restoration. Confirm existing decision rows retain null deadlines, the new column is
+nullable `DATETIME(6)`, the composite index exists, Hibernate validation succeeds, and representative
+outstanding-worklist query plans use an appropriate index. Adding the column and index can take metadata
+locks or require index-build disk and time; measure both during rehearsal.
+
+V10 is forward-only. Rolling back to a pre-V10 binary requires restoring the matching pre-V10 backup
+with that binary or a separately reviewed forward-compatibility plan. Do not drop the column or index
+while V10 code is running, edit the applied migration, or use Flyway repair to hide a mismatch.
 
 ## Failure, rollback, and recovery
 
