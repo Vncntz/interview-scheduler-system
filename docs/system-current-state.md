@@ -302,6 +302,11 @@ Implemented behavior:
   `Overdue`, or `No deadline` state. The due-soon window defaults to 24 hours and filtering, keyword
   search, counts, branch scope, and pagination remain database-backed. Passing the deadline does not
   automatically transition the hiring decision.
+- Hiring offer, response-deadline, and resolution timestamps remain zone-less in persistence. Deadline
+  and age calculations use one configured business zone, defaulting to `Asia/Manila`; fall-back overlaps
+  in the supported hiring-record era are rejected because repeated local times are ambiguous without a
+  persisted offset. Supporting arbitrary DST zones would require an authoritative persisted `Instant` or
+  offset.
 
 Post-issuance deadline editing, deadline reminders, automatic expiry, re-offers, reversals, applicant
 self-service acceptance, and offer-time headcount reservation are not supported.
@@ -494,8 +499,10 @@ repository operations.
 
 ### Optional controlled variables
 
-- `OFFER_RESPONSE_DUE_SOON_WINDOW` and `OFFER_RESPONSE_TIMESTAMP_ZONE` configure the optional offer
-  deadline classification window and timestamp zone.
+- `OFFER_RESPONSE_DUE_SOON_WINDOW` configures the optional offer deadline classification window.
+  `OFFER_RESPONSE_TIMESTAMP_ZONE` configures the hiring business zone and defaults to `Asia/Manila`,
+  which is the recommended production value. Zones with fall-back overlaps in the supported hiring-record
+  era fail startup validation.
 
 - `ADMIN_EMAIL` and `ADMIN_PASSWORD` — opt-in first-administrator bootstrap; remove after use and rotate the credential.
 - `SPRING_PROFILES_ACTIVE=dev` plus `DEMO_DATA_ENABLED=true` — both are required for deterministic development demo data.

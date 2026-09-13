@@ -38,10 +38,16 @@ derived deadline state:
 - `No deadline`: no deadline was supplied.
 
 The default due-soon window is 24 hours. It can be changed with
-`OFFER_RESPONSE_DUE_SOON_WINDOW`; `OFFER_RESPONSE_TIMESTAMP_ZONE` controls how zone-less hiring
-timestamps are interpreted. Both page and count queries apply the selected `All`, `Overdue`, `Due
-soon`, `On track`, or `No deadline` filter in the database, together with search and the authoritative
-administrator/recruiter branch scope. `Response Due` is an explicitly whitelisted grid sort.
+`OFFER_RESPONSE_DUE_SOON_WINDOW`. Offer, response-deadline, and resolution timestamps remain zone-less
+in persistence, so deadline and age calculations interpret them in one configured business zone. The default and
+recommended production setting is `OFFER_RESPONSE_TIMESTAMP_ZONE=Asia/Manila`. Zones with fall-back
+overlaps in the supported hiring-record era are rejected because their repeated local times cannot be
+reconstructed unambiguously. True arbitrary-DST-zone support would require persisting an authoritative
+`Instant` or offset.
+
+Both page and count queries apply the selected `All`, `Overdue`, `Due soon`, `On track`, or `No
+deadline` filter in the database, together with search and the authoritative administrator/recruiter
+branch scope. `Response Due` is an explicitly whitelisted grid sort.
 
 These states are informational. Passing a response deadline does **not** automatically expire,
 decline, withdraw, or otherwise transition the hiring decision. Overdue offers can still be hired,
