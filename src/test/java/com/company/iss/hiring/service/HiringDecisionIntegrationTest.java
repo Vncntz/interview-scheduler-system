@@ -23,12 +23,14 @@ import com.company.iss.hiring.config.OfferDeadlineProperties;
 import com.company.iss.hiring.entity.HiringDecisionAction;
 import com.company.iss.hiring.entity.HiringDecisionStatus;
 import com.company.iss.hiring.entity.OfferDeadlineState;
+import com.company.iss.hiring.event.JobOfferIssuedEvent;
 import com.company.iss.hiring.repository.HiringDecisionAuditRepository;
 import com.company.iss.hiring.repository.HiringDecisionRepository;
 import com.company.iss.position.entity.EmploymentType;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.entity.PositionStatus;
 import com.company.iss.position.repository.PositionOpeningRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,6 +40,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -62,6 +66,7 @@ import static org.mockito.Mockito.when;
 @DataJpaTest
 @Import({HiringDecisionService.class, OfferDeadlinePolicy.class, OfferDeadlineProperties.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
+@RecordApplicationEvents
 class HiringDecisionIntegrationTest {
 
     @Autowired HiringDecisionService service;
@@ -75,8 +80,10 @@ class HiringDecisionIntegrationTest {
     @Autowired BranchRepository branchRepository;
     @Autowired ClientRepository clientRepository;
     @Autowired PlatformTransactionManager transactionManager;
+    @Autowired EntityManager entityManager;
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired OfferDeadlineProperties deadlineProperties;
+    @Autowired ApplicationEvents applicationEvents;
 
     @MockitoBean SecurityService securityService;
     @MockitoBean Clock clock;
@@ -152,6 +159,37 @@ class HiringDecisionIntegrationTest {
         assertEquals(1, decisionRepository.count());
         assertEquals(1, auditRepository.count());
         assertEquals(ApplicantStatus.OFFERED, applicantRepository.findById(candidate.applicantId()).orElseThrow().getStatus());
+    }
+
+    @Test
+    void retryAfterDatabaseRoundTripUsesMicrosecondEquivalentDeadlineWithoutDuplicateSideEffects() {
+        Branch branch = saveBranch("DEADLINE-RETRY");
+        PositionOpening position = savePosition("Deadline Retry", 1);
+        CandidateFixture candidate = savePassedCandidate("deadline-retry", branch, position);
+        LocalDateTime originalDeadline = LocalDateTime.of(2026, 9, 20, 17, 0, 0, 123_456_789);
+        LocalDateTime storedDeadline = LocalDateTime.of(2026, 9, 20, 17, 0, 0, 123_456_000);
+
+        var issued = service.issueOffer(new IssueOfferCommand(
+                candidate.applicantId(), candidate.evaluationId(), originalDeadline, null));
+
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        LocalDateTime reloadedDeadline = transaction.execute(status -> {
+            entityManager.clear();
+            return decisionRepository.findById(issued.decisionId()).orElseThrow().getResponseDueAt();
+        });
+        var retried = service.issueOffer(new IssueOfferCommand(
+                candidate.applicantId(), candidate.evaluationId(), originalDeadline, "ignored repeat"));
+
+        assertEquals(storedDeadline, reloadedDeadline);
+        assertEquals(issued.decisionId(), retried.decisionId());
+        assertEquals(storedDeadline, retried.responseDueAt());
+        assertEquals(1, decisionRepository.count());
+        assertEquals(1, auditRepository.count());
+        assertEquals(ApplicantStatus.OFFERED,
+                applicantRepository.findById(candidate.applicantId()).orElseThrow().getStatus());
+        assertEquals(1, applicationEvents.stream(JobOfferIssuedEvent.class)
+                .filter(event -> event.hiringDecisionId().equals(issued.decisionId()))
+                .count());
     }
 
     @Test
