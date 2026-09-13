@@ -26,6 +26,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.DriverManager;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -42,6 +44,10 @@ class OfferTimestampZoneApplicationStartupTest {
                     + "decisions exist. If the historical zone has fall-back overlaps, complete an approved "
                     + "timestamp backfill/storage migration before starting.";
     private static final String BLANK_ZONE_MESSAGE = "OFFER_RESPONSE_TIMESTAMP_ZONE must not be blank.";
+    private static final String CONFLICTING_ZONE_MESSAGE =
+            "OFFER_RESPONSE_TIMESTAMP_ZONE (UTC) does not match the effective "
+                    + "iss.hiring.offer-deadline.timestamp-zone (Asia/Manila). Remove the higher-precedence "
+                    + "override or set both values to the historical zone before startup.";
     private static final Path PRODUCTION_APPLICATION_PROPERTIES =
             Path.of("src", "main", "resources", "application.properties").toAbsolutePath().normalize();
 
@@ -109,10 +115,55 @@ class OfferTimestampZoneApplicationStartupTest {
         }
     }
 
+    @Test
+    void conflictingHigherPrecedenceZoneRejectsExistingDecisionStartup() throws Exception {
+        String databaseUrl = databaseUrl();
+        try {
+            IllegalStateException failure = assertThrows(
+                    IllegalStateException.class,
+                    () -> start(
+                            databaseUrl,
+                            Map.of(TIMESTAMP_ZONE_VARIABLE, "UTC"),
+                            true,
+                            "Asia/Manila"
+                    )
+            );
+
+            assertTrue(hasMessageInCauseChain(failure, CONFLICTING_ZONE_MESSAGE));
+        } finally {
+            shutDown(databaseUrl);
+        }
+    }
+
+    @Test
+    void matchingHigherPrecedenceZoneAllowsExistingDecisionStartup() throws Exception {
+        String databaseUrl = databaseUrl();
+        try (ConfigurableApplicationContext context = start(
+                databaseUrl,
+                Map.of(TIMESTAMP_ZONE_VARIABLE, "UTC"),
+                true,
+                "UTC"
+        )) {
+            assertEquals(ZoneId.of("UTC"), context.getBean(OfferDeadlineProperties.class).getTimestampZone());
+            assertEquals(1L, context.getBean(HiringDecisionRepository.class).count());
+        } finally {
+            shutDown(databaseUrl);
+        }
+    }
+
     private ConfigurableApplicationContext start(
             String databaseUrl,
             Map<String, Object> environmentVariables,
             boolean seedHiringDecision
+    ) {
+        return start(databaseUrl, environmentVariables, seedHiringDecision, null);
+    }
+
+    private ConfigurableApplicationContext start(
+            String databaseUrl,
+            Map<String, Object> environmentVariables,
+            boolean seedHiringDecision,
+            String timestampZoneOverride
     ) {
         assertTrue(
                 Files.isRegularFile(PRODUCTION_APPLICATION_PROPERTIES),
@@ -125,7 +176,7 @@ class OfferTimestampZoneApplicationStartupTest {
         application.setLogStartupInfo(false);
         application.setRegisterShutdownHook(false);
 
-        return application.run(
+        var arguments = new ArrayList<>(List.of(
                 "--spring.config.location=" + PRODUCTION_APPLICATION_PROPERTIES.toUri(),
                 "--spring.datasource.url=" + databaseUrl,
                 "--spring.datasource.username=sa",
@@ -137,7 +188,12 @@ class OfferTimestampZoneApplicationStartupTest {
                 "--spring.main.banner-mode=off",
                 "--logging.level.root=OFF",
                 "--startup-test.seed-hiring-decision=" + seedHiringDecision
-        );
+        ));
+        if (timestampZoneOverride != null) {
+            arguments.add("--iss.hiring.offer-deadline.timestamp-zone=" + timestampZoneOverride);
+        }
+
+        return application.run(arguments.toArray(String[]::new));
     }
 
     private ConfigurableEnvironment controlledEnvironment(Map<String, Object> environmentVariables) {

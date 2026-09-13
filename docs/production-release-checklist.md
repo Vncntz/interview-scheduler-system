@@ -29,8 +29,9 @@ present; never record its value in release evidence or command output.
 - Hiring offer timing: when `OFFER_RESPONSE_TIMESTAMP_ZONE` is absent, empty or new installations may use the
   implicit `Asia/Manila` default; an explicitly present blank value is invalid. Before upgrading
   a deployment with existing hiring decisions, set `OFFER_RESPONSE_TIMESTAMP_ZONE` explicitly to the zone
-  historically used for its zone-less hiring timestamps. Do not substitute Manila merely to pass validation;
-  a historical zone with fall-back overlaps requires an approved timestamp backfill/storage migration.
+  historically used for its zone-less hiring timestamps. Ensure no higher-precedence
+  `iss.hiring.offer-deadline.timestamp-zone` setting conflicts with it. Do not substitute Manila merely to pass
+  validation; a historical zone with fall-back overlaps requires an approved timestamp backfill/storage migration.
 - Set the stale-claim timeout comfortably above the total configured SMTP connection, read, and write
   timeout budget plus expected processing margin. These settings are validated individually; the
   application does not cross-validate their combined budget.

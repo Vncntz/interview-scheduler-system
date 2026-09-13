@@ -43,9 +43,10 @@ in persistence, so deadline and age calculations interpret them in one configure
 `OFFER_RESPONSE_TIMESTAMP_ZONE` is absent, empty or new installations may use the implicit `Asia/Manila`
 default; an explicitly present blank value is invalid. Before upgrading a deployment with existing
 hiring decisions, explicitly set `OFFER_RESPONSE_TIMESTAMP_ZONE` to the zone historically used to interpret
-those timestamps. Do not substitute Manila merely to pass startup validation. Zones with fall-back overlaps
-in the supported hiring-record era are rejected because their repeated local times cannot be reconstructed
-unambiguously; such historical data requires a separately designed, approved timestamp backfill/storage
+those timestamps. A higher-precedence override of `iss.hiring.offer-deadline.timestamp-zone` must match that
+explicit historical zone. Do not substitute Manila merely to pass startup validation. Zones with fall-back
+overlaps in the supported hiring-record era are rejected because their repeated local times cannot be
+reconstructed unambiguously; such historical data requires a separately designed, approved timestamp backfill/storage
 migration before startup. True arbitrary-DST-zone support would require persisting an authoritative `Instant`
 or offset.
 

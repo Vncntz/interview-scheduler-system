@@ -306,7 +306,8 @@ Implemented behavior:
   and age calculations use one configured business zone. When `OFFER_RESPONSE_TIMESTAMP_ZONE` is absent,
   empty installations may use the implicit `Asia/Manila` default; an explicitly present blank value is invalid.
   Installations with existing hiring decisions must explicitly configure their
-  historical zone before startup. Fall-back overlaps in the supported hiring-record era are rejected because
+  historical zone before startup; any higher-precedence effective zone setting must match it. Fall-back overlaps
+  in the supported hiring-record era are rejected because
   repeated local times are ambiguous without a persisted offset; historical data in such a zone requires an
   approved timestamp backfill/storage migration rather than substituting Manila. Supporting arbitrary DST
   zones would require an authoritative persisted `Instant` or offset.
