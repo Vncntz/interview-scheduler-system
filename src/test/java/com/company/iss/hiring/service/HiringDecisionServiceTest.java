@@ -127,11 +127,12 @@ class HiringDecisionServiceTest {
     }
 
     @Test
-    void issueOfferPersistsStrictlyFutureResponseDeadline() {
+    void issueOfferPersistsStrictlyFutureResponseDeadlineAtMicrosecondPrecision() {
         User actor = admin();
         Applicant applicant = eligibleApplicant(10L, 1L);
         InterviewEvaluation evaluation = passedEvaluation(20L, applicant);
-        LocalDateTime deadline = NOW_LOCAL.plusDays(2);
+        LocalDateTime deadline = NOW_LOCAL.plusDays(2).withNano(123_456_789);
+        LocalDateTime normalizedDeadline = deadline.withNano(123_456_000);
         when(securityService.requireOperationsUser()).thenReturn(actor);
         when(applicantRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(applicant));
         when(decisionRepository.findByApplicantIdForUpdate(10L)).thenReturn(Optional.empty());
@@ -140,11 +141,11 @@ class HiringDecisionServiceTest {
 
         var result = service.issueOffer(new IssueOfferCommand(10L, 20L, deadline, null));
 
-        assertEquals(deadline, result.responseDueAt());
+        assertEquals(normalizedDeadline, result.responseDueAt());
         assertEquals(com.company.iss.hiring.entity.OfferDeadlineState.ON_TRACK, result.deadlineState());
         ArgumentCaptor<HiringDecision> decision = ArgumentCaptor.forClass(HiringDecision.class);
         verify(decisionRepository).saveAndFlush(decision.capture());
-        assertEquals(deadline, decision.getValue().getResponseDueAt());
+        assertEquals(normalizedDeadline, decision.getValue().getResponseDueAt());
     }
 
     @Test
@@ -197,41 +198,77 @@ class HiringDecisionServiceTest {
     }
 
     @Test
-    void reissuingSameOutstandingOfferAndStoredDeadlineIsIdempotentAfterDeadlinePasses() {
+    void reissuingDatabaseEquivalentOutstandingOfferIsIdempotentAfterDeadlinePasses() {
         User actor = admin();
         HiringDecision decision = offeredDecision(30L, eligibleApplicant(10L, 1L), actor);
-        LocalDateTime storedDeadline = NOW_LOCAL.minusHours(1);
+        LocalDateTime storedDeadline = NOW_LOCAL.minusHours(1).withNano(123_456_000);
+        LocalDateTime originalDeadline = storedDeadline.withNano(123_456_789);
         decision.setResponseDueAt(storedDeadline);
         when(securityService.requireOperationsUser()).thenReturn(actor);
         when(applicantRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(decision.getApplicant()));
         when(decisionRepository.findByApplicantIdForUpdate(10L)).thenReturn(Optional.of(decision));
 
-        var result = service.issueOffer(new IssueOfferCommand(10L, 20L, storedDeadline, "ignored repeat"));
+        var result = service.issueOffer(new IssueOfferCommand(10L, 20L, originalDeadline, "ignored repeat"));
 
         assertEquals(30L, result.decisionId());
         assertEquals(storedDeadline, result.responseDueAt());
         verifyNoInteractions(evaluationRepository, auditRepository, eventPublisher);
         verify(decisionRepository, never()).saveAndFlush(any());
+        verify(applicantRepository, never()).save(any());
     }
 
     @Test
-    void reissuingOutstandingOfferWithDifferentFutureDeadlineIsRejectedAsConflict() {
+    void reissuingOutstandingOfferWithDifferentMicrosecondDeadlineIsRejectedAsConflict() {
         User actor = admin();
         HiringDecision decision = offeredDecision(30L, eligibleApplicant(10L, 1L), actor);
-        decision.setResponseDueAt(NOW_LOCAL.plusHours(2));
+        LocalDateTime storedDeadline = NOW_LOCAL.plusHours(2).withNano(123_456_000);
+        LocalDateTime differentDeadline = storedDeadline.withNano(123_457_000);
+        decision.setResponseDueAt(storedDeadline);
         when(securityService.requireOperationsUser()).thenReturn(actor);
         when(applicantRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(decision.getApplicant()));
         when(decisionRepository.findByApplicantIdForUpdate(10L)).thenReturn(Optional.of(decision));
 
         HiringDecisionException exception = assertThrows(HiringDecisionException.class,
                 () -> service.issueOffer(new IssueOfferCommand(
-                        10L, 20L, NOW_LOCAL.plusHours(3), "changed deadline")));
+                        10L, 20L, differentDeadline, "changed deadline")));
 
         assertEquals("This applicant already has a hiring decision and cannot receive another offer.",
                 exception.getMessage());
         verifyNoInteractions(evaluationRepository, auditRepository, eventPublisher);
         verify(decisionRepository, never()).saveAndFlush(any());
         verify(applicantRepository, never()).save(any());
+    }
+
+    @Test
+    void issueOfferRejectsDeadlineThatIsNotFutureAtDatabasePrecision() {
+        Instant boundaryNow = Instant.parse("2026-09-13T02:00:00.123456500Z");
+        OfferDeadlineProperties properties = new OfferDeadlineProperties();
+        properties.setTimestampZone(ZoneOffset.UTC);
+        service = new HiringDecisionService(
+                decisionRepository,
+                auditRepository,
+                applicantRepository,
+                evaluationRepository,
+                positionRepository,
+                securityService,
+                eventPublisher,
+                new OfferDeadlinePolicy(Clock.fixed(boundaryNow, ZoneOffset.UTC), properties)
+        );
+        User actor = admin();
+        Applicant applicant = eligibleApplicant(10L, 1L);
+        LocalDateTime submittedDeadline = LocalDateTime.ofInstant(boundaryNow, ZoneOffset.UTC)
+                .withNano(123_456_900);
+        when(securityService.requireOperationsUser()).thenReturn(actor);
+        when(applicantRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(applicant));
+        when(decisionRepository.findByApplicantIdForUpdate(10L)).thenReturn(Optional.empty());
+
+        HiringDecisionException exception = assertThrows(HiringDecisionException.class,
+                () -> service.issueOffer(new IssueOfferCommand(10L, 20L, submittedDeadline, null)));
+
+        assertEquals("Response deadline must be in the future.", exception.getMessage());
+        verify(decisionRepository, never()).saveAndFlush(any());
+        verify(applicantRepository, never()).save(any());
+        verifyNoInteractions(evaluationRepository, auditRepository, eventPublisher);
     }
 
     @Test

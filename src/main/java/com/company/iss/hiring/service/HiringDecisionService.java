@@ -202,6 +202,7 @@ public class HiringDecisionService {
     @Transactional
     public HiringDecisionSummary issueOffer(IssueOfferCommand command) {
         validateIssueCommand(command);
+        LocalDateTime responseDueAt = deadlinePolicy.normalize(command.responseDueAt());
         User actor = securityService.requireOperationsUser();
         Applicant applicant = requireScopedApplicantForUpdate(command.applicantId(), actor);
 
@@ -210,10 +211,10 @@ public class HiringDecisionService {
             boolean sameOutstandingOffer = existing.getStatus() == HiringDecisionStatus.OFFERED
                     && Objects.equals(existing.getEvaluation().getId(), command.evaluationId());
             if (sameOutstandingOffer) {
-                if (Objects.equals(existing.getResponseDueAt(), command.responseDueAt())) {
+                if (Objects.equals(existing.getResponseDueAt(), responseDueAt)) {
                     return toSummary(existing);
                 }
-                validateResponseDeadline(command.responseDueAt(), deadlinePolicy.now());
+                validateResponseDeadline(responseDueAt, deadlinePolicy.normalize(deadlinePolicy.now()));
             }
             throw new HiringDecisionException(
                     "This applicant already has a hiring decision and cannot receive another offer."
@@ -221,7 +222,7 @@ public class HiringDecisionService {
         }
 
         LocalDateTime now = deadlinePolicy.now();
-        validateResponseDeadline(command.responseDueAt(), now);
+        validateResponseDeadline(responseDueAt, deadlinePolicy.normalize(now));
 
         InterviewEvaluation evaluation = evaluationRepository.findDetailedById(command.evaluationId())
                 .orElseThrow(() -> new HiringDecisionException("Interview evaluation not found."));
@@ -234,7 +235,7 @@ public class HiringDecisionService {
         decision.setStatus(HiringDecisionStatus.OFFERED);
         decision.setOfferedBy(actor);
         decision.setOfferedAt(now);
-        decision.setResponseDueAt(command.responseDueAt());
+        decision.setResponseDueAt(responseDueAt);
         decision.setOfferedRemarks(trimToNull(command.remarks()));
         decision = decisionRepository.saveAndFlush(decision);
 

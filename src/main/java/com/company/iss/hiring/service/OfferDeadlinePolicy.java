@@ -6,7 +6,9 @@ import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 
 @Component
@@ -22,6 +24,10 @@ public class OfferDeadlinePolicy {
 
     public LocalDateTime now() {
         return LocalDateTime.ofInstant(clock.instant(), properties.getTimestampZone());
+    }
+
+    public LocalDateTime normalize(LocalDateTime value) {
+        return value == null ? null : value.truncatedTo(ChronoUnit.MICROS);
     }
 
     public LocalDateTime dueSoonCutoff(LocalDateTime now) {
@@ -53,6 +59,10 @@ public class OfferDeadlinePolicy {
             return null;
         }
         Objects.requireNonNull(now, "Offer age calculation time is required.");
-        return now.isBefore(offeredAt) ? Duration.ZERO : Duration.between(offeredAt, now);
+        Instant offeredInstant = offeredAt.atZone(properties.getTimestampZone()).toInstant();
+        Instant nowInstant = now.atZone(properties.getTimestampZone()).toInstant();
+        return nowInstant.isBefore(offeredInstant)
+                ? Duration.ZERO
+                : Duration.between(offeredInstant, nowInstant);
     }
 }

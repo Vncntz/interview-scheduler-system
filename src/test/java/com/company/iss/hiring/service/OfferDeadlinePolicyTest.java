@@ -13,6 +13,7 @@ import java.time.ZoneOffset;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OfferDeadlinePolicyTest {
@@ -33,6 +34,21 @@ class OfferDeadlinePolicyTest {
     }
 
     @Test
+    void normalizationTruncatesToDatabaseMicrosecondPrecision() {
+        OfferDeadlinePolicy policy = policy(Duration.ofHours(24), ZoneOffset.UTC);
+
+        assertNull(policy.normalize(null));
+        assertEquals(
+                LocalDateTime.of(2026, 9, 20, 17, 0, 0, 123_456_000),
+                policy.normalize(LocalDateTime.of(2026, 9, 20, 17, 0, 0, 123_456_000))
+        );
+        assertEquals(
+                LocalDateTime.of(2026, 9, 20, 17, 0, 0, 123_456_000),
+                policy.normalize(LocalDateTime.of(2026, 9, 20, 17, 0, 0, 123_456_789))
+        );
+    }
+
+    @Test
     void configurableWindowZoneFutureValidationAndAgeAreDeterministic() {
         OfferDeadlinePolicy policy = policy(Duration.ofHours(6), ZoneId.of("Asia/Manila"));
         LocalDateTime now = LocalDateTime.of(2026, 9, 13, 10, 0);
@@ -43,7 +59,41 @@ class OfferDeadlinePolicyTest {
         assertTrue(policy.isFuture(null, now));
         assertTrue(policy.isFuture(now.plusNanos(1), now));
         assertFalse(policy.isFuture(now, now));
-        assertEquals(Duration.ofHours(30), policy.age(now.minusHours(30), now));
+    }
+
+    @Test
+    void ageUsesActualTimelineAcrossNewYorkSpringForward() {
+        ZoneId zone = ZoneId.of("America/New_York");
+        OfferDeadlinePolicy policy = policy(Duration.ofHours(24), zone);
+        LocalDateTime offeredAt = LocalDateTime.of(2026, 3, 8, 1, 30);
+        LocalDateTime now = LocalDateTime.of(2026, 3, 8, 3, 30);
+
+        assertEquals(Duration.ofHours(1), policy.age(offeredAt, now));
+    }
+
+    @Test
+    void ageUsesJavaTimelineResolutionAcrossNewYorkFallBack() {
+        ZoneId zone = ZoneId.of("America/New_York");
+        OfferDeadlinePolicy policy = policy(Duration.ofHours(24), zone);
+        LocalDateTime offeredAt = LocalDateTime.of(2026, 11, 1, 0, 30);
+        LocalDateTime now = LocalDateTime.of(2026, 11, 1, 2, 30);
+        Duration expected = Duration.between(
+                offeredAt.atZone(zone).toInstant(),
+                now.atZone(zone).toInstant()
+        );
+
+        assertEquals(Duration.ofHours(3), expected);
+        assertEquals(expected, policy.age(offeredAt, now));
+    }
+
+    @Test
+    void ageRemainsStableInManilaAndHandlesNullAndTimelineFutureValues() {
+        OfferDeadlinePolicy policy = policy(Duration.ofHours(6), ZoneId.of("Asia/Manila"));
+        LocalDateTime offeredAt = LocalDateTime.of(2026, 9, 12, 4, 0);
+        LocalDateTime now = LocalDateTime.of(2026, 9, 13, 10, 0);
+
+        assertEquals(Duration.ofHours(30), policy.age(offeredAt, now));
+        assertNull(policy.age(null, now));
         assertEquals(Duration.ZERO, policy.age(now.plusMinutes(1), now));
     }
 
