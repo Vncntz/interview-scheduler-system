@@ -45,9 +45,9 @@ class OfferTimestampZoneApplicationStartupTest {
                     + "timestamp backfill/storage migration before starting.";
     private static final String BLANK_ZONE_MESSAGE = "OFFER_RESPONSE_TIMESTAMP_ZONE must not be blank.";
     private static final String CONFLICTING_ZONE_MESSAGE =
-            "OFFER_RESPONSE_TIMESTAMP_ZONE (UTC) does not match the effective "
+            "OFFER_RESPONSE_TIMESTAMP_ZONE (UTC) does not have the same time-zone rules as the effective "
                     + "iss.hiring.offer-deadline.timestamp-zone (Asia/Manila). Remove the higher-precedence "
-                    + "override or set both values to the historical zone before startup.";
+                    + "override or configure it with rules equivalent to the historical zone before startup.";
     private static final Path PRODUCTION_APPLICATION_PROPERTIES =
             Path.of("src", "main", "resources", "application.properties").toAbsolutePath().normalize();
 
@@ -145,6 +145,22 @@ class OfferTimestampZoneApplicationStartupTest {
                 "UTC"
         )) {
             assertEquals(ZoneId.of("UTC"), context.getBean(OfferDeadlineProperties.class).getTimestampZone());
+            assertEquals(1L, context.getBean(HiringDecisionRepository.class).count());
+        } finally {
+            shutDown(databaseUrl);
+        }
+    }
+
+    @Test
+    void equivalentHigherPrecedenceZoneRulesAllowExistingDecisionStartup() throws Exception {
+        String databaseUrl = databaseUrl();
+        try (ConfigurableApplicationContext context = start(
+                databaseUrl,
+                Map.of(TIMESTAMP_ZONE_VARIABLE, "UTC"),
+                true,
+                "Etc/UTC"
+        )) {
+            assertEquals(ZoneId.of("Etc/UTC"), context.getBean(OfferDeadlineProperties.class).getTimestampZone());
             assertEquals(1L, context.getBean(HiringDecisionRepository.class).count());
         } finally {
             shutDown(databaseUrl);

@@ -29,9 +29,9 @@ class OfferTimestampZoneStartupGuardTest {
                     + "timestamp backfill/storage migration before starting.";
     private static final String BLANK_ZONE_MESSAGE = "OFFER_RESPONSE_TIMESTAMP_ZONE must not be blank.";
     private static final String CONFLICTING_ZONE_MESSAGE =
-            "OFFER_RESPONSE_TIMESTAMP_ZONE (UTC) does not match the effective "
+            "OFFER_RESPONSE_TIMESTAMP_ZONE (UTC) does not have the same time-zone rules as the effective "
                     + "iss.hiring.offer-deadline.timestamp-zone (Asia/Manila). Remove the higher-precedence "
-                    + "override or set both values to the historical zone before startup.";
+                    + "override or configure it with rules equivalent to the historical zone before startup.";
 
     @Mock
     HiringDecisionRepository hiringDecisionRepository;
@@ -88,6 +88,17 @@ class OfferTimestampZoneStartupGuardTest {
     void explicitUtcVariableAllowsExistingHiringDecisionsWithoutCounting() {
         environment.setProperty("OFFER_RESPONSE_TIMESTAMP_ZONE", "UTC");
         offerDeadlineProperties.setTimestampZone(ZoneId.of("UTC"));
+        lenient().when(hiringDecisionRepository.count()).thenReturn(1L);
+
+        assertDoesNotThrow(() -> guard.run(null));
+
+        verify(hiringDecisionRepository, never()).count();
+    }
+
+    @Test
+    void explicitUtcVariableAllowsEquivalentEtcUtcEffectiveZoneWithoutCounting() {
+        environment.setProperty("OFFER_RESPONSE_TIMESTAMP_ZONE", "UTC");
+        offerDeadlineProperties.setTimestampZone(ZoneId.of("Etc/UTC"));
         lenient().when(hiringDecisionRepository.count()).thenReturn(1L);
 
         assertDoesNotThrow(() -> guard.run(null));

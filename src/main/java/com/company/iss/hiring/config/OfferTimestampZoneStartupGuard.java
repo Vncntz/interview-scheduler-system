@@ -20,9 +20,9 @@ public class OfferTimestampZoneStartupGuard implements ApplicationRunner, Initia
     private static final String TIMESTAMP_ZONE_VARIABLE = "OFFER_RESPONSE_TIMESTAMP_ZONE";
     private static final String BLANK_ZONE_MESSAGE = "OFFER_RESPONSE_TIMESTAMP_ZONE must not be blank.";
     private static final String CONFLICTING_ZONE_MESSAGE =
-            "OFFER_RESPONSE_TIMESTAMP_ZONE (%s) does not match the effective "
+            "OFFER_RESPONSE_TIMESTAMP_ZONE (%s) does not have the same time-zone rules as the effective "
                     + "iss.hiring.offer-deadline.timestamp-zone (%s). Remove the higher-precedence override "
-                    + "or set both values to the historical zone before startup.";
+                    + "or configure it with rules equivalent to the historical zone before startup.";
     private static final String MISSING_ZONE_MESSAGE =
             "Existing hiring decisions use zone-less timestamps. Set OFFER_RESPONSE_TIMESTAMP_ZONE explicitly "
                     + "to the historical zone before startup; the Asia/Manila default is safe only when no hiring "
@@ -61,7 +61,7 @@ public class OfferTimestampZoneStartupGuard implements ApplicationRunner, Initia
 
             ZoneId historicalZone = environment.getProperty(TIMESTAMP_ZONE_VARIABLE, ZoneId.class);
             ZoneId effectiveZone = offerDeadlinePropertiesProvider.getObject().getTimestampZone();
-            if (!historicalZone.equals(effectiveZone)) {
+            if (!historicalZone.getRules().equals(effectiveZone.getRules())) {
                 throw new IllegalStateException(CONFLICTING_ZONE_MESSAGE.formatted(historicalZone, effectiveZone));
             }
             return;
