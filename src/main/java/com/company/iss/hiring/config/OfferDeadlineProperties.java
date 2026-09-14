@@ -21,7 +21,7 @@ import java.time.zone.ZoneRules;
 public class OfferDeadlineProperties {
 
     // Hiring timestamps were introduced after this boundary and are stored without offsets.
-    private static final Instant HIRING_RECORDS_START = Instant.parse("2026-01-01T00:00:00Z");
+    static final Instant HIRING_RECORDS_START = Instant.parse("2026-01-01T00:00:00Z");
 
     @NotNull
     private Duration dueSoonWindow = Duration.ofHours(24);

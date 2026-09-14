@@ -5,15 +5,13 @@ import com.company.iss.hiring.repository.HiringDecisionRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.beans.factory.SmartInitializingSingleton;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
+import org.springframework.boot.web.server.context.WebServerInitializedEvent;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.env.ConfigurableEnvironment;
@@ -30,8 +28,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -45,16 +45,17 @@ class OfferTimestampZoneApplicationStartupTest {
                     + "timestamp backfill/storage migration before starting.";
     private static final String BLANK_ZONE_MESSAGE = "OFFER_RESPONSE_TIMESTAMP_ZONE must not be blank.";
     private static final String CONFLICTING_ZONE_MESSAGE =
-            "OFFER_RESPONSE_TIMESTAMP_ZONE (UTC) does not have the same time-zone rules as the effective "
+            "OFFER_RESPONSE_TIMESTAMP_ZONE (UTC) does not have equivalent time-zone behavior from "
+                    + "2026-01-01T00:00:00Z onward as the effective "
                     + "iss.hiring.offer-deadline.timestamp-zone (Asia/Manila). Remove the higher-precedence "
-                    + "override or configure it with rules equivalent to the historical zone before startup.";
+                    + "override or configure it with future behavior equivalent to the historical zone before startup.";
     private static final Path PRODUCTION_APPLICATION_PROPERTIES =
             Path.of("src", "main", "resources", "application.properties").toAbsolutePath().normalize();
 
     @Test
     void emptyDatabaseAndMissingVariableStartsWithProductionManilaDefault() throws Exception {
         String databaseUrl = databaseUrl();
-        try (ConfigurableApplicationContext context = start(databaseUrl, Map.of(), false)) {
+        try (ConfigurableApplicationContext context = start(databaseUrl, Map.of())) {
             assertEquals(
                     "Asia/Manila",
                     context.getEnvironment().getProperty("iss.hiring.offer-deadline.timestamp-zone")
@@ -70,15 +71,28 @@ class OfferTimestampZoneApplicationStartupTest {
     }
 
     @Test
-    void existingDecisionAndMissingVariableFailsDuringRunnerExecution() throws Exception {
+    void existingDecisionAndMissingVariableFailsBeforeWebServerInitialization() throws Exception {
         String databaseUrl = databaseUrl();
         try {
-            IllegalStateException failure = assertThrows(
-                    IllegalStateException.class,
-                    () -> start(databaseUrl, Map.of(), true)
+            seedHistoricalDecision(databaseUrl, "Asia/Manila");
+            AtomicBoolean webServerInitialized = new AtomicBoolean();
+
+            RuntimeException failure = assertThrows(
+                    RuntimeException.class,
+                    () -> start(
+                            databaseUrl,
+                            Map.of(),
+                            null,
+                            WebApplicationType.SERVLET,
+                            webServerInitialized
+                    )
             );
 
             assertTrue(hasMessageInCauseChain(failure, MISSING_ZONE_MESSAGE));
+            assertFalse(
+                    webServerInitialized.get(),
+                    "The zone guard must fail before the web server is initialized"
+            );
         } finally {
             shutDown(databaseUrl);
         }
@@ -91,7 +105,7 @@ class OfferTimestampZoneApplicationStartupTest {
         try {
             RuntimeException failure = assertThrows(
                     RuntimeException.class,
-                    () -> start(databaseUrl, Map.of(TIMESTAMP_ZONE_VARIABLE, configuredZone), false)
+                    () -> start(databaseUrl, Map.of(TIMESTAMP_ZONE_VARIABLE, configuredZone))
             );
 
             assertTrue(hasMessageInCauseChain(failure, BLANK_ZONE_MESSAGE));
@@ -103,13 +117,15 @@ class OfferTimestampZoneApplicationStartupTest {
     @Test
     void explicitValidVariableAllowsExistingDecisionToStart() throws Exception {
         String databaseUrl = databaseUrl();
-        try (ConfigurableApplicationContext context = start(
-                databaseUrl,
-                Map.of(TIMESTAMP_ZONE_VARIABLE, "UTC"),
-                true
-        )) {
-            assertEquals(ZoneId.of("UTC"), context.getBean(OfferDeadlineProperties.class).getTimestampZone());
-            assertEquals(1L, context.getBean(HiringDecisionRepository.class).count());
+        try {
+            seedHistoricalDecision(databaseUrl, "UTC");
+            try (ConfigurableApplicationContext context = start(
+                    databaseUrl,
+                    Map.of(TIMESTAMP_ZONE_VARIABLE, "UTC")
+            )) {
+                assertEquals(ZoneId.of("UTC"), context.getBean(OfferDeadlineProperties.class).getTimestampZone());
+                assertEquals(1L, context.getBean(HiringDecisionRepository.class).count());
+            }
         } finally {
             shutDown(databaseUrl);
         }
@@ -119,12 +135,12 @@ class OfferTimestampZoneApplicationStartupTest {
     void conflictingHigherPrecedenceZoneRejectsExistingDecisionStartup() throws Exception {
         String databaseUrl = databaseUrl();
         try {
-            IllegalStateException failure = assertThrows(
-                    IllegalStateException.class,
+            seedHistoricalDecision(databaseUrl, "UTC");
+            RuntimeException failure = assertThrows(
+                    RuntimeException.class,
                     () -> start(
                             databaseUrl,
                             Map.of(TIMESTAMP_ZONE_VARIABLE, "UTC"),
-                            true,
                             "Asia/Manila"
                     )
             );
@@ -138,30 +154,52 @@ class OfferTimestampZoneApplicationStartupTest {
     @Test
     void matchingHigherPrecedenceZoneAllowsExistingDecisionStartup() throws Exception {
         String databaseUrl = databaseUrl();
-        try (ConfigurableApplicationContext context = start(
-                databaseUrl,
-                Map.of(TIMESTAMP_ZONE_VARIABLE, "UTC"),
-                true,
-                "UTC"
-        )) {
-            assertEquals(ZoneId.of("UTC"), context.getBean(OfferDeadlineProperties.class).getTimestampZone());
-            assertEquals(1L, context.getBean(HiringDecisionRepository.class).count());
+        try {
+            seedHistoricalDecision(databaseUrl, "UTC");
+            try (ConfigurableApplicationContext context = start(
+                    databaseUrl,
+                    Map.of(TIMESTAMP_ZONE_VARIABLE, "UTC"),
+                    "UTC"
+            )) {
+                assertEquals(ZoneId.of("UTC"), context.getBean(OfferDeadlineProperties.class).getTimestampZone());
+                assertEquals(1L, context.getBean(HiringDecisionRepository.class).count());
+            }
         } finally {
             shutDown(databaseUrl);
         }
     }
 
     @Test
-    void equivalentHigherPrecedenceZoneRulesAllowExistingDecisionStartup() throws Exception {
+    void equivalentHigherPrecedenceZoneBehaviorAllowsExistingDecisionStartup() throws Exception {
         String databaseUrl = databaseUrl();
-        try (ConfigurableApplicationContext context = start(
-                databaseUrl,
-                Map.of(TIMESTAMP_ZONE_VARIABLE, "UTC"),
-                true,
-                "Etc/UTC"
-        )) {
-            assertEquals(ZoneId.of("Etc/UTC"), context.getBean(OfferDeadlineProperties.class).getTimestampZone());
-            assertEquals(1L, context.getBean(HiringDecisionRepository.class).count());
+        try {
+            seedHistoricalDecision(databaseUrl, "UTC");
+            try (ConfigurableApplicationContext context = start(
+                    databaseUrl,
+                    Map.of(TIMESTAMP_ZONE_VARIABLE, "UTC"),
+                    "Etc/UTC"
+            )) {
+                assertEquals(ZoneId.of("Etc/UTC"), context.getBean(OfferDeadlineProperties.class).getTimestampZone());
+                assertEquals(1L, context.getBean(HiringDecisionRepository.class).count());
+            }
+        } finally {
+            shutDown(databaseUrl);
+        }
+    }
+
+    @Test
+    void equivalentManilaAndFixedOffsetAllowExistingDecisionStartup() throws Exception {
+        String databaseUrl = databaseUrl();
+        try {
+            seedHistoricalDecision(databaseUrl, "Asia/Manila");
+            try (ConfigurableApplicationContext context = start(
+                    databaseUrl,
+                    Map.of(TIMESTAMP_ZONE_VARIABLE, "Asia/Manila"),
+                    "+08:00"
+            )) {
+                assertEquals(ZoneId.of("+08:00"), context.getBean(OfferDeadlineProperties.class).getTimestampZone());
+                assertEquals(1L, context.getBean(HiringDecisionRepository.class).count());
+            }
         } finally {
             shutDown(databaseUrl);
         }
@@ -169,17 +207,31 @@ class OfferTimestampZoneApplicationStartupTest {
 
     private ConfigurableApplicationContext start(
             String databaseUrl,
-            Map<String, Object> environmentVariables,
-            boolean seedHiringDecision
+            Map<String, Object> environmentVariables
     ) {
-        return start(databaseUrl, environmentVariables, seedHiringDecision, null);
+        return start(databaseUrl, environmentVariables, null);
     }
 
     private ConfigurableApplicationContext start(
             String databaseUrl,
             Map<String, Object> environmentVariables,
-            boolean seedHiringDecision,
             String timestampZoneOverride
+    ) {
+        return start(
+                databaseUrl,
+                environmentVariables,
+                timestampZoneOverride,
+                WebApplicationType.NONE,
+                new AtomicBoolean()
+        );
+    }
+
+    private ConfigurableApplicationContext start(
+            String databaseUrl,
+            Map<String, Object> environmentVariables,
+            String timestampZoneOverride,
+            WebApplicationType webApplicationType,
+            AtomicBoolean webServerInitialized
     ) {
         assertTrue(
                 Files.isRegularFile(PRODUCTION_APPLICATION_PROPERTIES),
@@ -188,9 +240,14 @@ class OfferTimestampZoneApplicationStartupTest {
 
         SpringApplication application = new SpringApplication(StartupTestApplication.class);
         application.setEnvironment(controlledEnvironment(environmentVariables));
-        application.setWebApplicationType(WebApplicationType.NONE);
+        application.setWebApplicationType(webApplicationType);
         application.setLogStartupInfo(false);
         application.setRegisterShutdownHook(false);
+        application.addListeners(event -> {
+            if (event instanceof WebServerInitializedEvent) {
+                webServerInitialized.set(true);
+            }
+        });
 
         var arguments = new ArrayList<>(List.of(
                 "--spring.config.location=" + PRODUCTION_APPLICATION_PROPERTIES.toUri(),
@@ -203,13 +260,70 @@ class OfferTimestampZoneApplicationStartupTest {
                 "--spring.jpa.open-in-view=false",
                 "--spring.main.banner-mode=off",
                 "--logging.level.root=OFF",
-                "--startup-test.seed-hiring-decision=" + seedHiringDecision
+                "--server.port=0"
         ));
         if (timestampZoneOverride != null) {
             arguments.add("--iss.hiring.offer-deadline.timestamp-zone=" + timestampZoneOverride);
         }
 
         return application.run(arguments.toArray(String[]::new));
+    }
+
+    private void seedHistoricalDecision(String databaseUrl, String historicalZone) {
+        try (ConfigurableApplicationContext context = start(
+                databaseUrl,
+                Map.of(TIMESTAMP_ZONE_VARIABLE, historicalZone)
+        )) {
+            JdbcTemplate jdbcTemplate = context.getBean(JdbcTemplate.class);
+            jdbcTemplate.update("""
+                    INSERT INTO branches
+                        (id, active, created_at, updated_at, version, branch_code, city, province, branch_name, address)
+                    VALUES (1, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'STARTUP', 'City', 'Province', 'Startup Branch', 'Address')
+                    """);
+            jdbcTemplate.update("""
+                    INSERT INTO users
+                        (id, active, failed_login_attempts, must_change_password, created_at, updated_at, version,
+                         email, full_name, password_hash, role)
+                    VALUES (1, TRUE, 0, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
+                            'startup@example.test', 'Startup Test', 'unused', 'ADMIN')
+                    """);
+            jdbcTemplate.update("""
+                    INSERT INTO position_openings
+                        (id, active, applied_count, hired_count, interviewed_count, passed_count,
+                         required_headcount, created_at, updated_at, version, title, work_location,
+                         employment_type, status)
+                    VALUES (1, TRUE, 1, 0, 1, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
+                            'Startup Position', 'Test', 'FULL_TIME', 'OPEN')
+                    """);
+            jdbcTemplate.update("""
+                    INSERT INTO applicants
+                        (id, active, branch_id, position_opening_id, created_at, updated_at, version,
+                         mobile_number, first_name, last_name, email, status)
+                    VALUES (1, TRUE, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
+                            '0000000000', 'Startup', 'Applicant', 'applicant@example.test', 'OFFERED')
+                    """);
+            jdbcTemplate.update("""
+                    INSERT INTO bookings
+                        (id, applicant_id, booked_date_time, created_at, updated_at, version,
+                         booking_reference, status, interview_stage, reminder_generation)
+                    VALUES (1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
+                            'STARTUP-BOOKING', 'PASSED', 'INITIAL', 0)
+                    """);
+            jdbcTemplate.update("""
+                    INSERT INTO interview_evaluations
+                        (id, communication_score, technical_score, attitude_score, applicant_id, booking_id,
+                         evaluator_id, created_at, evaluation_date, updated_at, version, result)
+                    VALUES (1, 8, 8, 8, 1, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                            CURRENT_TIMESTAMP, 0, 'PASS')
+                    """);
+            jdbcTemplate.update("""
+                    INSERT INTO hiring_decisions
+                        (id, applicant_id, evaluation_id, offered_at, offered_by_id, position_id,
+                         created_at, updated_at, version, status)
+                    VALUES (1, 1, 1, CURRENT_TIMESTAMP, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'OFFERED')
+                    """);
+            assertEquals(1L, context.getBean(HiringDecisionRepository.class).count());
+        }
     }
 
     private ConfigurableEnvironment controlledEnvironment(Map<String, Object> environmentVariables) {
@@ -256,64 +370,5 @@ class OfferTimestampZoneApplicationStartupTest {
     @EntityScan(basePackageClasses = HiringDecision.class, basePackages = "com.company.iss")
     @Import(OfferTimestampZoneStartupGuard.class)
     static class StartupTestApplication {
-
-        @Bean
-        SmartInitializingSingleton hiringDecisionFixture(
-                @Value("${startup-test.seed-hiring-decision:false}") boolean seedHiringDecision,
-                JdbcTemplate jdbcTemplate
-        ) {
-            return () -> {
-                if (!seedHiringDecision) {
-                    return;
-                }
-                jdbcTemplate.update("""
-                        INSERT INTO branches
-                            (id, active, created_at, updated_at, version, branch_code, city, province, branch_name, address)
-                        VALUES (1, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'STARTUP', 'City', 'Province', 'Startup Branch', 'Address')
-                        """);
-                jdbcTemplate.update("""
-                        INSERT INTO users
-                            (id, active, failed_login_attempts, must_change_password, created_at, updated_at, version,
-                             email, full_name, password_hash, role)
-                        VALUES (1, TRUE, 0, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
-                                'startup@example.test', 'Startup Test', 'unused', 'ADMIN')
-                        """);
-                jdbcTemplate.update("""
-                        INSERT INTO position_openings
-                            (id, active, applied_count, hired_count, interviewed_count, passed_count,
-                             required_headcount, created_at, updated_at, version, title, work_location,
-                             employment_type, status)
-                        VALUES (1, TRUE, 1, 0, 1, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
-                                'Startup Position', 'Test', 'FULL_TIME', 'OPEN')
-                        """);
-                jdbcTemplate.update("""
-                        INSERT INTO applicants
-                            (id, active, branch_id, position_opening_id, created_at, updated_at, version,
-                             mobile_number, first_name, last_name, email, status)
-                        VALUES (1, TRUE, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
-                                '0000000000', 'Startup', 'Applicant', 'applicant@example.test', 'OFFERED')
-                        """);
-                jdbcTemplate.update("""
-                        INSERT INTO bookings
-                            (id, applicant_id, booked_date_time, created_at, updated_at, version,
-                             booking_reference, status, interview_stage, reminder_generation)
-                        VALUES (1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0,
-                                'STARTUP-BOOKING', 'PASSED', 'INITIAL', 0)
-                        """);
-                jdbcTemplate.update("""
-                        INSERT INTO interview_evaluations
-                            (id, communication_score, technical_score, attitude_score, applicant_id, booking_id,
-                             evaluator_id, created_at, evaluation_date, updated_at, version, result)
-                        VALUES (1, 8, 8, 8, 1, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
-                                CURRENT_TIMESTAMP, 0, 'PASS')
-                        """);
-                jdbcTemplate.update("""
-                        INSERT INTO hiring_decisions
-                            (id, applicant_id, evaluation_id, offered_at, offered_by_id, position_id,
-                             created_at, updated_at, version, status)
-                        VALUES (1, 1, 1, CURRENT_TIMESTAMP, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, 'OFFERED')
-                        """);
-            };
-        }
     }
 }

@@ -44,7 +44,9 @@ in persistence, so deadline and age calculations interpret them in one configure
 default; an explicitly present blank value is invalid. Before upgrading a deployment with existing
 hiring decisions, explicitly set `OFFER_RESPONSE_TIMESTAMP_ZONE` to the zone historically used to interpret
 those timestamps. A higher-precedence override of `iss.hiring.offer-deadline.timestamp-zone` must use time-zone
-rules equivalent to that explicit historical zone; aliases with identical rules are accepted. Do not substitute
+behavior equivalent to that explicit historical zone from the 2026-01-01 supported hiring-record boundary
+onward; safe pairs such as `Asia/Manila` and the fixed offset `+08:00` are accepted when their supported-era
+behavior is identical. The compatibility guard runs before the web server is initialized. Do not substitute
 Manila merely to pass startup validation. Zones with fall-back
 overlaps in the supported hiring-record era are rejected because their repeated local times cannot be
 reconstructed unambiguously; such historical data requires a separately designed, approved timestamp backfill/storage
