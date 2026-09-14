@@ -62,7 +62,7 @@ class OfferDeadlinePolicyTest {
     }
 
     @Test
-    void ageUsesActualTimelineAcrossNewYorkSpringForward() {
+    void ageAlgorithmUsesActualTimelineAcrossSpringForwardWhenDirectlyConstructedWithUnsupportedZone() {
         ZoneId zone = ZoneId.of("America/New_York");
         OfferDeadlinePolicy policy = policy(Duration.ofHours(24), zone);
         LocalDateTime offeredAt = LocalDateTime.of(2026, 3, 8, 1, 30);
@@ -72,7 +72,7 @@ class OfferDeadlinePolicyTest {
     }
 
     @Test
-    void ageUsesJavaTimelineResolutionAcrossNewYorkFallBack() {
+    void ageAlgorithmUsesJavaTimelineResolutionAcrossFallBackWhenDirectlyConstructedWithUnsupportedZone() {
         ZoneId zone = ZoneId.of("America/New_York");
         OfferDeadlinePolicy policy = policy(Duration.ofHours(24), zone);
         LocalDateTime offeredAt = LocalDateTime.of(2026, 11, 1, 0, 30);

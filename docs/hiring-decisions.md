@@ -38,10 +38,24 @@ derived deadline state:
 - `No deadline`: no deadline was supplied.
 
 The default due-soon window is 24 hours. It can be changed with
-`OFFER_RESPONSE_DUE_SOON_WINDOW`; `OFFER_RESPONSE_TIMESTAMP_ZONE` controls how zone-less hiring
-timestamps are interpreted. Both page and count queries apply the selected `All`, `Overdue`, `Due
-soon`, `On track`, or `No deadline` filter in the database, together with search and the authoritative
-administrator/recruiter branch scope. `Response Due` is an explicitly whitelisted grid sort.
+`OFFER_RESPONSE_DUE_SOON_WINDOW`. Offer, response-deadline, and resolution timestamps remain zone-less
+in persistence, so deadline and age calculations interpret them in one configured business zone. When
+`OFFER_RESPONSE_TIMESTAMP_ZONE` is absent, empty or new installations may use the implicit `Asia/Manila`
+default; an explicitly present blank value is invalid. Before upgrading a deployment with existing
+hiring decisions, explicitly set `OFFER_RESPONSE_TIMESTAMP_ZONE` to the zone historically used to interpret
+those timestamps. A higher-precedence override of `iss.hiring.offer-deadline.timestamp-zone` must use time-zone
+behavior equivalent to that explicit historical zone from the 2026-01-01 supported hiring-record boundary
+onward; safe pairs such as `Asia/Manila` and the fixed offset `+08:00` are accepted when their supported-era
+behavior is identical. The compatibility guard runs before the web server is initialized. Do not substitute
+Manila merely to pass startup validation. Zones with fall-back
+overlaps in the supported hiring-record era are rejected because their repeated local times cannot be
+reconstructed unambiguously; such historical data requires a separately designed, approved timestamp backfill/storage
+migration before startup. True arbitrary-DST-zone support would require persisting an authoritative `Instant`
+or offset.
+
+Both page and count queries apply the selected `All`, `Overdue`, `Due soon`, `On track`, or `No
+deadline` filter in the database, together with search and the authoritative administrator/recruiter
+branch scope. `Response Due` is an explicitly whitelisted grid sort.
 
 These states are informational. Passing a response deadline does **not** automatically expire,
 decline, withdraw, or otherwise transition the hiring decision. Overdue offers can still be hired,

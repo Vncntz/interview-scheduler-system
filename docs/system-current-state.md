@@ -302,6 +302,18 @@ Implemented behavior:
   `Overdue`, or `No deadline` state. The due-soon window defaults to 24 hours and filtering, keyword
   search, counts, branch scope, and pagination remain database-backed. Passing the deadline does not
   automatically transition the hiring decision.
+- Hiring offer, response-deadline, and resolution timestamps remain zone-less in persistence. Deadline
+  and age calculations use one configured business zone. When `OFFER_RESPONSE_TIMESTAMP_ZONE` is absent,
+  empty installations may use the implicit `Asia/Manila` default; an explicitly present blank value is invalid.
+  Installations with existing hiring decisions must explicitly configure their
+  historical zone before startup; any higher-precedence effective zone setting must have equivalent time-zone
+  behavior from the 2026-01-01 supported hiring-record boundary onward. Safe aliases and fixed offsets with
+  identical supported-era behavior are accepted. The compatibility guard completes before the web server is
+  initialized. Fall-back overlaps
+  in the supported hiring-record era are rejected because
+  repeated local times are ambiguous without a persisted offset; historical data in such a zone requires an
+  approved timestamp backfill/storage migration rather than substituting Manila. Supporting arbitrary DST
+  zones would require an authoritative persisted `Instant` or offset.
 
 Post-issuance deadline editing, deadline reminders, automatic expiry, re-offers, reversals, applicant
 self-service acceptance, and offer-time headcount reservation are not supported.
@@ -494,8 +506,14 @@ repository operations.
 
 ### Optional controlled variables
 
-- `OFFER_RESPONSE_DUE_SOON_WINDOW` and `OFFER_RESPONSE_TIMESTAMP_ZONE` configure the optional offer
-  deadline classification window and timestamp zone.
+- `OFFER_RESPONSE_DUE_SOON_WINDOW` configures the optional offer deadline classification window.
+  `OFFER_RESPONSE_TIMESTAMP_ZONE` configures the hiring business zone. When absent, it defaults to
+  `Asia/Manila` only for installations without hiring decisions; an explicitly present blank value is invalid,
+  and nonempty installations must explicitly set the historical zone. A higher-precedence effective zone must
+  have equivalent behavior from the supported hiring-record boundary onward; this check runs before web-server
+  initialization.
+  Zones with fall-back overlaps in the supported hiring-record era fail startup validation and require an
+  approved timestamp backfill/storage migration for historical data.
 
 - `ADMIN_EMAIL` and `ADMIN_PASSWORD` — opt-in first-administrator bootstrap; remove after use and rotate the credential.
 - `SPRING_PROFILES_ACTIVE=dev` plus `DEMO_DATA_ENABLED=true` — both are required for deterministic development demo data.
