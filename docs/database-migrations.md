@@ -14,8 +14,9 @@ The default Java 25 suite remains Docker-free and uses isolated H2 in MySQL comp
 
 The opt-in integration profile requires Docker and starts an isolated `mysql:8.4.6` Testcontainer.
 Spring Boot supplies the container JDBC connection through a service connection; the suite never uses
-developer datasource variables or a fixed host port. It applies the production MySQL V1-through-V10
-migrations to an empty schema, validates their checksums and current version, starts the complete Spring
+developer datasource variables or a fixed host port. It applies the production MySQL migration chain
+from V1 through the release's expected latest migration (the latest Flyway version in the exact commit
+under test) to an empty schema, validates its checksums and current version, starts the complete Spring
 context with Hibernate `ddl-auto=validate`, and exercises V8's critical reminder mappings, V9's
 lifecycle-history mappings, uniqueness, foreign keys, snapshots, enum values, microsecond timestamps,
 and processing indexes, plus V10's nullable offer-deadline mapping:
@@ -82,8 +83,9 @@ return zero rows/counts before V2 is allowed to run.
 ## Fresh database rollout
 
 For an empty database, keep `FLYWAY_BASELINE_ON_MIGRATE` unset (its default is `false`). Start the
-application with normal datasource credentials. Flyway applies V1 through V10 in order, after which
-Hibernate validates the resulting schema. The fresh schema has `applicants.branch_id NOT NULL`, the
+application with normal datasource credentials. Flyway applies V1 through the release's expected latest
+migration in order, after which Hibernate validates the resulting schema. The fresh schema has
+`applicants.branch_id NOT NULL`, the
 final hiring decision workflow tables, secure account lifecycle tables, and no persisted notification
 credential columns.
 
@@ -95,8 +97,10 @@ and has no Flyway history table.
 1. Complete backup, structural comparison, and applicant reconciliation.
 2. For one controlled deployment only, set `FLYWAY_BASELINE_ON_MIGRATE=true` and
    `FLYWAY_BASELINE_VERSION=1`.
-3. Start one application instance. Flyway records version 1 as the baseline and then runs V2 through V10.
-4. Verify `flyway_schema_history` contains the version 1 baseline and successful version 2 through 10 migrations.
+3. Start one application instance. Flyway records version 1 as the baseline and then runs every later
+   migration through the release's expected latest migration.
+4. Verify `flyway_schema_history` contains the version 1 baseline and every later migration through the
+   release's expected latest migration is successful.
 5. Stop the instance, remove the baseline override, and restart with
    `FLYWAY_BASELINE_ON_MIGRATE=false` (or the variable unset) before scaling out.
 
@@ -162,7 +166,8 @@ and optimistic-lock version. The SMTP password must be supplied to the applicati
 `SMTP_PASSWORD`; there is no runtime SMS sender or `SMS_API_KEY` replacement.
 
 Before applying V5, provision `SMTP_PASSWORD` in the approved external secret source for deployments
-that require email. Rehearse the complete V1-to-V8 path and a V4-to-V8 upgrade against an isolated
+that require email. Using the exact release commit, rehearse both a fresh migration from V1 through the
+release's expected latest migration and a representative upgrade that crosses V5 against an isolated
 MySQL database restored from representative data. Confirm that non-secret notification settings are
 preserved, SMS is disabled, both legacy columns are absent, Hibernate validation succeeds, and no
 real notification is delivered during rehearsal.

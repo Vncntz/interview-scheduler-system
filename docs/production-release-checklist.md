@@ -10,7 +10,8 @@ not authorize application startup, database migration, credential changes, or no
 - Review the final diff for secrets, debug code, generated frontend noise, and unrelated changes.
 - Take a consistent MySQL backup and prove that it restores into an isolated database.
 - Keep the matching pre-release binary and backup together for recovery.
-- Review `docs/database-migrations.md`, including the V5 through V8 rollback constraints.
+- Review `docs/database-migrations.md`, including the version-specific rollout and rollback constraints
+  for every migration included in the exact release commit.
 - Define the maintenance window, write freeze, deployment owner, rollback owner, and stop criteria.
 
 ## 2. Runtime configuration contract
@@ -54,8 +55,9 @@ data.
 
 - Use an exact, isolated target that cannot route to a developer or production schema.
 - Restore representative pre-release data and verify application/database version compatibility.
-- Rehearse a fresh V1-to-V8 migration and, when upgrading an existing installation, V7-to-V8.
-- Confirm Flyway reports version 8 and every migration checksum validates.
+- Rehearse a fresh migration from V1 through the release's expected latest migration and, when upgrading
+  an existing installation, the representative path from its current version through that migration.
+- Confirm Flyway reports the release's expected latest migration and every migration checksum validates.
 - Confirm `notification_settings.smtp_password` and `notification_settings.sms_api_key` are absent.
 - Confirm all `notification_settings.sms_enabled` values are false and non-secret settings remain.
 - Confirm SMTP provider/security backfills, sender-address backfills, and the settings audit table.
@@ -82,8 +84,10 @@ metadata locks, duration, disk use, query plans, backup restoration, and rollbac
 - Obtain explicit authorization for the exact production target and maintenance window.
 - Stop writes and all but one migration-owning application instance.
 - Reconfirm the restorable backup, matching rollback binary, and runtime secret presence.
-- Start the single approved instance and allow Flyway to migrate through V8.
-- Verify `flyway_schema_history` is successful at version 8 before scaling out.
+- Start the single approved instance and allow Flyway to migrate through the release's expected latest
+  migration.
+- Verify `flyway_schema_history` shows the release's expected latest migration as successful before
+  scaling out.
 - Verify the two legacy notification secret columns are absent and SMS is disabled.
 - Verify historical bookings are readable with the conservative `INITIAL` stage backfill.
 - Verify SMTP provider/security metadata, sender addresses, settings audit persistence, and the
@@ -101,8 +105,8 @@ metadata locks, duration, disk use, query plans, backup restoration, and rollbac
 
 - If migration or schema state is uncertain, stop. Do not run Flyway clean or repair and do not
   manually recreate dropped columns.
-- A V5/V6/V7/V8 rollback requires the matching pre-migration backup and old binary together. Restoring only one side
-  leaves the schema and entity mappings incompatible.
+- Rolling back across a schema-changing migration requires the matching pre-migration backup and previous
+  binary together. Restoring only one side leaves the schema and entity mappings incompatible.
 - After a successful rollout, rotate or revoke legacy SMTP/SMS credentials that may have existed in
   the removed columns and apply secret-level retention controls to historic backups.
 - Remove temporary bootstrap and baseline environment variables.
