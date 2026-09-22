@@ -88,6 +88,14 @@ class BookingServiceTest {
         org.mockito.Mockito.lenient()
                 .when(securityService.requireOperationsUser(any(String.class)))
                 .thenAnswer(invocation -> securityService.getCurrentUser());
+        Applicant lockedApplicant = new Applicant();
+        lockedApplicant.setId(300L);
+        org.mockito.Mockito.lenient()
+                .when(bookingRepository.findApplicantIdById(any()))
+                .thenReturn(Optional.of(300L));
+        org.mockito.Mockito.lenient()
+                .when(applicantService.findForWorkflowUpdate(eq(300L), any()))
+                .thenReturn(lockedApplicant);
         bookingService = new BookingService(
                 bookingRepository,
                 lifecycleHistoryRepository,
@@ -98,6 +106,54 @@ class BookingServiceTest {
                 securityService,
                 eventPublisher
         );
+    }
+
+    @Test
+    void transferredApplicantBookingIsHiddenFromHistoricalBranchRecruiterByRetainedId() {
+        Branch historicalBranch = branch(100L);
+        User actor = user(200L, Role.RECRUITER, historicalBranch);
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(bookingRepository.findDetailedByIdAndApplicantBranchId(10L, 100L)).thenReturn(Optional.empty());
+
+        assertThrows(AccessDeniedException.class, () -> bookingService.findScopedById(10L));
+
+        verify(bookingRepository, never()).findDetailedById(10L);
+    }
+
+    @Test
+    void transferredApplicantBookingIsVisibleToCurrentBranchDespiteHistoricalSchedule() {
+        Branch historicalBranch = branch(100L);
+        Branch currentBranch = branch(101L);
+        User actor = user(200L, Role.RECRUITER, currentBranch);
+        Booking booking = booking(
+                10L,
+                BookingStatus.ATTENDED,
+                schedule(20L, historicalBranch, user(201L, Role.RECRUITER, historicalBranch),
+                        1, 2, ScheduleStatus.OPEN)
+        );
+        booking.getApplicant().setBranch(currentBranch);
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(bookingRepository.findDetailedByIdAndApplicantBranchId(10L, 101L))
+                .thenReturn(Optional.of(booking));
+
+        assertSame(booking, bookingService.findScopedById(10L));
+    }
+
+    @Test
+    void adminBookingDetailRemainsOrganizationWideAfterTransfer() {
+        User actor = user(200L, Role.ADMIN, null);
+        Booking booking = booking(
+                10L,
+                BookingStatus.ATTENDED,
+                schedule(20L, branch(100L), user(201L, Role.RECRUITER, branch(100L)),
+                        1, 2, ScheduleStatus.OPEN)
+        );
+        booking.getApplicant().setBranch(branch(101L));
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(bookingRepository.findDetailedById(10L)).thenReturn(Optional.of(booking));
+
+        assertSame(booking, bookingService.findScopedById(10L));
+        verify(bookingRepository, never()).findDetailedByIdAndApplicantBranchId(any(), any());
     }
 
     @Test

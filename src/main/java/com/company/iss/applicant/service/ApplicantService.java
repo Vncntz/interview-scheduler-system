@@ -144,6 +144,11 @@ public class ApplicantService {
 
     @Transactional
     public Applicant findForBookingUpdate(Long applicantId, User actor) {
+        return findForWorkflowUpdate(applicantId, actor);
+    }
+
+    @Transactional
+    public Applicant findForWorkflowUpdate(Long applicantId, User actor) {
         return findForUpdate(applicantId, actor);
     }
 
@@ -154,6 +159,9 @@ public class ApplicantService {
         if (actor.getRole() == Role.ADMIN) {
             return applicantRepository.findByIdForUpdate(applicantId)
                     .orElseThrow(() -> new BusinessRuleViolationException("Applicant not found."));
+        }
+        if (actor.getRole() != Role.RECRUITER || actor.getBranch() == null || actor.getBranch().getId() == null) {
+            throw new AccessDeniedException("You may only manage applicants within your branch.");
         }
         return applicantRepository.findByIdAndBranchIdForUpdate(applicantId, actor.getBranch().getId())
                 .orElseThrow(() -> new AccessDeniedException("You may only manage applicants within your branch."));

@@ -115,6 +115,9 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     @Query("select b from Booking b where b.id = :id")
     Optional<Booking> findByIdForUpdate(@Param("id") Long id);
 
+    @Query("select b.applicant.id from Booking b where b.id = :id")
+    Optional<Long> findApplicantIdById(@Param("id") Long id);
+
     @Query("""
             select b.id
             from Booking b
@@ -148,40 +151,63 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     );
 
     @EntityGraph(attributePaths = {"applicant", "applicant.positionOpening", "schedule", "schedule.branch", "schedule.recruiter"})
-    List<Booking> findByScheduleRecruiterIdAndScheduleScheduleDateAndStatusInOrderByScheduleStartTime(
-            Long recruiterId, LocalDate scheduleDate, List<BookingStatus> statuses
+    @Query("""
+            select b from Booking b
+            where b.schedule.recruiter.id = :recruiterId
+              and b.applicant.branch.id = :branchId
+              and b.schedule.scheduleDate = :scheduleDate
+              and b.status in :statuses
+            order by b.schedule.startTime
+            """)
+    List<Booking> findTodaysAssignedForRecruiterAndApplicantBranch(
+            @Param("recruiterId") Long recruiterId,
+            @Param("branchId") Long branchId,
+            @Param("scheduleDate") LocalDate scheduleDate,
+            @Param("statuses") List<BookingStatus> statuses
     );
 
     @EntityGraph(attributePaths = {"applicant", "applicant.positionOpening", "schedule", "schedule.branch", "schedule.recruiter"})
     @Query("""
             select b from Booking b
             where b.schedule.recruiter.id = :recruiterId
+              and b.applicant.branch.id = :branchId
               and b.status in :statuses
               and (b.schedule.scheduleDate > :today
                    or (b.schedule.scheduleDate = :today and b.schedule.startTime > :now))
             order by b.schedule.scheduleDate, b.schedule.startTime
             """)
-    List<Booking> findUpcomingAssigned(
+    List<Booking> findUpcomingAssignedForRecruiterAndApplicantBranch(
             @Param("recruiterId") Long recruiterId,
+            @Param("branchId") Long branchId,
             @Param("today") LocalDate today,
             @Param("now") LocalTime now,
             @Param("statuses") List<BookingStatus> statuses
     );
 
     @EntityGraph(attributePaths = {"applicant", "applicant.positionOpening", "schedule", "schedule.branch", "schedule.recruiter"})
-    List<Booking> findByScheduleBranchIdAndStatusOrderByScheduleScheduleDateAscScheduleStartTimeAsc(
-            Long branchId, BookingStatus status
+    @Query("""
+            select b from Booking b
+            where b.schedule.branch.id = :branchId
+              and b.applicant.branch.id = :branchId
+              and b.status = :status
+            order by b.schedule.scheduleDate, b.schedule.startTime
+            """)
+    List<Booking> findPendingConfirmationsByScheduleAndApplicantBranch(
+            @Param("branchId") Long branchId,
+            @Param("status") BookingStatus status
     );
 
     @EntityGraph(attributePaths = {"applicant", "applicant.positionOpening", "schedule", "schedule.branch", "schedule.recruiter"})
     @Query("""
             select b from Booking b
-            where b.schedule.branch.id = :branchId and b.status = :status
+            where b.schedule.branch.id = :branchId
+              and b.applicant.branch.id = :branchId
+              and b.status = :status
               and (b.schedule.scheduleDate < :today
                    or (b.schedule.scheduleDate = :today and b.schedule.endTime <= :now))
             order by b.schedule.scheduleDate, b.schedule.startTime
             """)
-    List<Booking> findDueByBranchAndStatus(
+    List<Booking> findDueAttendanceByScheduleAndApplicantBranch(
             @Param("branchId") Long branchId,
             @Param("status") BookingStatus status,
             @Param("today") LocalDate today,
@@ -191,13 +217,13 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     @EntityGraph(attributePaths = {"applicant", "applicant.positionOpening", "schedule", "schedule.branch", "schedule.recruiter"})
     @Query("""
             select b from Booking b
-            where b.schedule.branch.id = :branchId and b.status = :status
+            where b.applicant.branch.id = :branchId and b.status = :status
               and (b.schedule.scheduleDate < :today
                    or (b.schedule.scheduleDate = :today and b.schedule.endTime <= :now))
               and not exists (select e.id from InterviewEvaluation e where e.booking = b)
             order by b.schedule.scheduleDate, b.schedule.startTime
             """)
-    List<Booking> findOverdueUnevaluatedByBranch(
+    List<Booking> findOverdueUnevaluatedByApplicantBranch(
             @Param("branchId") Long branchId,
             @Param("status") BookingStatus status,
             @Param("today") LocalDate today,
@@ -213,6 +239,25 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     })
     @Query("select b from Booking b where b.id = :id")
     Optional<Booking> findDetailedById(@Param("id") Long id);
+
+    @EntityGraph(attributePaths = {
+            "applicant",
+            "applicant.branch",
+            "applicant.positionOpening",
+            "applicant.positionOpening.client",
+            "schedule",
+            "schedule.branch",
+            "schedule.recruiter",
+            "recruiter"
+    })
+    @Query("""
+            select b from Booking b
+            where b.id = :id and b.applicant.branch.id = :branchId
+            """)
+    Optional<Booking> findDetailedByIdAndApplicantBranchId(
+            @Param("id") Long id,
+            @Param("branchId") Long branchId
+    );
 
     @EntityGraph(attributePaths = {"applicant", "applicant.positionOpening", "schedule", "schedule.branch", "schedule.recruiter"})
     @Query("""

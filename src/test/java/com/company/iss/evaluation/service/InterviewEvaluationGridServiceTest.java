@@ -1,5 +1,6 @@
 package com.company.iss.evaluation.service;
 
+import com.company.iss.applicant.service.ApplicantService;
 import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.auth.service.SecurityService;
@@ -40,6 +41,7 @@ class InterviewEvaluationGridServiceTest {
     @Mock InterviewEvaluationRepository evaluationRepository;
     @Mock PositionOpeningRepository positionOpeningRepository;
     @Mock BookingRepository bookingRepository;
+    @Mock ApplicantService applicantService;
     @Mock SecurityService securityService;
 
     private InterviewEvaluationService service;
@@ -47,7 +49,7 @@ class InterviewEvaluationGridServiceTest {
     @BeforeEach
     void setUp() {
         service = new InterviewEvaluationService(
-                evaluationRepository, positionOpeningRepository, bookingRepository, securityService
+                evaluationRepository, positionOpeningRepository, bookingRepository, applicantService, securityService
         );
     }
 

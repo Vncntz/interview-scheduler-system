@@ -2,6 +2,7 @@ package com.company.iss.evaluation.service;
 
 import com.company.iss.applicant.entity.Applicant;
 import com.company.iss.applicant.entity.ApplicantStatus;
+import com.company.iss.applicant.service.ApplicantService;
 import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.auth.service.SecurityService;
@@ -35,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -46,6 +48,7 @@ class InterviewEvaluationServiceTest {
     @Mock InterviewEvaluationRepository evaluationRepository;
     @Mock PositionOpeningRepository positionOpeningRepository;
     @Mock BookingRepository bookingRepository;
+    @Mock ApplicantService applicantService;
     @Mock SecurityService securityService;
 
     private InterviewEvaluationService service;
@@ -56,6 +59,7 @@ class InterviewEvaluationServiceTest {
                 evaluationRepository,
                 positionOpeningRepository,
                 bookingRepository,
+                applicantService,
                 securityService
         );
     }
@@ -63,14 +67,52 @@ class InterviewEvaluationServiceTest {
     @Test
     void recruiterCannotEvaluateGuessedBookingFromAnotherBranch() {
         User actor = recruiter(1L);
-        Booking booking = booking(20L, 2L, BookingStatus.ATTENDED);
+        Booking booking = booking(20L, 1L, BookingStatus.ATTENDED);
+        booking.getApplicant().setBranch(branch(2L));
         when(securityService.requireOperationsUser()).thenReturn(actor);
-        when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
+        when(bookingRepository.findApplicantIdById(20L)).thenReturn(Optional.of(booking.getApplicant().getId()));
+        when(applicantService.findForWorkflowUpdate(booking.getApplicant().getId(), actor))
+                .thenThrow(new AccessDeniedException("out of scope"));
 
         assertThrows(AccessDeniedException.class, () -> service.create(command(20L)));
 
+        verify(bookingRepository, never()).findByIdForUpdate(any());
         verify(evaluationRepository, never()).append(any());
         verify(bookingRepository, never()).save(any());
+    }
+
+    @Test
+    void newBranchRecruiterCanEvaluateTransferredApplicantOnHistoricalSchedule() {
+        User actor = recruiter(2L);
+        Booking booking = booking(20L, 1L, BookingStatus.ATTENDED);
+        booking.getApplicant().setBranch(branch(2L));
+        when(securityService.requireOperationsUser()).thenReturn(actor);
+        stubBookingAccess(actor, booking);
+        when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.create(command(20L));
+
+        assertEquals(BookingStatus.PASSED, booking.getStatus());
+        assertEquals(ApplicantStatus.PASSED, booking.getApplicant().getStatus());
+        assertEquals(1L, booking.getSchedule().getBranch().getId());
+        assertEquals(2L, booking.getApplicant().getBranch().getId());
+    }
+
+    @Test
+    void adminCanEvaluateTransferredApplicantOrganizationWide() {
+        User actor = new User();
+        actor.setRole(Role.ADMIN);
+        actor.setActive(true);
+        Booking booking = booking(20L, 1L, BookingStatus.ATTENDED);
+        booking.getApplicant().setBranch(branch(2L));
+        when(securityService.requireOperationsUser()).thenReturn(actor);
+        stubBookingAccess(actor, booking);
+        when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.create(command(20L));
+
+        assertEquals(BookingStatus.PASSED, booking.getStatus());
+        assertEquals(ApplicantStatus.PASSED, booking.getApplicant().getStatus());
     }
 
     @Test
@@ -82,7 +124,7 @@ class InterviewEvaluationServiceTest {
         position.setPassedCount(1);
         booking.getApplicant().setPositionOpening(position);
         when(securityService.requireOperationsUser()).thenReturn(actor);
-        when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
+        stubBookingAccess(actor, booking);
         when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         InterviewEvaluation result = service.create(command(20L));
@@ -94,6 +136,9 @@ class InterviewEvaluationServiceTest {
         assertEquals(2, position.getPassedCount());
         verify(evaluationRepository).existsByBookingId(20L);
         verify(evaluationRepository).append(result);
+        var lockOrder = inOrder(applicantService, bookingRepository);
+        lockOrder.verify(applicantService).findForWorkflowUpdate(booking.getApplicant().getId(), actor);
+        lockOrder.verify(bookingRepository).findByIdForUpdate(20L);
     }
 
     @Test
@@ -106,8 +151,8 @@ class InterviewEvaluationServiceTest {
         Booking finalBooking = booking(21L, 1L, BookingStatus.ATTENDED, InterviewStage.FINAL);
         finalBooking.setApplicant(applicant);
         when(securityService.requireOperationsUser()).thenReturn(actor);
-        when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(initialBooking));
-        when(bookingRepository.findByIdForUpdate(21L)).thenReturn(Optional.of(finalBooking));
+        stubBookingAccess(actor, initialBooking);
+        stubBookingAccess(actor, finalBooking);
         when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.create(command(20L, InterviewResult.FOR_FINAL_INTERVIEW));
@@ -136,9 +181,9 @@ class InterviewEvaluationServiceTest {
         Booking clientBooking = booking(22L, 1L, BookingStatus.ATTENDED, InterviewStage.CLIENT);
         clientBooking.setApplicant(applicant);
         when(securityService.requireOperationsUser()).thenReturn(actor);
-        when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(initialBooking));
-        when(bookingRepository.findByIdForUpdate(21L)).thenReturn(Optional.of(finalBooking));
-        when(bookingRepository.findByIdForUpdate(22L)).thenReturn(Optional.of(clientBooking));
+        stubBookingAccess(actor, initialBooking);
+        stubBookingAccess(actor, finalBooking);
+        stubBookingAccess(actor, clientBooking);
         when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.create(command(20L, InterviewResult.FOR_FINAL_INTERVIEW));
@@ -165,7 +210,7 @@ class InterviewEvaluationServiceTest {
         PositionOpening position = positionWithCounters(4, 2);
         booking.getApplicant().setPositionOpening(position);
         when(securityService.requireOperationsUser()).thenReturn(actor);
-        when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
+        stubBookingAccess(actor, booking);
         when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.create(command(20L, InterviewResult.FAIL));
@@ -182,7 +227,7 @@ class InterviewEvaluationServiceTest {
         PositionOpening position = positionWithCounters(0, 0);
         booking.getApplicant().setPositionOpening(position);
         when(securityService.requireOperationsUser()).thenReturn(actor);
-        when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
+        stubBookingAccess(actor, booking);
         when(evaluationRepository.existsByBookingId(20L)).thenReturn(false, true);
         when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -203,7 +248,7 @@ class InterviewEvaluationServiceTest {
         User actor = recruiter(1L);
         Booking booking = booking(20L, 1L, BookingStatus.CONFIRMED);
         when(securityService.requireOperationsUser()).thenReturn(actor);
-        when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
+        stubBookingAccess(actor, booking);
 
         assertThrows(BusinessRuleViolationException.class, () -> service.create(command(20L)));
 
@@ -221,7 +266,7 @@ class InterviewEvaluationServiceTest {
         User actor = recruiter(1L);
         Booking booking = booking(20L, 1L, BookingStatus.ATTENDED, stage);
         when(securityService.requireOperationsUser()).thenReturn(actor);
-        when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
+        stubBookingAccess(actor, booking);
         when(evaluationRepository.append(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         service.create(command(20L, result));
@@ -236,7 +281,7 @@ class InterviewEvaluationServiceTest {
         User actor = recruiter(1L);
         Booking booking = booking(20L, 1L, BookingStatus.ATTENDED, stage);
         when(securityService.requireOperationsUser()).thenReturn(actor);
-        when(bookingRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(booking));
+        stubBookingAccess(actor, booking);
 
         assertThrows(BusinessRuleViolationException.class, () -> service.create(command(20L, result)));
 
@@ -274,6 +319,8 @@ class InterviewEvaluationServiceTest {
         Schedule schedule = new Schedule();
         schedule.setBranch(branch);
         Applicant applicant = new Applicant();
+        applicant.setId(bookingId + 100L);
+        applicant.setBranch(branch);
         applicant.setStatus(ApplicantStatus.INTERVIEWED);
         Booking booking = Booking.forInterviewStage(stage);
         booking.setId(bookingId);
@@ -285,9 +332,25 @@ class InterviewEvaluationServiceTest {
 
     private Applicant applicantFor(PositionOpening position) {
         Applicant applicant = new Applicant();
+        applicant.setId(120L);
+        applicant.setBranch(branch(1L));
         applicant.setStatus(ApplicantStatus.INTERVIEWED);
         applicant.setPositionOpening(position);
         return applicant;
+    }
+
+    private Branch branch(Long branchId) {
+        Branch branch = new Branch();
+        branch.setId(branchId);
+        return branch;
+    }
+
+    private void stubBookingAccess(User actor, Booking booking) {
+        Long bookingId = booking.getId();
+        Applicant applicant = booking.getApplicant();
+        when(bookingRepository.findApplicantIdById(bookingId)).thenReturn(Optional.of(applicant.getId()));
+        when(applicantService.findForWorkflowUpdate(applicant.getId(), actor)).thenReturn(applicant);
+        when(bookingRepository.findByIdForUpdate(bookingId)).thenReturn(Optional.of(booking));
     }
 
     private PositionOpening positionWithCounters(int interviewEvaluationCount, int passedCount) {

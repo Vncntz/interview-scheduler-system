@@ -74,17 +74,19 @@ public class RecruiterWorkbenchService {
         LocalDateTime calculatedAt = followUpSlaPolicy.now();
 
         return new RecruiterWorkbenchData(
-                map(bookingRepository.findByScheduleRecruiterIdAndScheduleScheduleDateAndStatusInOrderByScheduleStartTime(
-                        actor.getId(), today, TODAY_STATUSES
+                map(bookingRepository.findTodaysAssignedForRecruiterAndApplicantBranch(
+                        actor.getId(), branchId, today, TODAY_STATUSES
                 )),
-                map(bookingRepository.findUpcomingAssigned(actor.getId(), today, now, ACTIVE_STATUSES)),
-                map(bookingRepository.findByScheduleBranchIdAndStatusOrderByScheduleScheduleDateAscScheduleStartTimeAsc(
+                map(bookingRepository.findUpcomingAssignedForRecruiterAndApplicantBranch(
+                        actor.getId(), branchId, today, now, ACTIVE_STATUSES
+                )),
+                map(bookingRepository.findPendingConfirmationsByScheduleAndApplicantBranch(
                         branchId, BookingStatus.BOOKED
                 )),
-                map(bookingRepository.findDueByBranchAndStatus(
+                map(bookingRepository.findDueAttendanceByScheduleAndApplicantBranch(
                         branchId, BookingStatus.CONFIRMED, today, now
                 )),
-                map(bookingRepository.findOverdueUnevaluatedByBranch(
+                map(bookingRepository.findOverdueUnevaluatedByApplicantBranch(
                         branchId, BookingStatus.ATTENDED, today, now
                 )),
                 summarize(branchId, InterviewStage.FINAL, calculatedAt),

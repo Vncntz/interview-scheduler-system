@@ -2,6 +2,7 @@ package com.company.iss.evaluation.service;
 
 import com.company.iss.applicant.entity.Applicant;
 import com.company.iss.applicant.entity.ApplicantStatus;
+import com.company.iss.applicant.service.ApplicantService;
 import com.company.iss.auth.entity.Role;
 import com.company.iss.auth.entity.User;
 import com.company.iss.auth.service.SecurityService;
@@ -36,6 +37,7 @@ public class InterviewEvaluationService {
     private final InterviewEvaluationRepository evaluationRepository;
     private final PositionOpeningRepository positionOpeningRepository;
     private final BookingRepository bookingRepository;
+    private final ApplicantService applicantService;
     private final SecurityService securityService;
     private final InterviewStageResultPolicy interviewStageResultPolicy = new InterviewStageResultPolicy();
 
@@ -43,11 +45,13 @@ public class InterviewEvaluationService {
             InterviewEvaluationRepository evaluationRepository,
             PositionOpeningRepository positionOpeningRepository,
             BookingRepository bookingRepository,
+            ApplicantService applicantService,
             SecurityService securityService
     ) {
         this.evaluationRepository = evaluationRepository;
         this.positionOpeningRepository = positionOpeningRepository;
         this.bookingRepository = bookingRepository;
+        this.applicantService = applicantService;
         this.securityService = securityService;
     }
 
@@ -55,9 +59,15 @@ public class InterviewEvaluationService {
     public InterviewEvaluation create(CreateEvaluationCommand command) {
         validateCommand(command);
         User actor = securityService.requireOperationsUser();
+        Long applicantId = bookingRepository.findApplicantIdById(command.bookingId())
+                .orElseThrow(() -> new BusinessRuleViolationException("Booking not found."));
+        Applicant applicant = applicantService.findForWorkflowUpdate(applicantId, actor);
         Booking booking = bookingRepository.findByIdForUpdate(command.bookingId())
                 .orElseThrow(() -> new BusinessRuleViolationException("Booking not found."));
-        authorize(actor, booking);
+        if (booking.getApplicant() == null || !Objects.equals(booking.getApplicant().getId(), applicant.getId())) {
+            throw new BusinessRuleViolationException("Booking applicant changed while the evaluation was submitted.");
+        }
+        authorize(actor, applicant);
 
         if (booking.getStatus() != BookingStatus.ATTENDED) {
             throw new BusinessRuleViolationException("Only attended bookings can be evaluated.");
@@ -66,11 +76,6 @@ public class InterviewEvaluationService {
             throw new BusinessRuleViolationException("Booking already has an evaluation.");
         }
         interviewStageResultPolicy.validate(booking.getInterviewStage(), command.result());
-
-        Applicant applicant = booking.getApplicant();
-        if (applicant == null) {
-            throw new BusinessRuleViolationException("Booking does not have an applicant.");
-        }
 
         InterviewEvaluation evaluation = InterviewEvaluation.record(
                 booking,
@@ -170,13 +175,16 @@ public class InterviewEvaluationService {
         }
     }
 
-    private void authorize(User actor, Booking booking) {
+    private void authorize(User actor, Applicant applicant) {
         if (actor.getRole() == Role.ADMIN) {
             return;
         }
-        if (booking.getSchedule() == null || booking.getSchedule().getBranch() == null
-                || !Objects.equals(actor.getBranch().getId(), booking.getSchedule().getBranch().getId())) {
-            throw new AccessDeniedException("You may only evaluate interviews within your branch.");
+        if (actor.getRole() != Role.RECRUITER
+                || actor.getBranch() == null
+                || actor.getBranch().getId() == null
+                || applicant.getBranch() == null
+                || !Objects.equals(actor.getBranch().getId(), applicant.getBranch().getId())) {
+            throw new AccessDeniedException("You may only evaluate applicants within your branch.");
         }
     }
 
