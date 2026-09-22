@@ -47,6 +47,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Service
@@ -304,18 +305,26 @@ public class BookingService {
         }
 
         return actor.getRole() == Role.ADMIN
-                || (actor.getRole() == Role.RECRUITER && isSameBranch(actor, booking.getSchedule()));
+                || (actor.getRole() == Role.RECRUITER
+                    && isSameBranch(actor, booking.getApplicant())
+                    && isSameBranch(actor, booking.getSchedule()));
     }
 
     @Transactional(readOnly = true)
     public Booking findScopedById(Long bookingId) {
         User actor = requireAuthorizedActor("You are not authorized to view this booking.");
-        Booking booking = bookingRepository.findDetailedById(bookingId)
-                .orElseThrow(() -> new BusinessRuleViolationException("Booking not found."));
-        authorizeSchedule(actor, booking.getSchedule(), "You may only view interviews within your branch.");
-        return booking;
+        if (actor.getRole() == Role.ADMIN) {
+            return bookingRepository.findDetailedById(bookingId)
+                    .orElseThrow(() -> new BusinessRuleViolationException("Booking not found."));
+        }
+        Long branchId = requireRecruiterBranchId(actor, "You may only view applicants within your branch.");
+        return bookingRepository.findDetailedByIdAndApplicantBranchId(bookingId, branchId)
+                .orElseThrow(() -> new AccessDeniedException(
+                        "You may only view applicants within your branch."
+                ));
     }
 
+    @Transactional(readOnly = true)
     public List<Schedule> findEligibleRescheduleDestinations(Long bookingId) {
         if (bookingId == null) {
             throw new BookingRescheduleException("Booking is required.");
@@ -326,6 +335,7 @@ public class BookingService {
                 .orElseThrow(() -> new BookingRescheduleException("Booking was not found."));
 
         validateReschedulableBooking(booking);
+        authorizeApplicant(actor, booking.getApplicant(), "You may only manage applicants within your branch.");
         authorizeSchedule(actor, booking.getSchedule());
 
         if (booking.getApplicant().getBranch() == null
@@ -350,8 +360,9 @@ public class BookingService {
         validateCommand(command);
 
         User actor = requireAuthorizedActor();
-        Booking booking = bookingRepository.findByIdForUpdate(command.bookingId())
-                .orElseThrow(() -> new BookingRescheduleException("Booking was not found."));
+        Booking booking = lockBookingAfterApplicant(
+                command.bookingId(), actor, () -> new BookingRescheduleException("Booking was not found.")
+        );
 
         validateReschedulableBooking(booking);
         authorizeSchedule(actor, booking.getSchedule());
@@ -429,8 +440,9 @@ public class BookingService {
         }
 
         User actor = requireAuthorizedActor("You are not authorized to cancel interviews.");
-        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
-                .orElseThrow(() -> new BookingCancellationException("Booking was not found."));
+        Booking booking = lockBookingAfterApplicant(
+                bookingId, actor, () -> new BookingCancellationException("Booking was not found.")
+        );
 
         authorizeSchedule(actor, booking.getSchedule(), "You may only cancel interviews within your branch.");
 
@@ -595,6 +607,31 @@ public class BookingService {
                 && Objects.equals(actor.getBranch().getId(), schedule.getBranch().getId());
     }
 
+    private boolean isSameBranch(User actor, Applicant applicant) {
+        return actor.getBranch() != null
+                && applicant != null
+                && applicant.getBranch() != null
+                && Objects.equals(actor.getBranch().getId(), applicant.getBranch().getId());
+    }
+
+    private void authorizeApplicant(User actor, Applicant applicant, String outOfScopeMessage) {
+        if (actor.getRole() == Role.ADMIN) {
+            return;
+        }
+        if (!isSameBranch(actor, applicant)) {
+            throw new AccessDeniedException(outOfScopeMessage);
+        }
+    }
+
+    private Long requireRecruiterBranchId(User actor, String outOfScopeMessage) {
+        if (actor.getRole() != Role.RECRUITER
+                || actor.getBranch() == null
+                || actor.getBranch().getId() == null) {
+            throw new AccessDeniedException(outOfScopeMessage);
+        }
+        return actor.getBranch().getId();
+    }
+
     private void validateDestination(Schedule destinationSchedule, LocalDateTime now) {
         if (!destinationSchedule.isActive()) {
             throw new BookingRescheduleException("The destination schedule is inactive.");
@@ -666,9 +703,26 @@ public class BookingService {
         if (bookingId == null) {
             throw new BusinessRuleViolationException("Booking is required.");
         }
-        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
-                .orElseThrow(() -> new BusinessRuleViolationException("Booking not found."));
+        Booking booking = lockBookingAfterApplicant(
+                bookingId, actor, () -> new BusinessRuleViolationException("Booking not found.")
+        );
         authorizeSchedule(actor, booking.getSchedule(), "You may only manage interviews within your branch.");
+        return booking;
+    }
+
+    private Booking lockBookingAfterApplicant(
+            Long bookingId,
+            User actor,
+            Supplier<? extends RuntimeException> notFoundException
+    ) {
+        Long applicantId = bookingRepository.findApplicantIdById(bookingId)
+                .orElseThrow(notFoundException);
+        Applicant applicant = applicantService.findForWorkflowUpdate(applicantId, actor);
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(notFoundException);
+        if (booking.getApplicant() == null || !Objects.equals(booking.getApplicant().getId(), applicant.getId())) {
+            throw new BusinessRuleViolationException("Booking applicant changed while the action was submitted.");
+        }
         return booking;
     }
 }

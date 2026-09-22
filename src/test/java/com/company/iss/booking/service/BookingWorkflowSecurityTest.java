@@ -113,11 +113,16 @@ class BookingWorkflowSecurityTest {
 
     @Test
     void recruiterCannotConfirmGuessedBookingFromAnotherBranch() {
-        when(securityService.getCurrentUser()).thenReturn(recruiter(1L));
-        when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking(50L, 2L, BookingStatus.BOOKED)));
+        User actor = recruiter(1L);
+        Booking booking = booking(50L, 2L, BookingStatus.BOOKED);
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(bookingRepository.findApplicantIdById(50L)).thenReturn(Optional.of(booking.getApplicant().getId()));
+        when(applicantService.findForWorkflowUpdate(booking.getApplicant().getId(), actor))
+                .thenThrow(new AccessDeniedException("out of scope"));
 
         assertThrows(AccessDeniedException.class, () -> service.confirm(50L));
 
+        verify(bookingRepository, never()).findByIdForUpdate(any());
         verify(bookingRepository, never()).save(any());
         verifyNoInteractions(lifecycleHistoryRepository);
         verify(eventPublisher, never()).publishEvent(any());
@@ -126,8 +131,9 @@ class BookingWorkflowSecurityTest {
     @Test
     void attendedTransitionUpdatesBookingAndApplicantAtomically() {
         Booking booking = booking(50L, 1L, BookingStatus.CONFIRMED);
-        when(securityService.getCurrentUser()).thenReturn(recruiter(1L));
-        when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking));
+        User actor = recruiter(1L);
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        stubBookingAccess(actor, booking);
 
         service.markAttended(50L);
 
@@ -144,8 +150,9 @@ class BookingWorkflowSecurityTest {
     @Test
     void noShowTransitionAppendsLifecycleHistory() {
         Booking booking = booking(50L, 1L, BookingStatus.CONFIRMED);
-        when(securityService.getCurrentUser()).thenReturn(recruiter(1L));
-        when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking));
+        User actor = recruiter(1L);
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        stubBookingAccess(actor, booking);
 
         service.markNoShow(50L);
 
@@ -159,8 +166,10 @@ class BookingWorkflowSecurityTest {
 
     @Test
     void noShowRejectsAnyStateOtherThanConfirmedWithoutWrite() {
-        when(securityService.getCurrentUser()).thenReturn(recruiter(1L));
-        when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking(50L, 1L, BookingStatus.BOOKED)));
+        User actor = recruiter(1L);
+        Booking booking = booking(50L, 1L, BookingStatus.BOOKED);
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        stubBookingAccess(actor, booking);
 
         assertThrows(BusinessRuleViolationException.class, () -> service.markNoShow(50L));
 
@@ -209,6 +218,8 @@ class BookingWorkflowSecurityTest {
         schedule.setEndTime(java.time.LocalTime.of(10, 0));
         schedule.setInterviewMode(com.company.iss.schedule.entity.InterviewMode.ONLINE);
         Applicant applicant = new Applicant();
+        applicant.setId(id + 100L);
+        applicant.setBranch(branch);
         applicant.setStatus(ApplicantStatus.SCHEDULED);
         Booking booking = new Booking();
         booking.setId(id);
@@ -217,5 +228,13 @@ class BookingWorkflowSecurityTest {
         booking.setApplicant(applicant);
         booking.setStatus(status);
         return booking;
+    }
+
+    private void stubBookingAccess(User actor, Booking booking) {
+        when(bookingRepository.findApplicantIdById(booking.getId()))
+                .thenReturn(Optional.of(booking.getApplicant().getId()));
+        when(applicantService.findForWorkflowUpdate(booking.getApplicant().getId(), actor))
+                .thenReturn(booking.getApplicant());
+        when(bookingRepository.findByIdForUpdate(booking.getId())).thenReturn(Optional.of(booking));
     }
 }

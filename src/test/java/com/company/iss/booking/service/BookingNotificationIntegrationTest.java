@@ -108,6 +108,8 @@ class BookingNotificationIntegrationTest {
         admin = saveUser("booking-notification-admin@example.test", Role.ADMIN, null);
         when(securityService.getCurrentUser()).thenReturn(admin);
         when(securityService.requireOperationsUser(any(String.class))).thenReturn(admin);
+        when(applicantService.findForWorkflowUpdate(any(), any()))
+                .thenAnswer(invocation -> applicantRepository.findById(invocation.getArgument(0)).orElseThrow());
         when(applicantService.findForBookingUpdate(any(Long.class), eq(admin)))
                 .thenAnswer(invocation -> applicantRepository.findById(invocation.getArgument(0)).orElseThrow());
         doAnswer(invocation -> {

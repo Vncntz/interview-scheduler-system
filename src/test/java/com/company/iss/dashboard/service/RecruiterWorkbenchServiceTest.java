@@ -84,7 +84,7 @@ class RecruiterWorkbenchServiceTest {
         assertEquals(Duration.ofHours(72), data.finalInterviewFollowUp().target());
         assertEquals(InterviewStage.CLIENT, data.clientInterviewFollowUp().stage());
         assertEquals(Duration.ofHours(120), data.clientInterviewFollowUp().target());
-        verify(bookingRepository).findByScheduleBranchIdAndStatusOrderByScheduleScheduleDateAscScheduleStartTimeAsc(
+        verify(bookingRepository).findPendingConfirmationsByScheduleAndApplicantBranch(
                 17L, BookingStatus.BOOKED
         );
         verify(followUpRepository).summarizeFollowUpsByStage(eq(17L), eq(InterviewStage.FINAL),
@@ -216,16 +216,20 @@ class RecruiterWorkbenchServiceTest {
     }
 
     private void stubBookingQueues(User recruiter, Branch branch) {
-        when(bookingRepository.findByScheduleRecruiterIdAndScheduleScheduleDateAndStatusInOrderByScheduleStartTime(
-                eq(recruiter.getId()), any(LocalDate.class), any()
+        when(bookingRepository.findTodaysAssignedForRecruiterAndApplicantBranch(
+                eq(recruiter.getId()), eq(branch.getId()), any(LocalDate.class), any()
         )).thenReturn(List.of());
-        when(bookingRepository.findUpcomingAssigned(eq(recruiter.getId()), any(), any(), any())).thenReturn(List.of());
-        when(bookingRepository.findByScheduleBranchIdAndStatusOrderByScheduleScheduleDateAscScheduleStartTimeAsc(
+        when(bookingRepository.findUpcomingAssignedForRecruiterAndApplicantBranch(
+                eq(recruiter.getId()), eq(branch.getId()), any(), any(), any()
+        )).thenReturn(List.of());
+        when(bookingRepository.findPendingConfirmationsByScheduleAndApplicantBranch(
                 branch.getId(), BookingStatus.BOOKED
         )).thenReturn(List.of());
-        when(bookingRepository.findDueByBranchAndStatus(eq(branch.getId()), eq(BookingStatus.CONFIRMED), any(), any()))
+        when(bookingRepository.findDueAttendanceByScheduleAndApplicantBranch(
+                eq(branch.getId()), eq(BookingStatus.CONFIRMED), any(), any()
+        ))
                 .thenReturn(List.of());
-        when(bookingRepository.findOverdueUnevaluatedByBranch(
+        when(bookingRepository.findOverdueUnevaluatedByApplicantBranch(
                 eq(branch.getId()), eq(BookingStatus.ATTENDED), any(), any()
         )).thenReturn(List.of());
     }

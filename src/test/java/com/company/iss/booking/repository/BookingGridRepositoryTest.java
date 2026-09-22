@@ -28,6 +28,7 @@ import java.util.HashSet;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DataJpaTest
@@ -35,6 +36,86 @@ class BookingGridRepositoryTest {
 
     @Autowired BookingRepository bookingRepository;
     @Autowired EntityManager entityManager;
+
+    @Test
+    void workbenchAndDetailQueriesUseCurrentApplicantBranchWithoutRewritingHistoricalAppointment() {
+        Branch branchA = persistBranch("AUTH-A", "Authorization A");
+        Branch branchB = persistBranch("AUTH-B", "Authorization B");
+        User recruiterA = persistRecruiter("auth-a@example.test", branchA);
+        User recruiterB = persistRecruiter("auth-b@example.test", branchB);
+        PositionOpening position = persistPosition();
+        LocalDate today = LocalDate.of(2035, 6, 15);
+        Schedule todayInA = persistSchedule(branchA, recruiterA, today);
+        Schedule futureInA = persistSchedule(branchA, recruiterA, today.plusDays(1));
+
+        Applicant transferred = persistApplicant(
+                "Transferred", null, "Applicant", "transferred@example.test", branchB, position
+        );
+        Applicant aligned = persistApplicant(
+                "Aligned", null, "Applicant", "aligned@example.test", branchA, position
+        );
+        Booking transferredAttended = persistBooking("BK-TRANSFERRED-ATTENDED", transferred, todayInA, recruiterA);
+        transferredAttended.setStatus(BookingStatus.ATTENDED);
+        Booking alignedAttended = persistBooking("BK-ALIGNED-ATTENDED", aligned, todayInA, recruiterA);
+        alignedAttended.setStatus(BookingStatus.ATTENDED);
+        Booking transferredBooked = persistBooking("BK-TRANSFERRED-BOOKED", transferred, futureInA, recruiterA);
+        transferredBooked.setStatus(BookingStatus.BOOKED);
+        Booking alignedBooked = persistBooking("BK-ALIGNED-BOOKED", aligned, futureInA, recruiterA);
+        alignedBooked.setStatus(BookingStatus.BOOKED);
+        Booking transferredConfirmed = persistBooking("BK-TRANSFERRED-CONFIRMED", transferred, todayInA, recruiterA);
+        transferredConfirmed.setStatus(BookingStatus.CONFIRMED);
+        Booking alignedConfirmed = persistBooking("BK-ALIGNED-CONFIRMED", aligned, todayInA, recruiterA);
+        alignedConfirmed.setStatus(BookingStatus.CONFIRMED);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertEquals(
+                List.of(alignedAttended.getId()),
+                bookingRepository.findTodaysAssignedForRecruiterAndApplicantBranch(
+                        recruiterA.getId(), branchA.getId(), today, List.of(BookingStatus.ATTENDED)
+                ).stream().map(Booking::getId).toList()
+        );
+        assertEquals(
+                List.of(alignedBooked.getId()),
+                bookingRepository.findUpcomingAssignedForRecruiterAndApplicantBranch(
+                        recruiterA.getId(), branchA.getId(), today, LocalTime.NOON, List.of(BookingStatus.BOOKED)
+                ).stream().map(Booking::getId).toList()
+        );
+        assertEquals(
+                List.of(alignedBooked.getId()),
+                bookingRepository.findPendingConfirmationsByScheduleAndApplicantBranch(
+                        branchA.getId(), BookingStatus.BOOKED
+                ).stream().map(Booking::getId).toList()
+        );
+        assertEquals(
+                List.of(alignedConfirmed.getId()),
+                bookingRepository.findDueAttendanceByScheduleAndApplicantBranch(
+                        branchA.getId(), BookingStatus.CONFIRMED, today, LocalTime.NOON
+                ).stream().map(Booking::getId).toList()
+        );
+        assertEquals(
+                List.of(transferredAttended.getId()),
+                bookingRepository.findOverdueUnevaluatedByApplicantBranch(
+                        branchB.getId(), BookingStatus.ATTENDED, today, LocalTime.NOON
+                ).stream().map(Booking::getId).toList()
+        );
+        assertFalse(bookingRepository.findDetailedByIdAndApplicantBranchId(
+                transferredAttended.getId(), branchA.getId()
+        ).isPresent());
+        Booking currentBranchDetail = bookingRepository.findDetailedByIdAndApplicantBranchId(
+                transferredAttended.getId(), branchB.getId()
+        ).orElseThrow();
+        assertEquals(branchA.getId(), currentBranchDetail.getSchedule().getBranch().getId());
+        assertEquals(recruiterA.getId(), currentBranchDetail.getSchedule().getRecruiter().getId());
+        assertEquals(InterviewStage.INITIAL, currentBranchDetail.getInterviewStage());
+        assertEquals(
+                transferred.getId(),
+                bookingRepository.findApplicantIdById(transferredAttended.getId()).orElseThrow()
+        );
+        assertFalse(bookingRepository.findTodaysAssignedForRecruiterAndApplicantBranch(
+                recruiterB.getId(), branchB.getId(), today, List.of(BookingStatus.ATTENDED)
+        ).stream().map(Booking::getId).toList().contains(transferredAttended.getId()));
+    }
 
     @Test
     void recruiterScopeUsesApplicantBranchWithStablePagingAndInitializedDisplayGraph() {
@@ -223,7 +304,7 @@ class BookingGridRepositoryTest {
     }
 
     private Booking persistBooking(String reference, Applicant applicant, Schedule schedule, User recruiter) {
-        Booking booking = new Booking();
+        Booking booking = Booking.forInterviewStage(InterviewStage.INITIAL);
         booking.setBookingReference(reference);
         booking.setApplicant(applicant);
         booking.setSchedule(schedule);

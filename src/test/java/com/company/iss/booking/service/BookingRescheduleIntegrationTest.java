@@ -116,6 +116,8 @@ class BookingRescheduleIntegrationTest {
         admin = saveUser("reschedule-admin@example.test", Role.ADMIN, null);
         when(securityService.getCurrentUser()).thenReturn(admin);
         when(securityService.requireOperationsUser(any(String.class))).thenReturn(admin);
+        when(applicantService.findForWorkflowUpdate(any(), any()))
+                .thenAnswer(invocation -> applicantRepository.findById(invocation.getArgument(0)).orElseThrow());
     }
 
     @AfterEach
