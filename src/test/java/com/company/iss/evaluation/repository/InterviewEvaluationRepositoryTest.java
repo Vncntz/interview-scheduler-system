@@ -160,6 +160,7 @@ class InterviewEvaluationRepositoryTest {
         Booking booking = new Booking();
         booking.setBookingReference("BK-UNIQUE-EVAL");
         booking.setStatus(BookingStatus.ATTENDED);
+        booking.setBookedDateTime(LocalDateTime.of(2026, 9, 1, 8, 0));
         booking = bookingRepository.saveAndFlush(booking);
 
         appendAndFlush(evaluation(booking, "first"));
@@ -177,6 +178,7 @@ class InterviewEvaluationRepositoryTest {
         Booking booking = new Booking();
         booking.setBookingReference("BK-IMMUTABLE-EVAL");
         booking.setStatus(BookingStatus.ATTENDED);
+        booking.setBookedDateTime(LocalDateTime.of(2026, 9, 1, 8, 0));
         booking = bookingRepository.saveAndFlush(booking);
         InterviewEvaluation evaluation = appendAndFlush(evaluation(booking, "Original remarks"));
         entityManager.clear();
@@ -207,6 +209,7 @@ class InterviewEvaluationRepositoryTest {
         Booking booking = new Booking();
         booking.setBookingReference("BK-EVAL-CONTRACT");
         booking.setStatus(BookingStatus.ATTENDED);
+        booking.setBookedDateTime(LocalDateTime.of(2026, 9, 1, 8, 0));
         booking = bookingRepository.saveAndFlush(booking);
         InterviewEvaluation evaluation = evaluation(booking, "Contract");
         evaluation.setId(99L);
@@ -274,6 +277,7 @@ class InterviewEvaluationRepositoryTest {
         booking.setSchedule(schedule);
         booking.setRecruiter(evaluator);
         booking.setStatus(BookingStatus.ATTENDED);
+        booking.setBookedDateTime(evaluationDate.minusHours(1));
         booking = bookingRepository.saveAndFlush(booking);
 
         return appendAndFlush(InterviewEvaluation.record(
@@ -285,6 +289,7 @@ class InterviewEvaluationRepositoryTest {
         Booking booking = Booking.forInterviewStage(InterviewStage.INITIAL);
         booking.setBookingReference("BK-EVAL-LEGACY-NO-APPLICANT");
         booking.setStatus(BookingStatus.ATTENDED);
+        booking.setBookedDateTime(evaluationDate.minusHours(1));
         booking = bookingRepository.saveAndFlush(booking);
 
         return appendAndFlush(InterviewEvaluation.record(

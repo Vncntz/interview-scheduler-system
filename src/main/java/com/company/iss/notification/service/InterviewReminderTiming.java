@@ -1,7 +1,7 @@
 package com.company.iss.notification.service;
 
-import com.company.iss.notification.config.NotificationRuntimeProperties;
 import com.company.iss.notification.entity.InterviewReminderType;
+import com.company.iss.shared.time.BusinessTime;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -14,11 +14,11 @@ import java.time.ZoneId;
 public class InterviewReminderTiming {
 
     private final Clock clock;
-    private final NotificationRuntimeProperties properties;
+    private final BusinessTime businessTime;
 
-    public InterviewReminderTiming(Clock clock, NotificationRuntimeProperties properties) {
+    public InterviewReminderTiming(Clock clock, BusinessTime businessTime) {
         this.clock = clock;
-        this.properties = properties;
+        this.businessTime = businessTime;
     }
 
     public Window currentWindow(InterviewReminderType type) {
@@ -66,7 +66,7 @@ public class InterviewReminderTiming {
     }
 
     public ZoneId zoneId() {
-        return properties.getReminders().zoneId();
+        return businessTime.zone();
     }
 
     public record Window(LocalDateTime lowerExclusive, LocalDateTime upperInclusive) {

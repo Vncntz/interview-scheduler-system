@@ -98,6 +98,9 @@ class BookingNotificationIntegrationTest {
     @MockitoBean
     private SecurityService securityService;
 
+    @MockitoBean
+    private com.company.iss.shared.time.BusinessTime businessTime;
+
     @MockitoSpyBean
     private BookingLifecycleHistoryRepository lifecycleHistoryRepository;
 
@@ -105,6 +108,9 @@ class BookingNotificationIntegrationTest {
 
     @BeforeEach
     void setUpActorAndApplicantUpdates() {
+        when(businessTime.snapshot()).thenReturn(
+                com.company.iss.shared.time.BusinessTimeTestFactory.snapshotAt(
+                        java.time.Instant.parse("2026-09-01T00:00:00Z")));
         admin = saveUser("booking-notification-admin@example.test", Role.ADMIN, null);
         when(securityService.getCurrentUser()).thenReturn(admin);
         when(securityService.requireOperationsUser(any(String.class))).thenReturn(admin);

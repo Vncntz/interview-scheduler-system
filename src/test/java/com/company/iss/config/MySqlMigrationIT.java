@@ -15,6 +15,7 @@ import com.company.iss.notification.repository.InterviewReminderDeliveryReposito
 import com.company.iss.schedule.entity.InterviewMode;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
+import com.company.iss.schedule.repository.ScheduleRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import org.flywaydb.core.Flyway;
@@ -73,6 +74,7 @@ class MySqlMigrationIT {
     @Autowired EntityManagerFactory entityManagerFactory;
     @Autowired Environment environment;
     @Autowired InterviewReminderDeliveryRepository deliveryRepository;
+    @Autowired ScheduleRepository scheduleRepository;
 
     @Test
     void freshMySqlMigratesFromV1ThroughV10AndHibernateValidatesTheFullContext() {
@@ -162,6 +164,37 @@ class MySqlMigrationIT {
                         scheduledStart
                 )
         ));
+    }
+
+    @Test
+    void scheduleAvailabilityQueriesRequireStartStrictlyAfterBusinessTimeOnMySql() {
+        Branch branch = persistBranch("TIME");
+        LocalDate today = LocalDate.of(2035, 1, 10);
+        LocalTime now = LocalTime.of(10, 0);
+
+        Schedule source = persistSchedule(branch, today.plusDays(1), LocalTime.of(12, 0), 0);
+        persistSchedule(branch, today, now.minusSeconds(1), 0);
+        persistSchedule(branch, today, now, 0);
+        Schedule justAfter = persistSchedule(branch, today, now.plusSeconds(1), 0);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertEquals(
+                List.of(justAfter.getId(), source.getId()),
+                scheduleRepository.findAvailableForBooking(
+                                branch.getId(), today, now, ScheduleStatus.OPEN
+                        ).stream()
+                        .map(Schedule::getId)
+                        .toList()
+        );
+        assertEquals(
+                List.of(justAfter.getId()),
+                scheduleRepository.findEligibleRescheduleDestinations(
+                                source.getId(), today, now, ScheduleStatus.OPEN, branch.getId()
+                        ).stream()
+                        .map(Schedule::getId)
+                        .toList()
+        );
     }
 
     @Test
@@ -330,14 +363,7 @@ class MySqlMigrationIT {
     }
 
     private Booking persistBooking(String suffix) {
-        Branch branch = new Branch();
-        branch.setBranchCode("MYSQL-" + suffix);
-        branch.setBranchName("MySQL " + suffix + " Branch");
-        branch.setAddress("Test Address");
-        branch.setCity("Manila");
-        branch.setProvince("Metro Manila");
-        branch.setActive(true);
-        entityManager.persist(branch);
+        Branch branch = persistBranch(suffix);
 
         Applicant applicant = new Applicant();
         applicant.setBranch(branch);
@@ -349,17 +375,9 @@ class MySqlMigrationIT {
         applicant.setActive(true);
         entityManager.persist(applicant);
 
-        Schedule schedule = new Schedule();
-        schedule.setBranch(branch);
-        schedule.setScheduleDate(LocalDate.of(2026, 9, 3));
-        schedule.setStartTime(LocalTime.of(9, 0));
-        schedule.setEndTime(LocalTime.of(10, 0));
-        schedule.setSlotCapacity(2);
-        schedule.setBookedCount(1);
-        schedule.setInterviewMode(InterviewMode.ONLINE);
-        schedule.setStatus(ScheduleStatus.OPEN);
-        schedule.setActive(true);
-        entityManager.persist(schedule);
+        Schedule schedule = persistSchedule(
+                branch, LocalDate.of(2026, 9, 3), LocalTime.of(9, 0), 1
+        );
 
         Booking booking = Booking.forInterviewStage(InterviewStage.INITIAL);
         booking.setBookingReference("BK-MYSQL-" + suffix);
@@ -370,6 +388,33 @@ class MySqlMigrationIT {
         entityManager.persist(booking);
         entityManager.flush();
         return booking;
+    }
+
+    private Branch persistBranch(String suffix) {
+        Branch branch = new Branch();
+        branch.setBranchCode("MYSQL-" + suffix);
+        branch.setBranchName("MySQL " + suffix + " Branch");
+        branch.setAddress("Test Address");
+        branch.setCity("Manila");
+        branch.setProvince("Metro Manila");
+        branch.setActive(true);
+        entityManager.persist(branch);
+        return branch;
+    }
+
+    private Schedule persistSchedule(Branch branch, LocalDate date, LocalTime startTime, int bookedCount) {
+        Schedule schedule = new Schedule();
+        schedule.setBranch(branch);
+        schedule.setScheduleDate(date);
+        schedule.setStartTime(startTime);
+        schedule.setEndTime(startTime.plusHours(1));
+        schedule.setSlotCapacity(2);
+        schedule.setBookedCount(bookedCount);
+        schedule.setInterviewMode(InterviewMode.ONLINE);
+        schedule.setStatus(ScheduleStatus.OPEN);
+        schedule.setActive(true);
+        entityManager.persist(schedule);
+        return schedule;
     }
 
     private User persistLifecycleActor(String suffix) {

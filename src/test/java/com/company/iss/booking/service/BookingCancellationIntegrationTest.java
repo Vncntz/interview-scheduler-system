@@ -93,10 +93,16 @@ class BookingCancellationIntegrationTest {
     @MockitoBean
     private SecurityService securityService;
 
+    @MockitoBean
+    private com.company.iss.shared.time.BusinessTime businessTime;
+
     private User admin;
 
     @BeforeEach
     void setUpActor() {
+        when(businessTime.snapshot()).thenReturn(
+                com.company.iss.shared.time.BusinessTimeTestFactory.snapshotAt(
+                        java.time.Instant.parse("2026-09-01T00:00:00Z")));
         admin = saveUser("cancel-admin@example.test", Role.ADMIN, null);
         when(securityService.getCurrentUser()).thenReturn(admin);
         when(securityService.requireOperationsUser(any(String.class))).thenReturn(admin);

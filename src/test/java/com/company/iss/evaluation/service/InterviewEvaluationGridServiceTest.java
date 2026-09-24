@@ -49,7 +49,13 @@ class InterviewEvaluationGridServiceTest {
     @BeforeEach
     void setUp() {
         service = new InterviewEvaluationService(
-                evaluationRepository, positionOpeningRepository, bookingRepository, applicantService, securityService
+                evaluationRepository,
+                positionOpeningRepository,
+                bookingRepository,
+                applicantService,
+                securityService,
+                com.company.iss.shared.time.BusinessTimeTestFactory.at(
+                        java.time.Instant.parse("2026-09-01T00:00:00Z"))
         );
     }
 

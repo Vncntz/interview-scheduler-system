@@ -5,10 +5,8 @@ import com.company.iss.dashboard.config.FollowUpSlaProperties;
 import com.company.iss.dashboard.dto.FollowUpSlaStatus;
 import org.junit.jupiter.api.Test;
 
-import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.time.ZoneId;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,7 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class FollowUpSlaPolicyTest {
 
     private final FollowUpSlaPolicy policy = new FollowUpSlaPolicy(
-            Clock.fixed(Instant.parse("2026-09-07T12:00:00Z"), ZoneOffset.UTC),
+            com.company.iss.shared.time.BusinessTimeTestFactory.at(
+                    Instant.parse("2026-09-07T12:00:00Z"), ZoneId.of("UTC")),
             new FollowUpSlaProperties()
     );
     private final LocalDateTime now = LocalDateTime.of(2026, 9, 7, 12, 0);
@@ -42,14 +41,16 @@ class FollowUpSlaPolicyTest {
     }
 
     @Test
-    void nowUsesConfiguredTimestampZone() {
+    void nowUsesCanonicalBusinessZone() {
         FollowUpSlaProperties properties = new FollowUpSlaProperties();
         properties.setTimestampZone(ZoneId.of("America/New_York"));
         FollowUpSlaPolicy zonedPolicy = new FollowUpSlaPolicy(
-                Clock.fixed(Instant.parse("2026-09-07T12:00:00Z"), ZoneOffset.UTC), properties
+                com.company.iss.shared.time.BusinessTimeTestFactory.at(
+                        Instant.parse("2026-09-07T12:00:00Z"), ZoneId.of("Asia/Manila")),
+                properties
         );
 
-        assertEquals(LocalDateTime.of(2026, 9, 7, 8, 0), zonedPolicy.now());
+        assertEquals(LocalDateTime.of(2026, 9, 7, 20, 0), zonedPolicy.now());
     }
 
     @Test

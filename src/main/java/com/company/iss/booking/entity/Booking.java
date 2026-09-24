@@ -42,7 +42,7 @@ public class Booking extends BaseEntity {
     private String remarks;
 
     @Column(nullable = false)
-    private LocalDateTime bookedDateTime = LocalDateTime.now();
+    private LocalDateTime bookedDateTime;
 
     @Setter(lombok.AccessLevel.NONE)
     @Column(name = "reminder_generation", nullable = false)

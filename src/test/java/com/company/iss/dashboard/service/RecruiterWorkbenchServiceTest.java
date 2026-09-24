@@ -24,13 +24,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneOffset;
 import java.time.ZoneId;
 import java.util.List;
 
@@ -61,7 +59,10 @@ class RecruiterWorkbenchServiceTest {
     void setUp() {
         FollowUpSlaProperties properties = new FollowUpSlaProperties();
         properties.setTimestampZone(ZoneId.of("Asia/Manila"));
-        policy = new FollowUpSlaPolicy(Clock.fixed(NOW, ZoneOffset.UTC), properties);
+        policy = new FollowUpSlaPolicy(
+                com.company.iss.shared.time.BusinessTimeTestFactory.at(NOW, ZoneId.of("Asia/Manila")),
+                properties
+        );
         service = new RecruiterWorkbenchService(
                 bookingRepository, followUpRepository, securityService, policy
         );

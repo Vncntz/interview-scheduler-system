@@ -53,7 +53,9 @@ class BookingGridServiceTest {
                 scheduleRepository,
                 applicantService,
                 securityService,
-                eventPublisher
+                eventPublisher,
+                com.company.iss.shared.time.BusinessTimeTestFactory.at(
+                        java.time.Instant.parse("2026-09-01T00:00:00Z"))
         );
     }
 

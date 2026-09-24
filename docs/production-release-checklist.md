@@ -21,6 +21,12 @@ present; never record its value in release evidence or command output.
 
 - Database: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`.
 - Email credential, when email is required: `SMTP_PASSWORD`.
+- Business time: for a new empty installation, `BUSINESS_TIME_ZONE` may be absent to use `Asia/Manila`.
+  For every installation containing schedules, explicitly set either `BUSINESS_TIME_ZONE` or the direct
+  `iss.business-time.zone` Spring property to the verified historical zone before startup. Confirm that
+  legacy follow-up and reminder zone overrides are absent or equivalent to the effective canonical property. Do not
+  change the zone without an approved timestamp backfill/storage migration; see
+  [`business-time.md`](business-time.md).
 - Interview reminders, when explicitly enabled: `INTERVIEW_REMINDERS_ENABLED`, business zone, scan
   interval, bounded batch/attempt settings, retry delay, and stale-claim timeout.
 - Recruiter follow-up indicators: `INTERVIEW_FOLLOW_UP_FINAL_TARGET`,
@@ -66,6 +72,10 @@ data.
 - Confirm every booking has `interview_stage`, the column is non-null, and no database default remains.
 - Confirm every booking has `reminder_generation`, the column is non-null with no database default,
   and reminder delivery uniqueness, booking foreign key, and scan/retry indexes exist.
+- For a nonempty upgrade rehearsal, confirm that, before the web server is initialized, the application refuses
+  to start without an explicit `BUSINESS_TIME_ZONE` or direct `iss.business-time.zone` Spring property, then
+  starts with the verified transition-free historical zone and equivalent follow-up/reminder settings. Confirm
+  existing local timestamps are unchanged.
 - For a nonempty upgrade rehearsal, confirm that, before the web server is initialized, the application refuses
   to start without an explicit `OFFER_RESPONSE_TIMESTAMP_ZONE`, then starts with the verified historical zone when
   that zone is supported.

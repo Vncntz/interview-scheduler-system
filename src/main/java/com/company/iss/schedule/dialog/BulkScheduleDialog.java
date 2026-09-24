@@ -53,7 +53,13 @@ public class BulkScheduleDialog extends Dialog {
         void onSave();
     }
 
-    public BulkScheduleDialog(BranchService branchService, RecruiterService recruiterService, ScheduleService scheduleService, SaveListener saveListener) {
+    public BulkScheduleDialog(
+            BranchService branchService,
+            RecruiterService recruiterService,
+            ScheduleService scheduleService,
+            LocalDate businessDate,
+            SaveListener saveListener
+    ) {
         this.scheduleService = scheduleService;
         this.saveListener = saveListener;
 
@@ -62,14 +68,18 @@ public class BulkScheduleDialog extends Dialog {
         setCloseOnOutsideClick(false);
         setCloseOnEsc(false);
 
-        initFields(branchService, recruiterService);
+        initFields(branchService, recruiterService, businessDate);
 
         add(buildForm());
 
         getFooter().add(buildFooter());
     }
 
-    private void initFields(BranchService branchService, RecruiterService recruiterService) {
+    private void initFields(
+            BranchService branchService,
+            RecruiterService recruiterService,
+            LocalDate businessDate
+    ) {
 
         branchField = new ComboBox<>("Branch");
         branchField.setItems(branchService.findAll());
@@ -100,7 +110,7 @@ public class BulkScheduleDialog extends Dialog {
         });
 
         startDateField = new DatePicker("Start Date");
-        startDateField.setMin(LocalDate.now());
+        startDateField.setMin(businessDate);
         startDateField.setWidthFull();
 
         endDateField = new DatePicker("End Date");

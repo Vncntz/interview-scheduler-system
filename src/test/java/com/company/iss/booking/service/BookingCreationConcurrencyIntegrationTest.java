@@ -56,11 +56,15 @@ class BookingCreationConcurrencyIntegrationTest {
 
     @MockitoBean SecurityService securityService;
     @MockitoBean ApplicantAssignmentGuard applicantAssignmentGuard;
+    @MockitoBean com.company.iss.shared.time.BusinessTime businessTime;
 
     private User recruiter;
 
     @BeforeEach
     void setUpActor() {
+        when(businessTime.snapshot()).thenReturn(
+                com.company.iss.shared.time.BusinessTimeTestFactory.snapshotAt(
+                        java.time.Instant.parse("2026-09-01T00:00:00Z")));
         Branch branch = saveBranch();
         recruiter = saveRecruiter(branch);
         when(securityService.requireOperationsUser(anyString())).thenReturn(recruiter);

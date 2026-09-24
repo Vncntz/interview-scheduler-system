@@ -1,6 +1,5 @@
 package com.company.iss.notification.service;
 
-import com.company.iss.notification.config.NotificationRuntimeProperties;
 import com.company.iss.notification.entity.InterviewReminderType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,9 +19,10 @@ class InterviewReminderTimingTest {
 
     @BeforeEach
     void setUp() {
-        NotificationRuntimeProperties properties = new NotificationRuntimeProperties();
         timing = new InterviewReminderTiming(
-                Clock.fixed(Instant.parse("2026-09-01T00:00:00Z"), ZoneOffset.UTC), properties
+                Clock.fixed(Instant.parse("2026-09-01T00:00:00Z"), ZoneOffset.UTC),
+                com.company.iss.shared.time.BusinessTimeTestFactory.at(
+                        Instant.parse("2026-09-01T00:00:00Z"))
         );
     }
 

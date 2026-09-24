@@ -104,7 +104,9 @@ class BookingServiceTest {
                 scheduleRepository,
                 applicantService,
                 securityService,
-                eventPublisher
+                eventPublisher,
+                com.company.iss.shared.time.BusinessTimeTestFactory.at(
+                        java.time.Instant.parse("2026-09-01T00:00:00.123456789Z"))
         );
     }
 
@@ -183,11 +185,51 @@ class BookingServiceTest {
         Booking created = bookingService.createBooking(300L, 20L, "Remarks");
 
         assertEquals(42L, created.getId());
+        assertEquals(LocalDateTime.of(2026, 9, 1, 8, 0, 0, 123_456_000), created.getBookedDateTime());
         ArgumentCaptor<BookingLifecycleHistory> history = ArgumentCaptor.forClass(BookingLifecycleHistory.class);
         verify(lifecycleHistoryRepository).append(history.capture());
         assertEquals(BookingLifecycleAction.BOOKING_CREATED, history.getValue().getAction());
         assertEquals(BookingStatus.BOOKED, history.getValue().getNewStatus());
+        assertEquals(created.getBookedDateTime(), history.getValue().getOccurredAt());
         verify(eventPublisher).publishEvent(new BookingCreatedEvent(42L));
+    }
+
+    @ParameterizedTest
+    @MethodSource("nonFutureAppointmentTimes")
+    void createBookingRejectsAppointmentAtOrBeforeCapturedBusinessTime(LocalTime startTime) {
+        Branch branch = branch(100L);
+        User actor = user(200L, Role.ADMIN, null);
+        Applicant applicant = new Applicant();
+        applicant.setId(300L);
+        applicant.setBranch(branch);
+        applicant.setActive(true);
+        applicant.setStatus(ApplicantStatus.NEW);
+        Schedule schedule = schedule(
+                20L, branch, user(201L, Role.RECRUITER, branch),
+                0, 2, ScheduleStatus.OPEN
+        );
+        schedule.setScheduleDate(LocalDate.of(2026, 9, 1));
+        schedule.setStartTime(startTime);
+        when(securityService.getCurrentUser()).thenReturn(actor);
+        when(applicantService.findForBookingUpdate(300L, actor)).thenReturn(applicant);
+        when(scheduleRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(schedule));
+        when(bookingRepository.findFirstByApplicantAndStatusIn(eq(applicant), any())).thenReturn(Optional.empty());
+
+        BusinessRuleViolationException failure = assertThrows(
+                BusinessRuleViolationException.class,
+                () -> bookingService.createBooking(300L, 20L, "Boundary")
+        );
+
+        assertEquals("Schedule must be in the future.", failure.getMessage());
+        verify(scheduleRepository, never()).save(any());
+        verify(bookingRepository, never()).save(any());
+    }
+
+    private static Stream<Arguments> nonFutureAppointmentTimes() {
+        return Stream.of(
+                Arguments.of(LocalTime.of(8, 0, 0, 123_455_000)),
+                Arguments.of(LocalTime.of(8, 0, 0, 123_456_000))
+        );
     }
 
     @ParameterizedTest
@@ -685,7 +727,7 @@ class BookingServiceTest {
                 status
         );
         destination.setActive(active);
-        destination.setScheduleDate(LocalDate.now().plusDays(dateOffsetDays));
+        destination.setScheduleDate(LocalDate.of(2026, 9, 1).plusDays(dateOffsetDays));
         Booking booking = booking(10L, BookingStatus.BOOKED, source);
 
         when(securityService.getCurrentUser()).thenReturn(actor);

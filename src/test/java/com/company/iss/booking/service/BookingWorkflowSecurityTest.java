@@ -74,7 +74,9 @@ class BookingWorkflowSecurityTest {
                 scheduleRepository,
                 applicantService,
                 securityService,
-                eventPublisher
+                eventPublisher,
+                com.company.iss.shared.time.BusinessTimeTestFactory.at(
+                        java.time.Instant.parse("2026-08-28T02:00:00Z"))
         );
     }
 
@@ -204,7 +206,9 @@ class BookingWorkflowSecurityTest {
                 scheduleRepository,
                 applicantService,
                 actualSecurity,
-                eventPublisher
+                eventPublisher,
+                com.company.iss.shared.time.BusinessTimeTestFactory.at(
+                        java.time.Instant.parse("2026-08-28T02:00:00Z"))
         );
     }
 

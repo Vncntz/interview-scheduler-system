@@ -29,7 +29,7 @@ public class FollowUpSlaProperties {
 
     /** Zone used to interpret the application's zone-less operational timestamps. */
     @NotNull
-    private ZoneId timestampZone = ZoneId.systemDefault();
+    private ZoneId timestampZone = ZoneId.of("Asia/Manila");
 
     @AssertTrue(message = "Follow-up targets must be positive and the due-soon window must be shorter than both targets.")
     public boolean isValidTiming() {

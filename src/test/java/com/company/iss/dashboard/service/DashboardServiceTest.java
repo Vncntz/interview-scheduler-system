@@ -11,6 +11,8 @@ import com.company.iss.position.repository.PositionOpeningRepository;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.repository.ScheduleRepository;
+import com.company.iss.shared.time.BusinessTime;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -20,7 +22,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -46,8 +51,22 @@ class DashboardServiceTest {
     @Mock
     private BookingRepository bookingRepository;
 
+    @Mock
+    private BusinessTime businessTime;
+
     @InjectMocks
     private DashboardService dashboardService;
+
+    @BeforeEach
+    void setUpBusinessTime() {
+        when(businessTime.snapshot()).thenReturn(new BusinessTime.Snapshot(
+                Instant.parse("2026-09-01T16:30:00Z"),
+                ZoneId.of("Asia/Manila"),
+                LocalDateTime.of(2026, 9, 2, 0, 30),
+                LocalDate.of(2026, 9, 2),
+                LocalTime.of(0, 30)
+        ));
+    }
 
     @Test
     void metricsUseOpenPositionsAndActiveNonCancelledSchedules() {

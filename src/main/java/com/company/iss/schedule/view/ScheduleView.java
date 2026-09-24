@@ -13,6 +13,7 @@ import com.company.iss.schedule.service.ScheduleService;
 import com.company.iss.shared.util.DateTimeUtil;
 import com.company.iss.shared.view.MainLayout;
 import com.company.iss.shared.view.UserSafeNotifier;
+import com.company.iss.shared.time.BusinessTime;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.grid.Grid;
@@ -41,6 +42,7 @@ public class ScheduleView extends VerticalLayout {
     private final ScheduleService scheduleService;
     private final BranchService branchService;
     private final RecruiterService recruiterService;
+    private final BusinessTime businessTime;
 
     private Grid<Schedule> scheduleGrid;
     private CallbackDataProvider<Schedule, Void> dataProvider;
@@ -58,11 +60,13 @@ public class ScheduleView extends VerticalLayout {
     public ScheduleView(
             ScheduleService scheduleService,
             BranchService branchService,
-            RecruiterService recruiterService
+            RecruiterService recruiterService,
+            BusinessTime businessTime
     ) {
         this.scheduleService = scheduleService;
         this.branchService = branchService;
         this.recruiterService = recruiterService;
+        this.businessTime = businessTime;
         setSizeFull();
 
         filterLayout = new HorizontalLayout();
@@ -230,7 +234,11 @@ public class ScheduleView extends VerticalLayout {
 
     private void openBulkDialog() {
         BulkScheduleDialog dialog = new BulkScheduleDialog(
-                branchService, recruiterService, scheduleService, this::refreshGrid
+                branchService,
+                recruiterService,
+                scheduleService,
+                businessTime.snapshot().date(),
+                this::refreshGrid
         );
         dialog.open();
     }
@@ -274,18 +282,24 @@ public class ScheduleView extends VerticalLayout {
     }
 
     private void openDialog(Schedule schedule) {
-        ScheduleFormDialog dialog = new ScheduleFormDialog(schedule, branchService, recruiterService, savedSchedule -> {
-            try {
-                scheduleService.save(savedSchedule);
+        ScheduleFormDialog dialog = new ScheduleFormDialog(
+                schedule,
+                branchService,
+                recruiterService,
+                businessTime.snapshot().date(),
+                savedSchedule -> {
+                    try {
+                        scheduleService.save(savedSchedule);
 
-                Notification.show("Schedule saved successfully.", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                        Notification.show("Schedule saved successfully.", 3000, Notification.Position.TOP_CENTER).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
 
-                refreshGrid();
+                        refreshGrid();
 
-            } catch (Exception ex) {
-                UserSafeNotifier.showError(ex);
-            }
-        });
+                    } catch (Exception ex) {
+                        UserSafeNotifier.showError(ex);
+                    }
+                }
+        );
 
         dialog.open();
     }

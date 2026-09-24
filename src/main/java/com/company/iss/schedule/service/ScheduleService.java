@@ -16,6 +16,7 @@ import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.repository.ScheduleRepository;
 import com.company.iss.shared.exception.BusinessRuleViolationException;
 import com.company.iss.shared.pagination.OffsetLimitPageable;
+import com.company.iss.shared.time.BusinessTime;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -38,19 +39,22 @@ public class ScheduleService {
     private final UserRepository userRepository;
     private final SecurityService securityService;
     private final BookingRepository bookingRepository;
+    private final BusinessTime businessTime;
 
     public ScheduleService(
             ScheduleRepository scheduleRepository,
             BranchRepository branchRepository,
             UserRepository userRepository,
             SecurityService securityService,
-            BookingRepository bookingRepository
+            BookingRepository bookingRepository,
+            BusinessTime businessTime
     ) {
         this.scheduleRepository = scheduleRepository;
         this.branchRepository = branchRepository;
         this.userRepository = userRepository;
         this.securityService = securityService;
         this.bookingRepository = bookingRepository;
+        this.businessTime = businessTime;
     }
 
     @Transactional(readOnly = true)
@@ -231,11 +235,11 @@ public class ScheduleService {
     @Transactional(readOnly = true)
     public List<Schedule> findAvailableForCurrentUser() {
         User actor = securityService.requireOperationsUser();
-        if (actor.getRole() == Role.ADMIN) {
-            return scheduleRepository.findByActiveTrueAndStatus(ScheduleStatus.OPEN);
-        }
-        return scheduleRepository.findByBranchIdAndActiveTrueAndStatusOrderByScheduleDateAscStartTimeAsc(
-                actor.getBranch().getId(), ScheduleStatus.OPEN);
+        BusinessTime.Snapshot snapshot = businessTime.snapshot();
+        Long branchId = actor.getRole() == Role.ADMIN ? null : actor.getBranch().getId();
+        return scheduleRepository.findAvailableForBooking(
+                branchId, snapshot.date(), snapshot.time(), ScheduleStatus.OPEN
+        );
     }
 
     @Transactional(readOnly = true)
@@ -247,8 +251,10 @@ public class ScheduleService {
         if (actor.getRole() == Role.RECRUITER && !Objects.equals(actor.getBranch().getId(), branchId)) {
             throw new AccessDeniedException("You may only view schedules within your branch.");
         }
-        return scheduleRepository.findByBranchIdAndActiveTrueAndStatusOrderByScheduleDateAscStartTimeAsc(
-                branchId, ScheduleStatus.OPEN);
+        BusinessTime.Snapshot snapshot = businessTime.snapshot();
+        return scheduleRepository.findAvailableForBooking(
+                branchId, snapshot.date(), snapshot.time(), ScheduleStatus.OPEN
+        );
     }
 
     private User requireAdmin() {
