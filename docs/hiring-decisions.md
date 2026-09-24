@@ -53,6 +53,10 @@ reconstructed unambiguously; such historical data requires a separately designed
 migration before startup. True arbitrary-DST-zone support would require persisting an authoritative `Instant`
 or offset.
 
+This hiring timestamp zone is intentionally independent of the canonical appointment and recruitment
+event `BUSINESS_TIME_ZONE`. See [`business-time.md`](business-time.md); configuring one does not satisfy
+the historical-data guard for the other.
+
 Both page and count queries apply the selected `All`, `Overdue`, `Due soon`, `On track`, or `No
 deadline` filter in the database, together with search and the authoritative administrator/recruiter
 branch scope. `Response Due` is an explicitly whitelisted grid sort.

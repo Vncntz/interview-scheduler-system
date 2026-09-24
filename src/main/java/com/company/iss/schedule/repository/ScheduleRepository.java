@@ -103,6 +103,27 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
     @Query("""
             select s
             from Schedule s
+            where s.active = true
+              and s.status = :openStatus
+              and s.bookedCount < s.slotCapacity
+              and (
+                  s.scheduleDate > :today
+                  or (s.scheduleDate = :today and s.startTime > :currentTime)
+              )
+              and (:branchId is null or s.branch.id = :branchId)
+            order by s.scheduleDate, s.startTime, s.id
+            """)
+    List<Schedule> findAvailableForBooking(
+            @Param("branchId") Long branchId,
+            @Param("today") LocalDate today,
+            @Param("currentTime") LocalTime currentTime,
+            @Param("openStatus") ScheduleStatus openStatus
+    );
+
+    @EntityGraph(attributePaths = {"branch", "recruiter"})
+    @Query("""
+            select s
+            from Schedule s
             where s.id <> :excludedScheduleId
               and s.active = true
               and s.status = :openStatus

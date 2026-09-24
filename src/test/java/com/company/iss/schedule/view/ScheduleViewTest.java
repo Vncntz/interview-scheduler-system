@@ -80,7 +80,13 @@ class ScheduleViewTest {
     }
 
     private ScheduleView view(ScheduleService service) {
-        return new ScheduleView(service, mock(BranchService.class), mock(RecruiterService.class));
+        return new ScheduleView(
+                service,
+                mock(BranchService.class),
+                mock(RecruiterService.class),
+                com.company.iss.shared.time.BusinessTimeTestFactory.at(
+                        java.time.Instant.parse("2026-09-01T00:00:00Z"))
+        );
     }
 
     @SuppressWarnings("unchecked")

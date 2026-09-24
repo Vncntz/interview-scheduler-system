@@ -4,6 +4,11 @@ Flyway owns the application schema. Production uses the MySQL migrations under
 `db/migration/mysql`; fast/default tests use the equivalent H2 migrations under `db/migration/h2`.
 Hibernate runs with `ddl-auto=validate` and must never be used to repair a production schema.
 
+The canonical business-time change does not add a Flyway migration. Appointment and recruitment event
+columns remain zone-less local values, and existing rows are deliberately not reinterpreted or backfilled.
+Deployments with schedules must explicitly configure their historical `BUSINESS_TIME_ZONE` or direct
+`iss.business-time.zone` Spring property as documented in [`business-time.md`](business-time.md) before startup.
+
 ## Automated database validation
 
 The default Java 25 suite remains Docker-free and uses isolated H2 in MySQL compatibility mode:
@@ -19,7 +24,8 @@ from V1 through the release's expected latest migration (the latest Flyway versi
 under test) to an empty schema, validates its checksums and current version, starts the complete Spring
 context with Hibernate `ddl-auto=validate`, and exercises V8's critical reminder mappings, V9's
 lifecycle-history mappings, uniqueness, foreign keys, snapshots, enum values, microsecond timestamps,
-and processing indexes, plus V10's nullable offer-deadline mapping:
+and processing indexes, V10's nullable offer-deadline mapping, and the strict future-start predicates used
+by booking availability and rescheduling:
 
 ```powershell
 .\mvnw.cmd clean verify -Pmysql-it

@@ -29,6 +29,7 @@ import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.repository.ScheduleRepository;
 import com.company.iss.shared.exception.BusinessRuleViolationException;
+import com.company.iss.shared.time.BusinessTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -37,9 +38,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.PageRequest;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -64,6 +63,7 @@ public class BookingService {
     private final ApplicantService applicantService;
     private final SecurityService securityService;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final BusinessTime businessTime;
     private final BookingStageEligibilityPolicy bookingStageEligibilityPolicy = new BookingStageEligibilityPolicy();
 
     public BookingService(
@@ -74,7 +74,8 @@ public class BookingService {
             ScheduleRepository scheduleRepository,
             ApplicantService applicantService,
             SecurityService securityService,
-            ApplicationEventPublisher applicationEventPublisher
+            ApplicationEventPublisher applicationEventPublisher,
+            BusinessTime businessTime
     ) {
         this.bookingRepository = bookingRepository;
         this.bookingLifecycleHistoryRepository = bookingLifecycleHistoryRepository;
@@ -84,6 +85,7 @@ public class BookingService {
         this.applicantService = applicantService;
         this.securityService = securityService;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.businessTime = businessTime;
     }
 
     @Transactional(readOnly = true)
@@ -204,8 +206,9 @@ public class BookingService {
             String remarks,
             User actor
     ) {
-        validateBooking(applicant, schedule);
-        LocalDateTime occurredAt = LocalDateTime.now();
+        BusinessTime.Snapshot snapshot = businessTime.snapshot();
+        validateBooking(applicant, schedule, snapshot.dateTime());
+        LocalDateTime occurredAt = snapshot.dateTime();
 
         Booking booking = Booking.forInterviewStage(interviewStage);
 
@@ -268,7 +271,7 @@ public class BookingService {
                 BookingLifecycleAction.ATTENDANCE_RECORDED,
                 BookingStatus.CONFIRMED,
                 BookingStatus.ATTENDED,
-                LocalDateTime.now()
+                businessTime.snapshot().dateTime()
         ));
         log.info("[BOOKING] Booking marked attended bookingId={}", booking.getId());
     }
@@ -289,7 +292,7 @@ public class BookingService {
                 BookingLifecycleAction.NO_SHOW_RECORDED,
                 BookingStatus.CONFIRMED,
                 BookingStatus.NO_SHOW,
-                LocalDateTime.now()
+                businessTime.snapshot().dateTime()
         ));
         log.info("[BOOKING] Booking marked no-show bookingId={}", booking.getId());
     }
@@ -343,13 +346,13 @@ public class BookingService {
             throw new BookingRescheduleException("The applicant is not assigned to a branch.");
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        BusinessTime.Snapshot snapshot = businessTime.snapshot();
         Long branchId = booking.getApplicant().getBranch().getId();
 
         return scheduleRepository.findEligibleRescheduleDestinations(
                 booking.getSchedule().getId(),
-                now.toLocalDate(),
-                now.toLocalTime(),
+                snapshot.date(),
+                snapshot.time(),
                 ScheduleStatus.OPEN,
                 branchId
         );
@@ -391,7 +394,7 @@ public class BookingService {
         authorizeSchedule(actor, sourceSchedule);
         authorizeSchedule(actor, destinationSchedule);
         validateApplicantScheduleBranch(booking.getApplicant(), destinationSchedule);
-        LocalDateTime occurredAt = LocalDateTime.now();
+        LocalDateTime occurredAt = businessTime.snapshot().dateTime();
         validateDestination(destinationSchedule, occurredAt);
         validateSourceCapacity(sourceSchedule);
 
@@ -486,7 +489,7 @@ public class BookingService {
                 BookingLifecycleAction.BOOKING_CANCELLED,
                 previousStatus,
                 BookingStatus.CANCELLED,
-                LocalDateTime.now()
+                businessTime.snapshot().dateTime()
         ));
         applicationEventPublisher.publishEvent(new BookingCancelledEvent(saved.getId()));
 
@@ -503,7 +506,7 @@ public class BookingService {
         return status == BookingStatus.BOOKED || status == BookingStatus.CONFIRMED;
     }
 
-    private void validateBooking(Applicant applicant, Schedule schedule) {
+    private void validateBooking(Applicant applicant, Schedule schedule, LocalDateTime now) {
 
         if (applicant == null) {
             throw new BusinessRuleViolationException("Applicant is required.");
@@ -533,6 +536,10 @@ public class BookingService {
 
         if (schedule.getBookedCount() >= schedule.getSlotCapacity()) {
             throw new BusinessRuleViolationException("Schedule is already full.");
+        }
+
+        if (!isStrictlyFuture(schedule, now)) {
+            throw new BusinessRuleViolationException("Schedule must be in the future.");
         }
 
         Optional<Booking> existing = bookingRepository.findByApplicantAndSchedule(applicant, schedule);
@@ -647,14 +654,15 @@ public class BookingService {
         if (destinationSchedule.getRecruiter() == null) {
             throw new BookingRescheduleException("The destination schedule does not have a recruiter.");
         }
-        LocalDate scheduleDate = destinationSchedule.getScheduleDate();
-        LocalTime startTime = destinationSchedule.getStartTime();
-        if (scheduleDate == null
-                || startTime == null
-                || scheduleDate.isBefore(now.toLocalDate())
-                || (scheduleDate.equals(now.toLocalDate()) && !startTime.isAfter(now.toLocalTime()))) {
+        if (!isStrictlyFuture(destinationSchedule, now)) {
             throw new BookingRescheduleException("The destination schedule must be in the future.");
         }
+    }
+
+    private boolean isStrictlyFuture(Schedule schedule, LocalDateTime now) {
+        return schedule.getScheduleDate() != null
+                && schedule.getStartTime() != null
+                && LocalDateTime.of(schedule.getScheduleDate(), schedule.getStartTime()).isAfter(now);
     }
 
     private void validateApplicantScheduleBranch(Applicant applicant, Schedule schedule) {
@@ -691,7 +699,7 @@ public class BookingService {
                 BookingLifecycleAction.BOOKING_CONFIRMED,
                 BookingStatus.BOOKED,
                 BookingStatus.CONFIRMED,
-                LocalDateTime.now()
+                businessTime.snapshot().dateTime()
         ));
 
         log.info("[BOOKING] Booking confirmed bookingId={}", saved.getId());

@@ -52,7 +52,13 @@ class ScheduleServiceSecurityTest {
     @BeforeEach
     void setUp() {
         service = new ScheduleService(
-                scheduleRepository, branchRepository, userRepository, securityService, bookingRepository
+                scheduleRepository,
+                branchRepository,
+                userRepository,
+                securityService,
+                bookingRepository,
+                com.company.iss.shared.time.BusinessTimeTestFactory.at(
+                        java.time.Instant.parse("2026-09-01T00:00:00Z"))
         );
     }
 
@@ -193,13 +199,15 @@ class ScheduleServiceSecurityTest {
         Branch branch = branch(1L);
         User recruiter = user(20L, Role.RECRUITER, branch);
         when(securityService.requireOperationsUser()).thenReturn(recruiter);
-        when(scheduleRepository.findByBranchIdAndActiveTrueAndStatusOrderByScheduleDateAscStartTimeAsc(
-                1L, ScheduleStatus.OPEN)).thenReturn(List.of());
+        when(scheduleRepository.findAvailableForBooking(
+                1L, LocalDate.of(2026, 9, 1), LocalTime.of(8, 0), ScheduleStatus.OPEN
+        )).thenReturn(List.of());
 
         assertTrue(service.findAvailableForCurrentUser().isEmpty());
 
-        verify(scheduleRepository).findByBranchIdAndActiveTrueAndStatusOrderByScheduleDateAscStartTimeAsc(
-                1L, ScheduleStatus.OPEN);
+        verify(scheduleRepository).findAvailableForBooking(
+                1L, LocalDate.of(2026, 9, 1), LocalTime.of(8, 0), ScheduleStatus.OPEN
+        );
         verify(scheduleRepository, never()).findByActiveTrueAndStatus(any());
     }
 

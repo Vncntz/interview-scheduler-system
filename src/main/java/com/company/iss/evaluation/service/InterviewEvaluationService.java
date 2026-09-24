@@ -20,6 +20,7 @@ import com.company.iss.shared.exception.BusinessRuleViolationException;
 import com.company.iss.position.entity.PositionOpening;
 import com.company.iss.position.repository.PositionOpeningRepository;
 import com.company.iss.shared.pagination.OffsetLimitPageable;
+import com.company.iss.shared.time.BusinessTime;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,7 @@ public class InterviewEvaluationService {
     private final BookingRepository bookingRepository;
     private final ApplicantService applicantService;
     private final SecurityService securityService;
+    private final BusinessTime businessTime;
     private final InterviewStageResultPolicy interviewStageResultPolicy = new InterviewStageResultPolicy();
 
     public InterviewEvaluationService(
@@ -46,13 +48,15 @@ public class InterviewEvaluationService {
             PositionOpeningRepository positionOpeningRepository,
             BookingRepository bookingRepository,
             ApplicantService applicantService,
-            SecurityService securityService
+            SecurityService securityService,
+            BusinessTime businessTime
     ) {
         this.evaluationRepository = evaluationRepository;
         this.positionOpeningRepository = positionOpeningRepository;
         this.bookingRepository = bookingRepository;
         this.applicantService = applicantService;
         this.securityService = securityService;
+        this.businessTime = businessTime;
     }
 
     @Transactional
@@ -86,7 +90,7 @@ public class InterviewEvaluationService {
                 command.attitudeScore(),
                 command.result(),
                 command.remarks(),
-                LocalDateTime.now()
+                businessTime.snapshot().dateTime()
         );
 
         applyResult(booking, applicant, command.result());

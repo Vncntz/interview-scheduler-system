@@ -13,13 +13,12 @@ import com.company.iss.position.repository.PositionOpeningRepository;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
 import com.company.iss.schedule.repository.ScheduleRepository;
+import com.company.iss.shared.time.BusinessTime;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -29,19 +28,28 @@ import java.util.stream.IntStream;
 @Service
 public class DashboardService {
 
-    @Autowired
-    private ApplicantRepository applicantRepository;
+    private final ApplicantRepository applicantRepository;
+    private final PositionOpeningRepository positionOpeningRepository;
+    private final ScheduleRepository scheduleRepository;
+    private final BookingRepository bookingRepository;
+    private final BusinessTime businessTime;
 
-    @Autowired
-    private PositionOpeningRepository positionOpeningRepository;
-
-    @Autowired
-    private ScheduleRepository scheduleRepository;
-
-    @Autowired
-    private BookingRepository bookingRepository;
+    public DashboardService(
+            ApplicantRepository applicantRepository,
+            PositionOpeningRepository positionOpeningRepository,
+            ScheduleRepository scheduleRepository,
+            BookingRepository bookingRepository,
+            BusinessTime businessTime
+    ) {
+        this.applicantRepository = applicantRepository;
+        this.positionOpeningRepository = positionOpeningRepository;
+        this.scheduleRepository = scheduleRepository;
+        this.bookingRepository = bookingRepository;
+        this.businessTime = businessTime;
+    }
 
     public DashboardMetrics getMetrics() {
+        BusinessTime.Snapshot snapshot = businessTime.snapshot();
         DashboardMetrics metrics = new DashboardMetrics();
 
         metrics.setTotalApplicants(applicantRepository.count());
@@ -49,7 +57,7 @@ public class DashboardService {
         metrics.setOpenPositions(positionOpeningRepository.countByActiveTrueAndStatus(PositionStatus.OPEN));
 
         metrics.setTodaysInterviews(scheduleRepository.countByScheduleDateAndActiveTrueAndStatusNot(
-                LocalDate.now(),
+                snapshot.date(),
                 ScheduleStatus.CANCELLED
         ));
 
@@ -66,6 +74,7 @@ public class DashboardService {
 
     @Transactional(readOnly = true)
     public List<UpcomingInterview> getUpcomingInterviews() {
+        BusinessTime.Snapshot snapshot = businessTime.snapshot();
         List<BookingStatus> activeStatuses = List.of(
                 BookingStatus.BOOKED,
                 BookingStatus.CONFIRMED,
@@ -76,8 +85,8 @@ public class DashboardService {
 
         return bookingRepository
                 .findUpcoming(
-                        LocalDate.now(),
-                        LocalTime.now(),
+                        snapshot.date(),
+                        snapshot.time(),
                         activeStatuses,
                         ScheduleStatus.CANCELLED,
                         PageRequest.of(0, 5)
@@ -100,8 +109,9 @@ public class DashboardService {
 
     @Transactional(readOnly = true)
     public List<ScheduleSummary> getTodaysSchedule() {
+        BusinessTime.Snapshot snapshot = businessTime.snapshot();
         return scheduleRepository.findByScheduleDateAndActiveTrueAndStatusNot(
-                        LocalDate.now(),
+                        snapshot.date(),
                         ScheduleStatus.CANCELLED
                 )
                 .stream()
@@ -112,7 +122,7 @@ public class DashboardService {
 
     @Transactional(readOnly = true)
     public List<InterviewActivity> getInterviewActivity() {
-        LocalDate startDate = LocalDate.now();
+        LocalDate startDate = businessTime.snapshot().date();
         LocalDate endDate = startDate.plusDays(6);
 
         Map<LocalDate, Long> schedulesByDate = scheduleRepository

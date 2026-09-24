@@ -68,10 +68,11 @@ public class RecruiterWorkbenchService {
     @Transactional(readOnly = true)
     public RecruiterWorkbenchData load() {
         User actor = requireRecruiter();
-        LocalDate today = LocalDate.now();
-        LocalTime now = LocalTime.now();
+        var snapshot = followUpSlaPolicy.snapshot();
+        LocalDate today = snapshot.date();
+        LocalTime now = snapshot.time();
         Long branchId = actor.getBranch().getId();
-        LocalDateTime calculatedAt = followUpSlaPolicy.now();
+        LocalDateTime calculatedAt = snapshot.dateTime();
 
         return new RecruiterWorkbenchData(
                 map(bookingRepository.findTodaysAssignedForRecruiterAndApplicantBranch(
@@ -89,8 +90,8 @@ public class RecruiterWorkbenchService {
                 map(bookingRepository.findOverdueUnevaluatedByApplicantBranch(
                         branchId, BookingStatus.ATTENDED, today, now
                 )),
-                summarize(branchId, InterviewStage.FINAL, calculatedAt),
-                summarize(branchId, InterviewStage.CLIENT, calculatedAt)
+                summarize(branchId, InterviewStage.FINAL, snapshot),
+                summarize(branchId, InterviewStage.CLIENT, snapshot)
         );
     }
 
@@ -105,7 +106,8 @@ public class RecruiterWorkbenchService {
         FollowUpStageRule rule = ruleFor(stage);
         FollowUpDeadlineFilter validatedFilter = requireDeadlineFilter(deadlineFilter);
         validateFollowUpWindow(offset, limit);
-        LocalDateTime calculatedAt = followUpSlaPolicy.now();
+        var snapshot = followUpSlaPolicy.snapshot();
+        LocalDateTime calculatedAt = snapshot.dateTime();
         DeadlineCutoffs cutoffs = cutoffs(stage, calculatedAt);
         return followUpRepository.findFollowUpsByStage(
                 actor.getBranch().getId(), stage, rule.applicantStatus(), ApplicantStatus.SCHEDULED,
@@ -115,7 +117,7 @@ public class RecruiterWorkbenchService {
                 BookingLifecycleAction.ATTENDANCE_RECORDED,
                 validatedFilter.name(), cutoffs.overdue(), cutoffs.dueSoon(),
                 new OffsetLimitPageable(offset, limit)
-        ).stream().map(projection -> toFollowUpDto(projection, stage, calculatedAt)).toList();
+        ).stream().map(projection -> toFollowUpDto(projection, stage, snapshot)).toList();
     }
 
     @Transactional(readOnly = true)
@@ -123,7 +125,7 @@ public class RecruiterWorkbenchService {
         User actor = requireRecruiter();
         FollowUpStageRule rule = ruleFor(stage);
         FollowUpDeadlineFilter validatedFilter = requireDeadlineFilter(deadlineFilter);
-        DeadlineCutoffs cutoffs = cutoffs(stage, followUpSlaPolicy.now());
+        DeadlineCutoffs cutoffs = cutoffs(stage, followUpSlaPolicy.snapshot().dateTime());
         return followUpRepository.countFollowUpsByStage(
                 actor.getBranch().getId(), stage, rule.applicantStatus(), ApplicantStatus.SCHEDULED,
                 rule.interviewResult(), REPLACEMENT_STATUSES, FOLLOW_UP_ACTIVE_STATUSES,
@@ -136,10 +138,15 @@ public class RecruiterWorkbenchService {
     @Transactional(readOnly = true)
     public FollowUpQueueSummary getFollowUpSummary(InterviewStage stage) {
         User actor = requireRecruiter();
-        return summarize(actor.getBranch().getId(), stage, followUpSlaPolicy.now());
+        return summarize(actor.getBranch().getId(), stage, followUpSlaPolicy.snapshot());
     }
 
-    private FollowUpQueueSummary summarize(Long branchId, InterviewStage stage, LocalDateTime calculatedAt) {
+    private FollowUpQueueSummary summarize(
+            Long branchId,
+            InterviewStage stage,
+            com.company.iss.shared.time.BusinessTime.Snapshot snapshot
+    ) {
+        LocalDateTime calculatedAt = snapshot.dateTime();
         FollowUpStageRule rule = ruleFor(stage);
         Duration target = followUpSlaPolicy.targetFor(stage);
         DeadlineCutoffs cutoffs = cutoffs(stage, calculatedAt);
@@ -244,8 +251,9 @@ public class RecruiterWorkbenchService {
     private FollowUpApplicant toFollowUpDto(
             FollowUpApplicantProjection projection,
             InterviewStage requestedStage,
-            LocalDateTime calculatedAt
+            com.company.iss.shared.time.BusinessTime.Snapshot snapshot
     ) {
+        LocalDateTime calculatedAt = snapshot.dateTime();
         InterviewStage requiredStage = stageEligibilityPolicy.requiredStage(
                 projection.getApplicantStatus(),
                 projection.getMostRecentBookingStatus(),
@@ -271,7 +279,7 @@ public class RecruiterWorkbenchService {
                 relatedAppointmentAt,
                 waitingSince,
                 waitingSince == null ? null : followUpSlaPolicy.deadline(requiredStage, waitingSince),
-                followUpSlaPolicy.elapsed(waitingSince, calculatedAt),
+                followUpSlaPolicy.elapsed(waitingSince, snapshot.instant()),
                 waitingSince == null ? null : followUpSlaPolicy.status(requiredStage, waitingSince, calculatedAt)
         );
     }

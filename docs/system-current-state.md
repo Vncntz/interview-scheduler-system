@@ -506,6 +506,12 @@ repository operations.
 
 ### Optional controlled variables
 
+- `iss.business-time.zone` defines appointment, dashboard/workbench, follow-up, reminder-appointment, and
+  new recruitment-event local-time semantics. It inherits `BUSINESS_TIME_ZONE` and defaults to `Asia/Manila`
+  only for an installation with no schedules; existing installations must explicitly supply their verified
+  historical transition-free zone through either setting. `INTERVIEW_FOLLOW_UP_TIMESTAMP_ZONE` and
+  `INTERVIEW_REMINDER_BUSINESS_ZONE` inherit the effective canonical property and may
+  only use equivalent zone behavior. See [`business-time.md`](business-time.md).
 - `OFFER_RESPONSE_DUE_SOON_WINDOW` configures the optional offer deadline classification window.
   `OFFER_RESPONSE_TIMESTAMP_ZONE` configures the hiring business zone. When absent, it defaults to
   `Asia/Manila` only for installations without hiring decisions; an explicitly present blank value is invalid,

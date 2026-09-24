@@ -29,6 +29,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -60,7 +61,9 @@ class InterviewEvaluationServiceTest {
                 positionOpeningRepository,
                 bookingRepository,
                 applicantService,
-                securityService
+                securityService,
+                com.company.iss.shared.time.BusinessTimeTestFactory.at(
+                        java.time.Instant.parse("2026-09-01T00:00:00.123456789Z"))
         );
     }
 
@@ -130,6 +133,7 @@ class InterviewEvaluationServiceTest {
         InterviewEvaluation result = service.create(command(20L));
 
         assertSame(actor, result.getEvaluator());
+        assertEquals(LocalDateTime.of(2026, 9, 1, 8, 0, 0, 123_456_000), result.getEvaluationDate());
         assertEquals(BookingStatus.PASSED, booking.getStatus());
         assertEquals(ApplicantStatus.PASSED, booking.getApplicant().getStatus());
         assertEquals(4, position.getInterviewEvaluationCount());

@@ -12,10 +12,13 @@ delivery ID descending. Filters are also applied in the database:
 - reminder type: 24-hour or 2-hour; and
 - scheduled appointment date from/through.
 
-The date range is inclusive of both selected calendar dates in the configured reminder business
-timezone. It filters the immutable `scheduled_start_at` snapshot using `[from 00:00, day after through
+The date range is inclusive of both selected calendar dates in the canonical business timezone. It
+filters the immutable `scheduled_start_at` snapshot using `[from 00:00, day after through
 00:00)`. Claim, next-attempt, and sent timestamps are stored as UTC values and converted to that same
-business timezone for display. Missing timestamps display as **Unavailable**.
+business timezone for display. `INTERVIEW_REMINDER_BUSINESS_ZONE` inherits the effective canonical
+`iss.business-time.zone` and may only override it with equivalent zone behavior. See
+[`business-time.md`](business-time.md). Missing
+timestamps display as **Unavailable**.
 
 Each row shows the booking reference, reminder type, appointment snapshot, persisted status, attempt
 count, available claim/retry/sent times, a controlled human-readable reason, and any health indicators

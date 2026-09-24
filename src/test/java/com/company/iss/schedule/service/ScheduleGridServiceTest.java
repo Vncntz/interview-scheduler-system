@@ -46,7 +46,13 @@ class ScheduleGridServiceTest {
     @BeforeEach
     void setUp() {
         service = new ScheduleService(
-                scheduleRepository, branchRepository, userRepository, securityService, bookingRepository
+                scheduleRepository,
+                branchRepository,
+                userRepository,
+                securityService,
+                bookingRepository,
+                com.company.iss.shared.time.BusinessTimeTestFactory.at(
+                        java.time.Instant.parse("2026-09-01T00:00:00Z"))
         );
     }
 

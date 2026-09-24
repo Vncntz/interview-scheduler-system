@@ -13,6 +13,8 @@ import com.company.iss.booking.repository.BookingRepository;
 import com.company.iss.branch.entity.Branch;
 import com.company.iss.branch.repository.BranchRepository;
 import com.company.iss.notification.config.NotificationRuntimeProperties;
+import com.company.iss.config.BusinessTimeProperties;
+import com.company.iss.shared.time.BusinessTime;
 import com.company.iss.notification.entity.InterviewReminderDeliveryStatus;
 import com.company.iss.notification.entity.InterviewReminderType;
 import com.company.iss.notification.repository.InterviewReminderDeliveryRepository;
@@ -55,6 +57,8 @@ import static org.mockito.Mockito.when;
         InterviewReminderClaimService.class,
         InterviewReminderCompletionService.class,
         InterviewReminderTiming.class,
+        BusinessTime.class,
+        BusinessTimeProperties.class,
         NotificationRuntimeProperties.class,
         SmtpConfigurationValidator.class,
         InterviewReminderServiceIntegrationTest.ClockConfig.class

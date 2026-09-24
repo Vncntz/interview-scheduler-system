@@ -3,26 +3,31 @@ package com.company.iss.dashboard.service;
 import com.company.iss.booking.entity.InterviewStage;
 import com.company.iss.dashboard.config.FollowUpSlaProperties;
 import com.company.iss.dashboard.dto.FollowUpSlaStatus;
+import com.company.iss.shared.time.BusinessTime;
 import org.springframework.stereotype.Component;
 
-import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
 @Component
 public class FollowUpSlaPolicy {
 
-    private final Clock clock;
+    private final BusinessTime businessTime;
     private final FollowUpSlaProperties properties;
 
-    public FollowUpSlaPolicy(Clock clock, FollowUpSlaProperties properties) {
-        this.clock = clock;
+    public FollowUpSlaPolicy(BusinessTime businessTime, FollowUpSlaProperties properties) {
+        this.businessTime = businessTime;
         this.properties = properties;
     }
 
     public LocalDateTime now() {
-        return LocalDateTime.ofInstant(clock.instant(), properties.getTimestampZone());
+        return snapshot().dateTime();
+    }
+
+    public BusinessTime.Snapshot snapshot() {
+        return businessTime.snapshot();
     }
 
     public Duration targetFor(InterviewStage stage) {
@@ -51,7 +56,7 @@ public class FollowUpSlaPolicy {
 
     public LocalDateTime deadline(InterviewStage stage, LocalDateTime waitingSince) {
         Objects.requireNonNull(waitingSince, "Follow-up waiting start is required.");
-        return waitingSince.plus(targetFor(stage));
+        return businessTime.plusElapsed(waitingSince, targetFor(stage));
     }
 
     public Duration elapsed(LocalDateTime waitingSince, LocalDateTime now) {
@@ -59,7 +64,14 @@ public class FollowUpSlaPolicy {
             return null;
         }
         Objects.requireNonNull(now, "Follow-up calculation time is required.");
-        return now.isBefore(waitingSince) ? Duration.ZERO : Duration.between(waitingSince, now);
+        return elapsed(waitingSince, businessTime.toInstantStrict(now));
+    }
+
+    public Duration elapsed(LocalDateTime waitingSince, Instant now) {
+        if (waitingSince == null) {
+            return null;
+        }
+        return businessTime.elapsed(waitingSince, now);
     }
 
     public InterviewStage requireFollowUpStage(InterviewStage stage) {

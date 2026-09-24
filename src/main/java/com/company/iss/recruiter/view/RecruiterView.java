@@ -24,6 +24,7 @@ import jakarta.annotation.security.RolesAllowed;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.LocalDateTime;
+import java.time.Clock;
 
 @Route(value = "recruiters", layout = MainLayout.class)
 @PageTitle("Recruiter Management")
@@ -35,6 +36,9 @@ public class RecruiterView extends VerticalLayout {
 
     @Autowired
     private BranchService branchService;
+
+    @Autowired
+    private Clock clock;
 
     private Grid<User> recruiterGrid;
 
@@ -108,7 +112,7 @@ public class RecruiterView extends VerticalLayout {
             });
             unlock.addThemeVariants(ButtonVariant.LUMO_SMALL);
             unlock.setVisible(user.getLockoutUntil() != null
-                    && user.getLockoutUntil().isAfter(LocalDateTime.now()));
+                    && user.getLockoutUntil().isAfter(LocalDateTime.now(clock)));
 
             HorizontalLayout wrap = new HorizontalLayout(toggle, reset, unlock);
             wrap.setWidthFull();

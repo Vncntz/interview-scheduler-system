@@ -337,6 +337,7 @@ class HiringDecisionIntegrationTest {
         booking.setBookingReference("BK-" + suffix);
         booking.setApplicant(applicant);
         booking.setStatus(BookingStatus.PASSED);
+        booking.setBookedDateTime(LocalDateTime.of(2026, 9, 1, 8, 0));
         booking = bookingRepository.saveAndFlush(booking);
 
         InterviewEvaluation evaluation = InterviewEvaluation.record(

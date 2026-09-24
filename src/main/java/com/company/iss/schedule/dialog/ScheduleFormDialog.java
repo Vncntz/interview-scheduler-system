@@ -22,6 +22,8 @@ import com.vaadin.flow.component.timepicker.TimePicker;
 import com.vaadin.flow.data.binder.Binder;
 import com.vaadin.flow.data.binder.ValidationException;
 
+import java.time.LocalDate;
+
 public class ScheduleFormDialog extends Dialog {
 
     private final Binder<Schedule> binder = new Binder<>(Schedule.class);
@@ -42,7 +44,13 @@ public class ScheduleFormDialog extends Dialog {
         void onSave(Schedule schedule);
     }
 
-    public ScheduleFormDialog(Schedule schedule, BranchService branchService, RecruiterService recruiterService, SaveListener saveListener) {
+    public ScheduleFormDialog(
+            Schedule schedule,
+            BranchService branchService,
+            RecruiterService recruiterService,
+            LocalDate businessDate,
+            SaveListener saveListener
+    ) {
         this.schedule = schedule;
         this.saveListener = saveListener;
 
@@ -52,7 +60,7 @@ public class ScheduleFormDialog extends Dialog {
         setCloseOnOutsideClick(false);
         setCloseOnEsc(false);
 
-        initFields(branchService, recruiterService);
+        initFields(branchService, recruiterService, schedule.getId() == null ? businessDate : null);
         bindFields(recruiterService);
 
         add(buildForm());
@@ -60,7 +68,11 @@ public class ScheduleFormDialog extends Dialog {
         getFooter().add(buildFooter());
     }
 
-    private void initFields(BranchService branchService, RecruiterService recruiterService) {
+    private void initFields(
+            BranchService branchService,
+            RecruiterService recruiterService,
+            LocalDate minimumScheduleDate
+    ) {
 
         branchField = new ComboBox<>("Branch");
         branchField.setItems(branchService.findAll());
@@ -91,6 +103,9 @@ public class ScheduleFormDialog extends Dialog {
         });
 
         scheduleDateField = new DatePicker("Schedule Date");
+        if (minimumScheduleDate != null) {
+            scheduleDateField.setMin(minimumScheduleDate);
+        }
         scheduleDateField.setWidthFull();
 
         startTimeField = new TimePicker("Start Time");

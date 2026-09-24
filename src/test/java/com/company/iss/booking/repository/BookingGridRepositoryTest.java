@@ -23,6 +23,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.HashSet;
 import java.util.List;
@@ -215,6 +216,7 @@ class BookingGridRepositoryTest {
         booking.setSchedule(schedule);
         booking.setRecruiter(recruiter);
         booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setBookedDateTime(LocalDateTime.of(2026, 11, 1, 8, 0));
         entityManager.persist(booking);
         entityManager.flush();
         entityManager.clear();
@@ -310,6 +312,7 @@ class BookingGridRepositoryTest {
         booking.setSchedule(schedule);
         booking.setRecruiter(recruiter);
         booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setBookedDateTime(LocalDateTime.of(2026, 11, 1, 8, 0));
         entityManager.persist(booking);
         return booking;
     }

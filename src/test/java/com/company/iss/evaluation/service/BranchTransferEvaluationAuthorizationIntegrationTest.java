@@ -71,6 +71,14 @@ class BranchTransferEvaluationAuthorizationIntegrationTest {
 
     @MockitoBean SecurityService securityService;
     @MockitoBean ApplicantAssignmentGuard applicantAssignmentGuard;
+    @MockitoBean com.company.iss.shared.time.BusinessTime businessTime;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUpBusinessTime() {
+        when(businessTime.snapshot()).thenReturn(
+                com.company.iss.shared.time.BusinessTimeTestFactory.snapshotAt(
+                        java.time.Instant.parse("2026-09-01T00:00:00Z")));
+    }
 
     @Test
     void transferMovesWorkflowAuthorityWithoutChangingHistoricalAppointment() {

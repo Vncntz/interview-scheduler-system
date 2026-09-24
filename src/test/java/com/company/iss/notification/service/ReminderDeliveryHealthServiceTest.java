@@ -62,7 +62,10 @@ class ReminderDeliveryHealthServiceTest {
         service = new ReminderDeliveryHealthService(
                 repository,
                 securityService,
-                new InterviewReminderTiming(clock, properties),
+                new InterviewReminderTiming(
+                        clock,
+                        com.company.iss.shared.time.BusinessTimeTestFactory.at(NOW)
+                ),
                 properties,
                 clock
         );

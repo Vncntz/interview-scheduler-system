@@ -118,6 +118,34 @@ class ScheduleRepositoryTest {
         );
     }
 
+    @Test
+    void bookingAvailabilityAndRescheduleDestinationsRequireStartStrictlyAfterBusinessTime() {
+        Branch branch = saveBranch("TIME-A");
+        User recruiter = saveRecruiter("time-a@example.test", branch);
+        LocalDate today = LocalDate.of(2035, 1, 10);
+        LocalTime now = LocalTime.of(10, 0);
+
+        Schedule source = saveSchedule(branch, recruiter, today.plusDays(1), 0, 2,
+                ScheduleStatus.OPEN, true, InterviewMode.ONLINE, LocalTime.of(12, 0));
+        saveSchedule(branch, recruiter, today, 0, 2,
+                ScheduleStatus.OPEN, true, InterviewMode.ONLINE, now.minusSeconds(1));
+        saveSchedule(branch, recruiter, today, 0, 2,
+                ScheduleStatus.OPEN, true, InterviewMode.ONLINE, now);
+        Schedule justAfter = saveSchedule(branch, recruiter, today, 0, 2,
+                ScheduleStatus.OPEN, true, InterviewMode.ONLINE, now.plusSeconds(1));
+
+        assertEquals(
+                List.of(justAfter.getId(), source.getId()),
+                ids(scheduleRepository.findAvailableForBooking(
+                        branch.getId(), today, now, ScheduleStatus.OPEN))
+        );
+        assertEquals(
+                List.of(justAfter.getId()),
+                ids(scheduleRepository.findEligibleRescheduleDestinations(
+                        source.getId(), today, now, ScheduleStatus.OPEN, branch.getId()))
+        );
+    }
+
     private Branch saveBranch(String code) {
         Branch branch = new Branch();
         branch.setBranchCode(code);

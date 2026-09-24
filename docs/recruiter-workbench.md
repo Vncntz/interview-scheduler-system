@@ -41,10 +41,10 @@ informational only and do not block, automatically schedule, or notify anyone.
 Override the targets with `INTERVIEW_FOLLOW_UP_FINAL_TARGET`,
 `INTERVIEW_FOLLOW_UP_CLIENT_TARGET`, and `INTERVIEW_FOLLOW_UP_DUE_SOON_WINDOW` using Spring
 duration syntax such as `72h`. All three durations must be positive, and the due-soon window must be
-shorter than both targets. `INTERVIEW_FOLLOW_UP_TIMESTAMP_ZONE` defaults to the JVM timestamp zone
-and must match the zone used for existing zone-less evaluation and lifecycle timestamps. Deadlines are
-derived at query time, so a configuration change reclassifies all existing timed rows after application
-configuration reload or restart; it does not rewrite history.
+shorter than both targets. Follow-up timestamps use the effective canonical `iss.business-time.zone` contract described
+in [`business-time.md`](business-time.md). The legacy `INTERVIEW_FOLLOW_UP_TIMESTAMP_ZONE` override
+inherits that zone when absent and must be equivalent when present. Deadlines are derived at query time;
+configuration never rewrites history.
 
 The required stage is derived through `BookingStageEligibilityPolicy`. The dialog displays that stage
 read-only, but the UI value is never trusted: `BookingService` locks and reloads the applicant, checks
