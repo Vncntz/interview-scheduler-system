@@ -104,6 +104,10 @@ public class RecruiterService {
     }
 
     private void validate(User user) {
+        if (user.getApplicant() != null || user.getRole() == Role.APPLICANT) {
+            throw new BusinessRuleViolationException("Applicant accounts cannot be managed as recruiters.");
+        }
+
         if (user.getFullName() == null || user.getFullName().isBlank()) {
             throw new BusinessRuleViolationException("Full name is required.");
         }
