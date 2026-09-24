@@ -4,11 +4,6 @@ Flyway owns the application schema. Production uses the MySQL migrations under
 `db/migration/mysql`; fast/default tests use the equivalent H2 migrations under `db/migration/h2`.
 Hibernate runs with `ddl-auto=validate` and must never be used to repair a production schema.
 
-The canonical business-time change does not add a Flyway migration. Appointment and recruitment event
-columns remain zone-less local values, and existing rows are deliberately not reinterpreted or backfilled.
-Deployments with schedules must explicitly configure their historical `BUSINESS_TIME_ZONE` or direct
-`iss.business-time.zone` Spring property as documented in [`business-time.md`](business-time.md) before startup.
-
 ## Automated database validation
 
 The default Java 25 suite remains Docker-free and uses isolated H2 in MySQL compatibility mode:
@@ -19,13 +14,10 @@ The default Java 25 suite remains Docker-free and uses isolated H2 in MySQL comp
 
 The opt-in integration profile requires Docker and starts an isolated `mysql:8.4.6` Testcontainer.
 Spring Boot supplies the container JDBC connection through a service connection; the suite never uses
-developer datasource variables or a fixed host port. It applies the production MySQL migration chain
-from V1 through the release's expected latest migration (the latest Flyway version in the exact commit
-under test) to an empty schema, validates its checksums and current version, starts the complete Spring
-context with Hibernate `ddl-auto=validate`, and exercises V8's critical reminder mappings, V9's
-lifecycle-history mappings, uniqueness, foreign keys, snapshots, enum values, microsecond timestamps,
-and processing indexes, V10's nullable offer-deadline mapping, and the strict future-start predicates used
-by booking availability and rescheduling:
+developer datasource variables or a fixed host port. It applies the production MySQL V1-through-V11
+migrations to an empty schema, validates their checksums and current version, starts the complete Spring
+context with Hibernate `ddl-auto=validate`, and exercises critical reminder, lifecycle-history,
+offer-deadline, and User-to-Applicant ownership mappings and constraints:
 
 ```powershell
 .\mvnw.cmd clean verify -Pmysql-it
@@ -89,9 +81,8 @@ return zero rows/counts before V2 is allowed to run.
 ## Fresh database rollout
 
 For an empty database, keep `FLYWAY_BASELINE_ON_MIGRATE` unset (its default is `false`). Start the
-application with normal datasource credentials. Flyway applies V1 through the release's expected latest
-migration in order, after which Hibernate validates the resulting schema. The fresh schema has
-`applicants.branch_id NOT NULL`, the
+application with normal datasource credentials. Flyway applies V1 through V11 in order, after which
+Hibernate validates the resulting schema. The fresh schema has `applicants.branch_id NOT NULL`, the
 final hiring decision workflow tables, secure account lifecycle tables, and no persisted notification
 credential columns.
 
@@ -103,10 +94,8 @@ and has no Flyway history table.
 1. Complete backup, structural comparison, and applicant reconciliation.
 2. For one controlled deployment only, set `FLYWAY_BASELINE_ON_MIGRATE=true` and
    `FLYWAY_BASELINE_VERSION=1`.
-3. Start one application instance. Flyway records version 1 as the baseline and then runs every later
-   migration through the release's expected latest migration.
-4. Verify `flyway_schema_history` contains the version 1 baseline and every later migration through the
-   release's expected latest migration is successful.
+3. Start one application instance. Flyway records version 1 as the baseline and then runs V2 through V11.
+4. Verify `flyway_schema_history` contains the version 1 baseline and successful version 2 through 11 migrations.
 5. Stop the instance, remove the baseline override, and restart with
    `FLYWAY_BASELINE_ON_MIGRATE=false` (or the variable unset) before scaling out.
 
@@ -172,8 +161,7 @@ and optimistic-lock version. The SMTP password must be supplied to the applicati
 `SMTP_PASSWORD`; there is no runtime SMS sender or `SMS_API_KEY` replacement.
 
 Before applying V5, provision `SMTP_PASSWORD` in the approved external secret source for deployments
-that require email. Using the exact release commit, rehearse both a fresh migration from V1 through the
-release's expected latest migration and a representative upgrade that crosses V5 against an isolated
+that require email. Rehearse the complete V1-to-V8 path and a V4-to-V8 upgrade against an isolated
 MySQL database restored from representative data. Confirm that non-secret notification settings are
 preserved, SMS is disabled, both legacy columns are absent, Hibernate validation succeeds, and no
 real notification is delivered during rehearsal.
@@ -274,24 +262,55 @@ hide a mismatch.
 
 ## V10 offer response deadline rollout
 
-V10 adds nullable `hiring_decisions.response_due_at` with the same microsecond timestamp precision used
-by existing hiring timestamps. Existing decisions are deliberately left null, so deployment requires no
-deadline backfill and historical offers continue to work as `No deadline`.
+V10 adds nullable `hiring_decisions.response_due_at` with microsecond timestamp precision and a
+`(status, response_due_at, id)` index for deterministic outstanding-offer worklist queries. Existing
+decisions remain null and no historical deadline is inferred. Rehearse the column and index creation on
+an isolated representative restoration and measure metadata-lock, disk, and query-plan impact.
 
-The `(status, response_due_at, id)` index supports the outstanding-offer predicate, earliest-deadline
-ordering, and deterministic page boundary used by the database-backed worklist. It is deliberately
-composite because every deadline worklist query first constrains `status = 'OFFERED'`, then filters or
-orders by `response_due_at`, with `id` as the unique tie-breaker.
+## V11 User-to-Applicant ownership rollout
 
-Before rollout, rehearse both a fresh V1-to-V10 migration and a V9-to-V10 upgrade against an isolated,
-representative MySQL restoration. Confirm existing decision rows retain null deadlines, the new column is
-nullable `DATETIME(6)`, the composite index exists, Hibernate validation succeeds, and representative
-outstanding-worklist query plans use an appropriate index. Adding the column and index can take metadata
-locks or require index-build disk and time; measure both during rehearsal.
+V11 adds nullable `users.applicant_id`, a unique ownership constraint, a foreign key to `applicants`, and
+a role/link check constraint. `APPLICANT` users must have exactly one link; `ADMIN` and `RECRUITER` users
+must have none. The link is nullable only so existing valid operations accounts migrate unchanged. The
+unique constraint is the race-safe guarantee that one Applicant cannot be owned by two Users.
 
-V10 is forward-only. Rolling back to a pre-V10 binary requires restoring the matching pre-V10 backup
-with that binary or a separately reviewed forward-compatibility plan. Do not drop the column or index
-while V10 code is running, edit the applied migration, or use Flyway repair to hide a mismatch.
+Before rollout, audit the pre-V11 schema for legacy Applicant-role users:
+
+```sql
+SELECT id, email, role
+FROM users
+WHERE role = 'APPLICANT'
+ORDER BY id;
+```
+
+V11 intentionally fails if any such row exists because the old schema has no authoritative ownership
+relationship. Do not match it to an Applicant by email. Resolve every row through an explicitly reviewed
+business-data reconciliation before retrying the migration. The MySQL migration uses one atomic
+`ALTER TABLE`, so a rejected legacy row cannot leave a partially-added ownership column or constraint.
+Rehearse both a fresh V1-to-V11 migration and a V10-to-V11 upgrade against isolated representative
+restorations with application writes stopped.
+
+After migration, both of these checks must return zero rows:
+
+```sql
+SELECT id, email, role, applicant_id
+FROM users
+WHERE (role = 'APPLICANT' AND applicant_id IS NULL)
+   OR (role IN ('ADMIN', 'RECRUITER') AND applicant_id IS NOT NULL);
+
+SELECT applicant_id, COUNT(*) AS owner_count
+FROM users
+WHERE applicant_id IS NOT NULL
+GROUP BY applicant_id
+HAVING COUNT(*) > 1;
+```
+
+Confirm `uk_users_applicant`, `fk_users_applicant`, and `chk_users_role_applicant_link` exist and that
+Hibernate validation succeeds. Adding the ownership column, unique key, foreign key, and check can take a
+metadata lock or rebuild `users`; measure lock duration, temporary disk use, and replication impact during
+the rehearsal and schedule an appropriate maintenance window. V11 is forward-only; rollback requires restoring the matching pre-V11
+backup and binary or a separately reviewed forward migration. Do not drop the ownership constraints,
+edit V11, or use email matching as repair logic.
 
 ## Failure, rollback, and recovery
 

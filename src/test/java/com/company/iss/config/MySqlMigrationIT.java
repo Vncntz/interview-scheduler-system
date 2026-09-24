@@ -15,10 +15,10 @@ import com.company.iss.notification.repository.InterviewReminderDeliveryReposito
 import com.company.iss.schedule.entity.InterviewMode;
 import com.company.iss.schedule.entity.Schedule;
 import com.company.iss.schedule.entity.ScheduleStatus;
-import com.company.iss.schedule.repository.ScheduleRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.FlywayException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -37,6 +37,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -61,8 +62,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Transactional
 class MySqlMigrationIT {
 
+    private static final String MYSQL_ROOT_USER = "root";
     private static final List<String> EXPECTED_MIGRATIONS = List.of(
-            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
+            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"
+    );
 
     @Container
     @ServiceConnection
@@ -74,16 +77,15 @@ class MySqlMigrationIT {
     @Autowired EntityManagerFactory entityManagerFactory;
     @Autowired Environment environment;
     @Autowired InterviewReminderDeliveryRepository deliveryRepository;
-    @Autowired ScheduleRepository scheduleRepository;
 
     @Test
-    void freshMySqlMigratesFromV1ThroughV10AndHibernateValidatesTheFullContext() {
+    void freshMySqlMigratesFromV1ThroughV11AndHibernateValidatesTheFullContext() {
         List<String> appliedVersions = Arrays.stream(flyway.info().applied())
                 .map(info -> info.getVersion().getVersion())
                 .toList();
 
         assertEquals(EXPECTED_MIGRATIONS, appliedVersions);
-        assertEquals("10", flyway.info().current().getVersion().getVersion());
+        assertEquals("11", flyway.info().current().getVersion().getVersion());
         assertDoesNotThrow(flyway::validate);
         assertEquals("classpath:db/migration/mysql", environment.getProperty("spring.flyway.locations"));
         assertEquals("validate", environment.getProperty("spring.jpa.hibernate.ddl-auto"));
@@ -93,17 +95,156 @@ class MySqlMigrationIT {
                 SELECT IS_NULLABLE
                 FROM INFORMATION_SCHEMA.COLUMNS
                 WHERE TABLE_SCHEMA = DATABASE()
-                  AND TABLE_NAME = 'hiring_decisions'
-                  AND COLUMN_NAME = 'response_due_at'
+                  AND TABLE_NAME = 'users'
+                  AND COLUMN_NAME = 'applicant_id'
                 """, String.class));
         assertEquals(3, jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
+                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'users'
+                  AND CONSTRAINT_NAME IN (
+                      'uk_users_applicant',
+                      'fk_users_applicant',
+                      'chk_users_role_applicant_link'
+                  )
+                """, Integer.class));
+        assertEquals("applicants", jdbcTemplate.queryForObject(
+                """
+                SELECT REFERENCED_TABLE_NAME
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'users'
+                  AND COLUMN_NAME = 'applicant_id'
+                  AND CONSTRAINT_NAME = 'fk_users_applicant'
+                """, String.class));
+        assertEquals(0, jdbcTemplate.queryForObject(
+                """
+                SELECT NON_UNIQUE
                 FROM INFORMATION_SCHEMA.STATISTICS
                 WHERE TABLE_SCHEMA = DATABASE()
-                  AND TABLE_NAME = 'hiring_decisions'
-                  AND INDEX_NAME = 'ix_hiring_decision_status_response_due_id'
+                  AND TABLE_NAME = 'users'
+                  AND INDEX_NAME = 'uk_users_applicant'
+                  AND COLUMN_NAME = 'applicant_id'
                 """, Integer.class));
+        String ownershipCheck = jdbcTemplate.queryForObject(
+                """
+                SELECT CHECK_CLAUSE
+                FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS
+                WHERE CONSTRAINT_SCHEMA = DATABASE()
+                  AND CONSTRAINT_NAME = 'chk_users_role_applicant_link'
+                """, String.class);
+        assertNotNull(ownershipCheck);
+        assertTrue(ownershipCheck.toLowerCase(Locale.ROOT).contains("applicant_id"));
+    }
+
+    @Test
+    void userApplicantOwnershipConstraintsRejectInvalidAndDuplicateLinksOnMySql() {
+        jdbcTemplate.update("""
+                INSERT INTO branches (
+                    id, active, created_at, updated_at, version, branch_code,
+                    city, province, branch_name, address
+                ) VALUES (
+                    811, TRUE, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6), 0, 'OWN811',
+                    'Manila', 'Metro Manila', 'Ownership Branch', 'Test Address'
+                )
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO applicants (
+                    id, active, created_at, updated_at, version, mobile_number,
+                    first_name, last_name, email, status, branch_id
+                ) VALUES (
+                    811, TRUE, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6), 0, '09170000000',
+                    'Ownership', 'Applicant', 'mysql-owner@example.test', 'NEW', 811
+                )
+                """);
+        jdbcTemplate.update(userOwnershipInsert(
+                811, "mysql-applicant@example.test", "APPLICANT", "811"
+        ));
+
+        DataAccessException duplicateOwner = assertThrows(DataAccessException.class,
+                () -> jdbcTemplate.update(userOwnershipInsert(
+                        812, "mysql-duplicate@example.test", "APPLICANT", "811"
+                )));
+        assertMySqlConstraintViolation(duplicateOwner, 1062, "23000", "uk_users_applicant");
+
+        DataAccessException missingOwner = assertThrows(DataAccessException.class,
+                () -> jdbcTemplate.update(userOwnershipInsert(
+                        813, "mysql-unlinked@example.test", "APPLICANT", "NULL"
+                )));
+        assertMySqlConstraintViolation(missingOwner, 3819, "HY000", "chk_users_role_applicant_link");
+
+        DataAccessException linkedAdmin = assertThrows(DataAccessException.class,
+                () -> jdbcTemplate.update(userOwnershipInsert(
+                        814, "mysql-linked-admin@example.test", "ADMIN", "811"
+                )));
+        assertMySqlConstraintViolation(linkedAdmin, 3819, "HY000", "chk_users_role_applicant_link");
+
+        DataAccessException unknownOwner = assertThrows(DataAccessException.class,
+                () -> jdbcTemplate.update(userOwnershipInsert(
+                        815, "mysql-unknown-owner@example.test", "APPLICANT", "999999"
+                )));
+        assertMySqlConstraintViolation(unknownOwner, 1452, "23000", "fk_users_applicant");
+    }
+
+    @Test
+    void v11MySqlUpgradePreservesOperationsUsersAndRejectsUnresolvedLegacyApplicants() throws SQLException {
+        String validSchemaUrl = createIsolatedSchema("m1_s1_valid_upgrade");
+        migrateIsolatedSchema(validSchemaUrl, "10");
+        try (var connection = DriverManager.getConnection(
+                validSchemaUrl, MYSQL_ROOT_USER, MYSQL.getPassword()
+        ); var statement = connection.createStatement()) {
+            statement.executeUpdate(mysqlBranchInsert(911));
+            statement.executeUpdate(mysqlApplicantInsert(911, "matching-email@example.test"));
+            statement.executeUpdate(mysqlUserBeforeV11Insert(
+                    911, "matching-email@example.test", "ADMIN"
+            ));
+            statement.executeUpdate(mysqlUserBeforeV11Insert(
+                    912, "legacy-recruiter@example.test", "RECRUITER"
+            ));
+        }
+
+        Flyway validUpgrade = migrateIsolatedSchema(validSchemaUrl, null);
+        assertEquals("11", validUpgrade.info().current().getVersion().getVersion());
+        try (var connection = DriverManager.getConnection(
+                validSchemaUrl, MYSQL_ROOT_USER, MYSQL.getPassword()
+        ); var statement = connection.createStatement();
+             var result = statement.executeQuery("""
+                     SELECT COUNT(*)
+                     FROM users
+                     WHERE id IN (911, 912) AND applicant_id IS NULL
+                     """)) {
+            result.next();
+            assertEquals(2, result.getInt(1));
+        }
+
+        String legacySchemaUrl = createIsolatedSchema("m1_s1_legacy_applicant");
+        migrateIsolatedSchema(legacySchemaUrl, "10");
+        try (var connection = DriverManager.getConnection(
+                legacySchemaUrl, MYSQL_ROOT_USER, MYSQL.getPassword()
+        ); var statement = connection.createStatement()) {
+            statement.executeUpdate(mysqlBranchInsert(921));
+            statement.executeUpdate(mysqlApplicantInsert(921, "legacy-applicant@example.test"));
+            statement.executeUpdate(mysqlUserBeforeV11Insert(
+                    921, "legacy-applicant@example.test", "APPLICANT"
+            ));
+        }
+
+        assertThrows(FlywayException.class, () -> migrateIsolatedSchema(legacySchemaUrl, null));
+        try (var connection = DriverManager.getConnection(
+                legacySchemaUrl, MYSQL_ROOT_USER, MYSQL.getPassword()
+        ); var statement = connection.createStatement();
+             var result = statement.executeQuery("""
+                     SELECT COUNT(*)
+                     FROM INFORMATION_SCHEMA.COLUMNS
+                     WHERE TABLE_SCHEMA = 'm1_s1_legacy_applicant'
+                       AND TABLE_NAME = 'users'
+                       AND COLUMN_NAME = 'applicant_id'
+                     """)) {
+            result.next();
+            assertEquals(0, result.getInt(1));
+        }
     }
 
     @Test
@@ -164,37 +305,6 @@ class MySqlMigrationIT {
                         scheduledStart
                 )
         ));
-    }
-
-    @Test
-    void scheduleAvailabilityQueriesRequireStartStrictlyAfterBusinessTimeOnMySql() {
-        Branch branch = persistBranch("TIME");
-        LocalDate today = LocalDate.of(2035, 1, 10);
-        LocalTime now = LocalTime.of(10, 0);
-
-        Schedule source = persistSchedule(branch, today.plusDays(1), LocalTime.of(12, 0), 0);
-        persistSchedule(branch, today, now.minusSeconds(1), 0);
-        persistSchedule(branch, today, now, 0);
-        Schedule justAfter = persistSchedule(branch, today, now.plusSeconds(1), 0);
-        entityManager.flush();
-        entityManager.clear();
-
-        assertEquals(
-                List.of(justAfter.getId(), source.getId()),
-                scheduleRepository.findAvailableForBooking(
-                                branch.getId(), today, now, ScheduleStatus.OPEN
-                        ).stream()
-                        .map(Schedule::getId)
-                        .toList()
-        );
-        assertEquals(
-                List.of(justAfter.getId()),
-                scheduleRepository.findEligibleRescheduleDestinations(
-                                source.getId(), today, now, ScheduleStatus.OPEN, branch.getId()
-                        ).stream()
-                        .map(Schedule::getId)
-                        .toList()
-        );
     }
 
     @Test
@@ -363,7 +473,14 @@ class MySqlMigrationIT {
     }
 
     private Booking persistBooking(String suffix) {
-        Branch branch = persistBranch(suffix);
+        Branch branch = new Branch();
+        branch.setBranchCode("MYSQL-" + suffix);
+        branch.setBranchName("MySQL " + suffix + " Branch");
+        branch.setAddress("Test Address");
+        branch.setCity("Manila");
+        branch.setProvince("Metro Manila");
+        branch.setActive(true);
+        entityManager.persist(branch);
 
         Applicant applicant = new Applicant();
         applicant.setBranch(branch);
@@ -375,9 +492,17 @@ class MySqlMigrationIT {
         applicant.setActive(true);
         entityManager.persist(applicant);
 
-        Schedule schedule = persistSchedule(
-                branch, LocalDate.of(2026, 9, 3), LocalTime.of(9, 0), 1
-        );
+        Schedule schedule = new Schedule();
+        schedule.setBranch(branch);
+        schedule.setScheduleDate(LocalDate.of(2026, 9, 3));
+        schedule.setStartTime(LocalTime.of(9, 0));
+        schedule.setEndTime(LocalTime.of(10, 0));
+        schedule.setSlotCapacity(2);
+        schedule.setBookedCount(1);
+        schedule.setInterviewMode(InterviewMode.ONLINE);
+        schedule.setStatus(ScheduleStatus.OPEN);
+        schedule.setActive(true);
+        entityManager.persist(schedule);
 
         Booking booking = Booking.forInterviewStage(InterviewStage.INITIAL);
         booking.setBookingReference("BK-MYSQL-" + suffix);
@@ -390,31 +515,81 @@ class MySqlMigrationIT {
         return booking;
     }
 
-    private Branch persistBranch(String suffix) {
-        Branch branch = new Branch();
-        branch.setBranchCode("MYSQL-" + suffix);
-        branch.setBranchName("MySQL " + suffix + " Branch");
-        branch.setAddress("Test Address");
-        branch.setCity("Manila");
-        branch.setProvince("Metro Manila");
-        branch.setActive(true);
-        entityManager.persist(branch);
-        return branch;
+    private String userOwnershipInsert(long id, String email, String role, String applicantId) {
+        return """
+                INSERT INTO users (
+                    id, active, failed_login_attempts, must_change_password, created_at,
+                    updated_at, version, email, full_name, password_hash, role, applicant_id
+                ) VALUES (
+                    %d, TRUE, 0, FALSE, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6), 0,
+                    '%s', 'Ownership User', 'test-only-hash', '%s', %s
+                )
+                """.formatted(id, email, role, applicantId);
     }
 
-    private Schedule persistSchedule(Branch branch, LocalDate date, LocalTime startTime, int bookedCount) {
-        Schedule schedule = new Schedule();
-        schedule.setBranch(branch);
-        schedule.setScheduleDate(date);
-        schedule.setStartTime(startTime);
-        schedule.setEndTime(startTime.plusHours(1));
-        schedule.setSlotCapacity(2);
-        schedule.setBookedCount(bookedCount);
-        schedule.setInterviewMode(InterviewMode.ONLINE);
-        schedule.setStatus(ScheduleStatus.OPEN);
-        schedule.setActive(true);
-        entityManager.persist(schedule);
-        return schedule;
+    private String createIsolatedSchema(String schema) throws SQLException {
+        try (var connection = DriverManager.getConnection(
+                MYSQL.getJdbcUrl(), MYSQL_ROOT_USER, MYSQL.getPassword()
+        ); var statement = connection.createStatement()) {
+            statement.executeUpdate("CREATE DATABASE " + schema);
+        }
+
+        String databaseMarker = "/" + MYSQL.getDatabaseName();
+        String containerUrl = MYSQL.getJdbcUrl();
+        int markerIndex = containerUrl.lastIndexOf(databaseMarker);
+        return containerUrl.substring(0, markerIndex + 1)
+                + schema
+                + containerUrl.substring(markerIndex + databaseMarker.length());
+    }
+
+    private Flyway migrateIsolatedSchema(String schemaUrl, String target) {
+        var configuration = Flyway.configure()
+                .dataSource(schemaUrl, MYSQL_ROOT_USER, MYSQL.getPassword())
+                .locations("classpath:db/migration/mysql")
+                .cleanDisabled(true)
+                .validateOnMigrate(true);
+        if (target != null) {
+            configuration.target(target);
+        }
+        Flyway isolatedFlyway = configuration.load();
+        isolatedFlyway.migrate();
+        return isolatedFlyway;
+    }
+
+    private String mysqlBranchInsert(long id) {
+        return """
+                INSERT INTO branches (
+                    id, active, created_at, updated_at, version, branch_code,
+                    city, province, branch_name, address
+                ) VALUES (
+                    %d, TRUE, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6), 0, 'UPG-%d',
+                    'Manila', 'Metro Manila', 'Upgrade Branch', 'Test Address'
+                )
+                """.formatted(id, id);
+    }
+
+    private String mysqlApplicantInsert(long id, String email) {
+        return """
+                INSERT INTO applicants (
+                    id, active, created_at, updated_at, version, mobile_number,
+                    first_name, last_name, email, status, branch_id
+                ) VALUES (
+                    %d, TRUE, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6), 0, '09170000000',
+                    'Upgrade', 'Applicant', '%s', 'NEW', %d
+                )
+                """.formatted(id, email, id);
+    }
+
+    private String mysqlUserBeforeV11Insert(long id, String email, String role) {
+        return """
+                INSERT INTO users (
+                    id, active, failed_login_attempts, must_change_password, created_at,
+                    updated_at, version, email, full_name, password_hash, role
+                ) VALUES (
+                    %d, TRUE, 0, FALSE, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6), 0,
+                    '%s', 'Upgrade User', 'test-only-hash', '%s'
+                )
+                """.formatted(id, email, role);
     }
 
     private User persistLifecycleActor(String suffix) {

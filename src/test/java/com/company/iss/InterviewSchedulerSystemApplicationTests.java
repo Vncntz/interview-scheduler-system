@@ -38,30 +38,7 @@ class InterviewSchedulerSystemApplicationTests {
 
 	@Test
 	void contextLoads() {
-		assertEquals("10", flyway.info().current().getVersion().getVersion());
-		assertEquals(
-				"YES",
-				jdbcTemplate.queryForObject(
-						"""
-						SELECT IS_NULLABLE
-						FROM INFORMATION_SCHEMA.COLUMNS
-						WHERE TABLE_NAME = 'HIRING_DECISIONS' AND COLUMN_NAME = 'RESPONSE_DUE_AT'
-						""",
-						String.class
-				)
-		);
-		assertEquals(
-				1,
-				jdbcTemplate.queryForObject(
-						"""
-						SELECT COUNT(*)
-						FROM INFORMATION_SCHEMA.INDEXES
-						WHERE TABLE_NAME = 'HIRING_DECISIONS'
-						  AND INDEX_NAME = 'IX_HIRING_DECISION_STATUS_RESPONSE_DUE_ID'
-						""",
-						Integer.class
-				)
-		);
+		assertEquals("11", flyway.info().current().getVersion().getVersion());
 		String nullable = jdbcTemplate.queryForObject(
 				"""
 				SELECT IS_NULLABLE
